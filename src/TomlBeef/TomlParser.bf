@@ -63,9 +63,17 @@ public class TomlParser
 
 			char8 b = mCursor.PeekByte();
 
+			// Reject bare CR (not part of CRLF) and other control chars at document level
+			if ((uint8)b == 0x0D && (uint8)mCursor.PeekByteAt(1) != 0x0A)
+				return .Err(Error(.ControlCharInComment, "Bare CR not allowed"));
+			if ((uint8)b < 0x20 && b != '\t' && b != '\r' && b != '\n')
+				return .Err(Error(.ControlCharInComment, "Control character in document"));
+
 			if (b == '#')
 			{
 				mCursor.SkipComment();
+				if (mCursor.mPendingError != null)
+					return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
 				continue;
 			}
 			if (b == '\r' || b == '\n')
@@ -95,7 +103,11 @@ public class TomlParser
 			{
 				char8 afterB = mCursor.PeekByte();
 				if (afterB == '#')
+				{
 					mCursor.SkipComment();
+					if (mCursor.mPendingError != null)
+						return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
+				}
 				else if (afterB != '\r' && afterB != '\n')
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
 				else
@@ -154,7 +166,11 @@ public class TomlParser
 		{
 			char8 b = mCursor.PeekByte();
 			if (b == '#')
+			{
 				mCursor.SkipComment();
+				if (mCursor.mPendingError != null)
+					return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
+			}
 			else if (b == '\r' || b == '\n')
 				mCursor.SkipNewline();
 			else
@@ -407,7 +423,7 @@ public class TomlParser
 				delete result;
 				return .Err(Error(.UnterminatedString, "Unterminated basic string"));
 			}
-			if ((uint8)b < 0x20 && b != '\t')
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
 				delete result;
 				return .Err(Error(.ControlCharInString, "Control character in basic string"));
@@ -475,7 +491,13 @@ public class TomlParser
 			if (b == '\r')
 			{
 				mCursor.AdvanceByte();
-				if (mCursor.PeekByte() == '\n') mCursor.AdvanceByte();
+				// CR must be part of CRLF in multiline basic string
+				if (mCursor.PeekByte() != '\n')
+				{
+					delete result;
+					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline basic string"));
+				}
+				mCursor.AdvanceByte();
 				result.Append('\n');
 				continue;
 			}
@@ -486,7 +508,8 @@ public class TomlParser
 				continue;
 			}
 
-			if ((uint8)b < 0x20 && b != '\t')
+			// Control chars (except tab, LF, CR)
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
 				delete result;
 				return .Err(Error(.ControlCharInString, "Control character in multi-line basic string"));
@@ -600,7 +623,7 @@ public class TomlParser
 				delete result;
 				return .Err(Error(.UnterminatedString, "Unterminated literal string"));
 			}
-			if ((uint8)b < 0x20 && b != '\t')
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
 				delete result;
 				return .Err(Error(.ControlCharInString, "Control character in literal string"));
@@ -637,7 +660,13 @@ public class TomlParser
 			if (b == '\r')
 			{
 				mCursor.AdvanceByte();
-				if (mCursor.PeekByte() == '\n') mCursor.AdvanceByte();
+				// CR must be part of CRLF in multiline literal string
+				if (mCursor.PeekByte() != '\n')
+				{
+					delete result;
+					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline literal string"));
+				}
+				mCursor.AdvanceByte();
 				result.Append('\n');
 				continue;
 			}
@@ -648,7 +677,7 @@ public class TomlParser
 				continue;
 			}
 
-			if ((uint8)b < 0x20 && b != '\t')
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
 				delete result;
 				return .Err(Error(.ControlCharInString, "Control character in multi-line literal string"));
@@ -767,8 +796,13 @@ public class TomlParser
 			}
 		}
 
+		// Leading dot not allowed (e.g., .5, +.7)
+		if (token[pos] == '.')
+			return .Err(Error(.InvalidFloat, "Leading decimal point not allowed"));
+
 		bool hasDot = false;
 		bool hasExp = false;
+		int lastDotPos = -1;
 
 		for (int i = pos; i < token.Length; i++)
 		{
@@ -777,6 +811,7 @@ public class TomlParser
 			{
 				if (hasDot) return .Err(Error(.InvalidFloat, "Multiple decimal points"));
 				hasDot = true;
+				lastDotPos = i;
 			}
 			else if (c == 'e' || c == 'E')
 			{
@@ -800,11 +835,27 @@ public class TomlParser
 			}
 		}
 
+		// Trailing dot not allowed (e.g., 7.)
+		if (hasDot && lastDotPos == token.Length - 1)
+			return .Err(Error(.InvalidFloat, "Trailing decimal point not allowed"));
+
+		// Leading zero not allowed for decimal integers AND floats
+		// Check from the start of digits (pos) that no leading zero followed by more digits
+		if (token.Length > pos && token[pos] == '0')
+		{
+			// If there's a digit immediately after the 0 (not ., not e/E, not end), it's a leading zero
+			if (pos + 1 < token.Length)
+			{
+				char8 afterZero = token[pos + 1];
+				if (afterZero >= '0' && afterZero <= '9')
+					return .Err(Error(.LeadingZero, "Leading zeros not allowed"));
+			}
+		}
+
 		if (!hasDot && !hasExp)
 		{
-			StringView digitsPart = token.Substring(pos);
-			if (digitsPart.Length > 1 && digitsPart[0] == '0')
-				return .Err(Error(.LeadingZero, "Leading zeros not allowed in decimal integers"));
+			// Additional check: the integer part must not have leading zero followed by another digit
+			// Already covered above
 		}
 
 		if (hasDot || hasExp)
@@ -976,6 +1027,21 @@ public class TomlParser
 		if (!hasT && !hasColon && !hasZ && !hasDash)
 			return .Err(Error(.UnexpectedToken, "Not a date/time"));
 
+		// If token has Z or ends with offset pattern, it must be offset datetime — don't fall through
+		bool hasOffsetIndicator = hasZ;
+		if (!hasOffsetIndicator)
+		{
+			// Check for +/- timezone offset (look after the last time digit for + or -)
+			for (int i = token.Length - 1; i >= 0; i--)
+			{
+				if (token[i] == '+' || token[i] == '-')
+				{
+					// Must be after the date-time part, not the leading sign
+					if (i > 10) { hasOffsetIndicator = true; break; }
+				}
+			}
+		}
+
 		if ((hasT || hasZ) && token.Length >= 19)
 		{
 			switch (TryParseOffsetDateTime(token))
@@ -983,6 +1049,9 @@ public class TomlParser
 			case .Ok(let val): return val;
 			default:
 			}
+			// If the token has offset indicators, don't fall through — it's an error
+			if (hasOffsetIndicator)
+				return .Err(Error(.InvalidDateTime, "Invalid offset date-time"));
 		}
 		if (hasT)
 			return TryParseLocalDateTime(token);
@@ -1023,9 +1092,16 @@ public class TomlParser
 				int32 tzh = 0, tzm = 0;
 				if (!TryReadNDigits(token, ref pos, 2, out tzh))
 					return .Err(Error(.InvalidDateTime, "Invalid timezone offset hours"));
-				if (pos < token.Length && token[pos] == ':') pos++;
+				if (tzh > 23)
+					return .Err(Error(.InvalidDateTime, "Timezone offset hour overflow"));
+				// The ':' separator is required for timezone offset
+				if (pos >= token.Length || token[pos] != ':')
+					return .Err(Error(.InvalidDateTime, "Expected ':' in timezone offset"));
+				pos++;
 				if (!TryReadNDigits(token, ref pos, 2, out tzm))
 					return .Err(Error(.InvalidDateTime, "Invalid timezone offset minutes"));
+				if (tzm > 59)
+					return .Err(Error(.InvalidDateTime, "Timezone offset minute overflow"));
 				offsetMinutes = tzh * 60 + tzm;
 				if (tz == '-') offsetMinutes = -offsetMinutes;
 			}
