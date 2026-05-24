@@ -191,7 +191,7 @@ public class TomlWriter
 			case '\r': outStr.Append("\\r"); break;
 			case (char8)0x1B: outStr.Append("\\e"); break;
 			default:
-				if ((uint8)c < 0x20)
+				if ((uint8)c < 0x20 || (uint8)c == 0x7F)
 				{
 					outStr.Append("\\u00");
 					uint8 hi = ((uint8)c >> 4) & 0x0F;
