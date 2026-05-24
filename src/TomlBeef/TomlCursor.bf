@@ -24,7 +24,6 @@ public class TomlCursor
 	private int mOffset;
 	private int mLine;
 	private int mColumn;
-	public String mPendingError; // Set when SkipComment detects control chars
 
 	public this(StringView input)
 	{
@@ -151,9 +150,9 @@ public class TomlCursor
 		if (mOffset < mInput.Length && mInput[mOffset] == '\n') AdvanceByte();
 	}
 
-	public void SkipComment()
+	public Result<void, TomlParseError> SkipComment()
 	{
-		if (mOffset >= mInput.Length || mInput[mOffset] != '#') return;
+		if (mOffset >= mInput.Length || mInput[mOffset] != '#') return .Ok;
 		AdvanceByte(); // skip '#'
 
 		while (mOffset < mInput.Length)
@@ -164,23 +163,18 @@ public class TomlCursor
 				// CR is only valid as part of CRLF; bare CR is a control char error
 				if (mOffset + 1 < mInput.Length && mInput[mOffset + 1] == '\n')
 					break;
-				if (mPendingError == null)
-					mPendingError = new String("Control character in comment");
-				AdvanceByte();
-				continue;
+				return .Err(TomlParseError(.ControlCharInDocument, "Bare CR in comment", mLine, mColumn, mOffset));
 			}
 			if (b == '\n') break;
 
 			// Validate: control characters other than tab are forbidden in comments
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-			{
-				if (mPendingError == null)
-					mPendingError = new String("Control character in comment");
-			}
+				return .Err(TomlParseError(.ControlCharInDocument, "Control character in comment", mLine, mColumn, mOffset));
 
 			AdvanceByte();
 		}
 		SkipNewline();
+		return .Ok;
 	}
 
 	public void SkipToNextLine()

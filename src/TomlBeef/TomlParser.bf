@@ -6,9 +6,9 @@ namespace TomlBeef;
 /// Recursive descent parser for TOML v1.1.0.
 public class TomlParser
 {
-	private TomlCursor mCursor;
-	private TomlDocument mDocument;
-	private TomlPathResolver mPathResolver;
+	private TomlCursor mCursor ~ delete _;
+	private TomlDocument mDocument ~ delete _;
+	private TomlPathResolver mPathResolver ~ delete _;
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
 
@@ -16,14 +16,44 @@ public class TomlParser
 	{
 	}
 
-	public ~this()
-	{
-		if (mPathResolver != null)
-			delete mPathResolver;
-	}
-
 	public Result<TomlDocument, TomlParseError> Parse(StringView input)
 	{
+		// Validate UTF-8
+		int i = 0;
+		while (i < input.Length)
+		{
+			uint8 b = (uint8)input[i];
+			if (b < 0x80) { i++; continue; }
+			int seqLen;
+			uint32 minCp;
+			if ((b & 0xE0) == 0xC0)      { seqLen = 2; minCp = 0x80; }
+			else if ((b & 0xF0) == 0xE0) { seqLen = 3; minCp = 0x800; }
+			else if ((b & 0xF8) == 0xF0) { seqLen = 4; minCp = 0x10000; }
+			else { return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", 1, 1, i)); }
+
+			if (i + seqLen > input.Length)
+				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", 1, 1, i));
+
+			uint32 cp = (uint32)(b & (seqLen == 2 ? 0x1F : seqLen == 3 ? 0x0F : 0x07));
+			for (int j = 1; j < seqLen; j++)
+			{
+				uint8 cb = (uint8)input[i + j];
+				if ((cb & 0xC0) != 0x80)
+					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", 1, 1, i + j));
+				cp = (cp << 6) | (uint32)(cb & 0x3F);
+			}
+
+			// Validate overlong sequences and surrogate range
+			if (cp < minCp)
+				return .Err(TomlParseError(.InvalidUtf8, "Overlong UTF-8 sequence", 1, 1, i));
+			if (cp >= 0xD800 && cp <= 0xDFFF)
+				return .Err(TomlParseError(.InvalidUtf8, "UTF-8 surrogate pair not allowed", 1, 1, i));
+			if (cp > 0x10FFFF)
+				return .Err(TomlParseError(.InvalidUtf8, "Codepoint beyond U+10FFFF", 1, 1, i));
+
+			i += seqLen;
+		}
+
 		// Skip UTF-8 BOM if present
 		int start = 0;
 		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
@@ -65,15 +95,17 @@ public class TomlParser
 
 			// Reject bare CR (not part of CRLF) and other control chars at document level
 			if ((uint8)b == 0x0D && (uint8)mCursor.PeekByteAt(1) != 0x0A)
-				return .Err(Error(.ControlCharInComment, "Bare CR not allowed"));
+				return .Err(Error(.ControlCharInDocument, "Bare CR not allowed"));
 			if ((uint8)b < 0x20 && b != '\t' && b != '\r' && b != '\n')
-				return .Err(Error(.ControlCharInComment, "Control character in document"));
+				return .Err(Error(.ControlCharInDocument, "Control character in document"));
 
 			if (b == '#')
 			{
-				mCursor.SkipComment();
-				if (mCursor.mPendingError != null)
-					return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
+				switch (mCursor.SkipComment())
+				{
+				case .Err(let err): return .Err(err);
+				default:
+				}
 				continue;
 			}
 			if (b == '\r' || b == '\n')
@@ -104,9 +136,11 @@ public class TomlParser
 				char8 afterB = mCursor.PeekByte();
 				if (afterB == '#')
 				{
-					mCursor.SkipComment();
-					if (mCursor.mPendingError != null)
-						return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
+					switch (mCursor.SkipComment())
+					{
+					case .Err(let err): return .Err(err);
+					default:
+					}
 				}
 				else if (afterB != '\r' && afterB != '\n')
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
@@ -167,9 +201,11 @@ public class TomlParser
 			char8 b = mCursor.PeekByte();
 			if (b == '#')
 			{
-				mCursor.SkipComment();
-				if (mCursor.mPendingError != null)
-					return .Err(Error(.ControlCharInComment, mCursor.mPendingError));
+				switch (mCursor.SkipComment())
+				{
+				case .Err(let err): return .Err(err);
+				default:
+				}
 			}
 			else if (b == '\r' || b == '\n')
 				mCursor.SkipNewline();
@@ -448,10 +484,39 @@ public class TomlParser
 		{
 			if (mCursor.PeekByte() == '"' && mCursor.PeekByteAt(1) == '"' && mCursor.PeekByteAt(2) == '"')
 			{
-				if (mCursor.PeekByteAt(3) != '"')
+				// Count consecutive quotes
+				int quoteCount = 3;
+				while (mCursor.PeekByteAt(quoteCount) == '"')
+					quoteCount++;
+
+				if (quoteCount == 3)
 				{
+					// Exactly 3 quotes: closing delimiter
 					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
 					return TomlValue.String(result);
+				}
+				else if (quoteCount == 4)
+				{
+					// 4 quotes: 1 literal quote, then 3 closing quotes
+					result.Append('"');
+					mCursor.AdvanceByte(); // consume the 1 literal
+					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte(); // consuming closing
+					return TomlValue.String(result);
+				}
+				else if (quoteCount == 5)
+				{
+					// 5 quotes: 2 literal quotes, then 3 closing quotes
+					result.Append('"');
+					result.Append('"');
+					mCursor.AdvanceByte(); mCursor.AdvanceByte(); // consume 2 literal
+					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte(); // consuming closing
+					return TomlValue.String(result);
+				}
+				else
+				{
+					// 6+ consecutive unescaped quotes not allowed
+					delete result;
+					return .Err(Error(.InvalidEscape, "Six or more consecutive quotes in multi-line basic string must be escaped"));
 				}
 			}
 
@@ -648,10 +713,34 @@ public class TomlParser
 		{
 			if (mCursor.PeekByte() == '\'' && mCursor.PeekByteAt(1) == '\'' && mCursor.PeekByteAt(2) == '\'')
 			{
-				if (mCursor.PeekByteAt(3) != '\'')
+				int quoteCount = 3;
+				while (mCursor.PeekByteAt(quoteCount) == '\'')
+					quoteCount++;
+
+				if (quoteCount == 3)
 				{
 					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
 					return TomlValue.String(result);
+				}
+				else if (quoteCount == 4)
+				{
+					result.Append('\'');
+					mCursor.AdvanceByte();
+					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
+					return TomlValue.String(result);
+				}
+				else if (quoteCount == 5)
+				{
+					result.Append('\'');
+					result.Append('\'');
+					mCursor.AdvanceByte(); mCursor.AdvanceByte();
+					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
+					return TomlValue.String(result);
+				}
+				else
+				{
+					delete result;
+					return .Err(Error(.InvalidEscape, "Six or more consecutive apostrophes in multi-line literal string"));
 				}
 			}
 
@@ -835,18 +924,29 @@ public class TomlParser
 			}
 		}
 
-		// Trailing dot not allowed (e.g., 7.)
-		if (hasDot && lastDotPos == token.Length - 1)
-			return .Err(Error(.InvalidFloat, "Trailing decimal point not allowed"));
+		// Trailing dot not allowed (e.g., 7., 1.e2)
+		if (hasDot)
+		{
+			int afterDot = lastDotPos + 1;
+			// Skip underscores
+			while (afterDot < token.Length && token[afterDot] == '_')
+				afterDot++;
+			// Must have at least one digit after the decimal point
+			if (afterDot >= token.Length || !TomlScanner.IsDigit(token[afterDot]))
+				return .Err(Error(.InvalidFloat, "Decimal point must be followed by at least one digit"));
+		}
 
 		// Leading zero not allowed for decimal integers AND floats
 		// Check from the start of digits (pos) that no leading zero followed by more digits
 		if (token.Length > pos && token[pos] == '0')
 		{
-			// If there's a digit immediately after the 0 (not ., not e/E, not end), it's a leading zero
-			if (pos + 1 < token.Length)
+			// Look past underscores to find the first non-underscore character after the leading zero
+			int lookPos = pos + 1;
+			while (lookPos < token.Length && token[lookPos] == '_')
+				lookPos++;
+			if (lookPos < token.Length)
 			{
-				char8 afterZero = token[pos + 1];
+				char8 afterZero = token[lookPos];
 				if (afterZero >= '0' && afterZero <= '9')
 					return .Err(Error(.LeadingZero, "Leading zeros not allowed"));
 			}
@@ -1042,7 +1142,7 @@ public class TomlParser
 			}
 		}
 
-		if ((hasT || hasZ) && token.Length >= 19)
+		if (hasT || hasZ)
 		{
 			switch (TryParseOffsetDateTime(token))
 			{
@@ -1199,7 +1299,11 @@ public class TomlParser
 				while (pos < token.Length && TomlScanner.IsDigit(token[pos]))
 					pos++;
 				int fracLen = pos - fracStart;
-				if (fracLen > 0)
+				if (fracLen == 0)
+				{
+					return false; // trailing dot with no fractional digits
+				}
+				else
 				{
 					String fracStr = scope String(token.Substring(fracStart, fracLen));
 					while (fracStr.Length < 9) fracStr.Append('0');
@@ -1237,7 +1341,13 @@ public class TomlParser
 		TomlArray arr = new TomlArray();
 		arr.mIsStatic = true; // inline [a, b, c] arrays are static
 
-		SkipWsAndComments();
+		switch (SkipWsAndComments())
+		{
+		case .Err(let err):
+			delete arr;
+			return .Err(err);
+		default:
+		}
 		if (mCursor.PeekByte() == ']')
 		{
 			mCursor.AdvanceByte();
@@ -1246,7 +1356,13 @@ public class TomlParser
 
 		while (true)
 		{
-			SkipWsAndComments();
+			switch (SkipWsAndComments())
+			{
+			case .Err(let err):
+				delete arr;
+				return .Err(err);
+			default:
+			}
 
 			switch (ParseValue())
 			{
@@ -1257,13 +1373,25 @@ public class TomlParser
 				arr.Add(val);
 			}
 
-			SkipWsAndComments();
+			switch (SkipWsAndComments())
+			{
+			case .Err(let err):
+				delete arr;
+				return .Err(err);
+			default:
+			}
 
 			char8 b = mCursor.PeekByte();
 			if (b == ',')
 			{
 				mCursor.AdvanceByte();
-				SkipWsAndComments();
+				switch (SkipWsAndComments())
+				{
+				case .Err(let err):
+					delete arr;
+					return .Err(err);
+				default:
+				}
 				if (mCursor.PeekByte() == ']')
 				{
 					mCursor.AdvanceByte();
@@ -1293,7 +1421,13 @@ public class TomlParser
 		mCursor.AdvanceByte();
 		TomlTable tbl = new TomlTable(.InlineTable);
 
-		SkipWsAndComments();
+		switch (SkipWsAndComments())
+		{
+		case .Err(let err):
+			delete tbl;
+			return .Err(err);
+		default:
+		}
 		if (mCursor.PeekByte() == '}')
 		{
 			mCursor.AdvanceByte();
@@ -1303,7 +1437,13 @@ public class TomlParser
 
 		while (true)
 		{
-			SkipWsAndComments();
+			switch (SkipWsAndComments())
+			{
+			case .Err(let err):
+				delete tbl;
+				return .Err(err);
+			default:
+			}
 
 			List<String> keyPath = new List<String>();
 			defer
@@ -1353,13 +1493,25 @@ public class TomlParser
 				}
 			}
 
-			SkipWsAndComments();
+			switch (SkipWsAndComments())
+			{
+			case .Err(let err):
+				delete tbl;
+				return .Err(err);
+			default:
+			}
 
 			char8 b = mCursor.PeekByte();
 			if (b == ',')
 			{
 				mCursor.AdvanceByte();
-				SkipWsAndComments();
+				switch (SkipWsAndComments())
+				{
+				case .Err(let err):
+					delete tbl;
+					return .Err(err);
+				default:
+				}
 				if (mCursor.PeekByte() == '}')
 				{
 					mCursor.AdvanceByte();
@@ -1394,6 +1546,10 @@ public class TomlParser
 			{
 				if (existing case .Table(let existingTable))
 				{
+					// Cannot navigate into sealed inline tables
+					if (existingTable.IsInlineSealed)
+						return .Err(Error(.InlineTableSealed,
+							scope $"Cannot add keys to sealed inline table via dotted key '{key}'"));
 					current = existingTable;
 				}
 				else
@@ -1423,16 +1579,26 @@ public class TomlParser
 	// Helpers
 	// ================================================================
 
-	private void SkipWsAndComments()
+	/// Skips whitespace and comments. In arrays, newlines are allowed; in inline tables, they are not.
+	private Result<void, TomlParseError> SkipWsAndComments(bool allowNewlines = true)
 	{
 		while (!mCursor.IsEOF)
 		{
 			char8 b = mCursor.PeekByte();
 			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
-			if (b == '#') { mCursor.SkipComment(); continue; }
-			if (b == '\r' || b == '\n') { mCursor.SkipNewline(); continue; }
+			if (b == '#')
+			{
+				switch (mCursor.SkipComment())
+				{
+				case .Err(let err): return .Err(err);
+				default:
+				}
+				continue;
+			}
+			if (allowNewlines && (b == '\r' || b == '\n')) { mCursor.SkipNewline(); continue; }
 			break;
 		}
+		return .Ok;
 	}
 
 	private void SyncPathResolver()

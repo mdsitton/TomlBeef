@@ -13,7 +13,7 @@ public enum TomlErrorKind : uint8
 	ReservedEscape,
 	InvalidUnicodeScalar,
 	ControlCharInString,
-	ControlCharInComment,
+	ControlCharInDocument,
 	InvalidUtf8,
 
 	// Numeric
