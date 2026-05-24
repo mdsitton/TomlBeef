@@ -101,4 +101,17 @@ public class TomlTable
 			return val;
 		return .Err;
 	}
+
+	public TomlTable Clone()
+	{
+		TomlTable result = new TomlTable(mOrigin);
+		result.mIsInlineSealed = mIsInlineSealed;
+		for (int i = 0; i < mKeyOrder.Count; i++)
+		{
+			String key = mKeyOrder[i];
+			TomlValue val = mEntries[key];
+			result.Insert(key, val.Clone());
+		}
+		return result;
+	}
 }

@@ -152,4 +152,91 @@ public enum TomlValue
 			Runtime.FatalError("TomlValue is not a Table");
 		}
 	}
+
+	public Result<StringView> TryGetString()
+	{
+		if (this case .String(let s))
+			return StringView(s);
+		return .Err;
+	}
+
+	public Result<int64> TryGetInteger()
+	{
+		if (this case .Integer(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<double> TryGetFloat()
+	{
+		if (this case .Float(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<bool> TryGetBool()
+	{
+		if (this case .Bool(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<TomlOffsetDateTime> TryGetOffsetDateTime()
+	{
+		if (this case .OffsetDateTime(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<TomlLocalDateTime> TryGetLocalDateTime()
+	{
+		if (this case .LocalDateTime(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<TomlLocalDate> TryGetLocalDate()
+	{
+		if (this case .LocalDate(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<TomlLocalTime> TryGetLocalTime()
+	{
+		if (this case .LocalTime(let v))
+			return v;
+		return .Err;
+	}
+
+	public Result<TomlArray> TryGetArray()
+	{
+		if (this case .Array(let arr))
+			return arr;
+		return .Err;
+	}
+
+	public Result<TomlTable> TryGetTable()
+	{
+		if (this case .Table(let tbl))
+			return tbl;
+		return .Err;
+	}
+
+	public TomlValue Clone()
+	{
+		switch (this)
+		{
+		case .String(let s):      return .String(new String(s));
+		case .Integer(let v):     return .Integer(v);
+		case .Float(let v):       return .Float(v);
+		case .Bool(let v):        return .Bool(v);
+		case .OffsetDateTime(let v): return .OffsetDateTime(v);
+		case .LocalDateTime(let v):  return .LocalDateTime(v);
+		case .LocalDate(let v):      return .LocalDate(v);
+		case .LocalTime(let v):      return .LocalTime(v);
+		case .Array(let arr):     return .Array(arr.Clone());
+		case .Table(let tbl):     return .Table(tbl.Clone());
+		}
+	}
 }

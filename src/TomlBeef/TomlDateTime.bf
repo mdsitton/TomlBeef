@@ -19,6 +19,13 @@ public struct TomlOffsetDateTime
 		int32 hour, int32 minute, int32 second, int64 nanosecond,
 		int32 offsetMinutes)
 	{
+		Runtime.Assert(month >= 1 && month <= 12);
+		Runtime.Assert(day >= 1 && day <= 31);
+		Runtime.Assert(hour >= 0 && hour <= 23);
+		Runtime.Assert(minute >= 0 && minute <= 59);
+		Runtime.Assert(second >= 0 && second <= 60);
+		Runtime.Assert(nanosecond >= 0 && nanosecond <= 999999999);
+		Runtime.Assert(offsetMinutes >= -1439 && offsetMinutes <= 1439);
 		mYear = year;
 		mMonth = month;
 		mDay = day;
@@ -31,7 +38,6 @@ public struct TomlOffsetDateTime
 }
 
 /// Local Date-Time: date + time without timezone info.
-/// Corresponds to TOML's local-date-time type.
 public struct TomlLocalDateTime
 {
 	public int32 mYear;
@@ -45,6 +51,12 @@ public struct TomlLocalDateTime
 	public this(int32 year, int32 month, int32 day,
 		int32 hour, int32 minute, int32 second, int64 nanosecond)
 	{
+		Runtime.Assert(month >= 1 && month <= 12);
+		Runtime.Assert(day >= 1 && day <= 31);
+		Runtime.Assert(hour >= 0 && hour <= 23);
+		Runtime.Assert(minute >= 0 && minute <= 59);
+		Runtime.Assert(second >= 0 && second <= 60);
+		Runtime.Assert(nanosecond >= 0 && nanosecond <= 999999999);
 		mYear = year;
 		mMonth = month;
 		mDay = day;
@@ -56,7 +68,6 @@ public struct TomlLocalDateTime
 }
 
 /// Local Date: date only (year-month-day).
-/// Corresponds to TOML's local-date type.
 public struct TomlLocalDate
 {
 	public int32 mYear;
@@ -65,6 +76,8 @@ public struct TomlLocalDate
 
 	public this(int32 year, int32 month, int32 day)
 	{
+		Runtime.Assert(month >= 1 && month <= 12);
+		Runtime.Assert(day >= 1 && day <= 31);
 		mYear = year;
 		mMonth = month;
 		mDay = day;
@@ -72,7 +85,6 @@ public struct TomlLocalDate
 }
 
 /// Local Time: time of day without date or timezone.
-/// Corresponds to TOML's local-time type.
 public struct TomlLocalTime
 {
 	public int32 mHour;
@@ -82,6 +94,10 @@ public struct TomlLocalTime
 
 	public this(int32 hour, int32 minute, int32 second, int64 nanosecond)
 	{
+		Runtime.Assert(hour >= 0 && hour <= 23);
+		Runtime.Assert(minute >= 0 && minute <= 59);
+		Runtime.Assert(second >= 0 && second <= 60);
+		Runtime.Assert(nanosecond >= 0 && nanosecond <= 999999999);
 		mHour = hour;
 		mMinute = minute;
 		mSecond = second;

@@ -87,6 +87,10 @@ public class TomlSerializer
 		{
 			outStr.Append("nan");
 		}
+		else if (value == 0.0 && (1.0 / value) < 0.0)
+		{
+			outStr.Append("-0");
+		}
 		else
 		{
 			value.ToString(outStr, "R", null);

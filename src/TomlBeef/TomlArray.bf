@@ -46,4 +46,13 @@ public class TomlArray
 		get { return mItems[index]; }
 		set { mItems[index].Dispose(); mItems[index] = value; }
 	}
+
+	public TomlArray Clone()
+	{
+		TomlArray result = new TomlArray(mItems.Count);
+		result.mIsStatic = mIsStatic;
+		for (int i = 0; i < mItems.Count; i++)
+			result.Add(mItems[i].Clone());
+		return result;
+	}
 }
