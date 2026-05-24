@@ -2,22 +2,6 @@ using System;
 
 namespace TomlBeef;
 
-public struct SourceSpan
-{
-	public int mOffset;
-	public int mLength;
-	public int mLine;
-	public int mColumn;
-
-	public this(int offset, int length, int line, int column)
-	{
-		mOffset = offset;
-		mLength = length;
-		mLine = line;
-		mColumn = column;
-	}
-}
-
 public class TomlCursor
 {
 	private StringView mInput;
@@ -56,14 +40,6 @@ public class TomlCursor
 		return mInput[pos];
 	}
 
-	public char32 Peek()
-	{
-		if (mOffset >= mInput.Length) return 0;
-		char8 b0 = mInput[mOffset];
-		if ((uint8)b0 < 0x80) return (char32)b0;
-		return DecodeAt(mOffset);
-	}
-
 	public char32 Advance()
 	{
 		if (mOffset >= mInput.Length) return 0;
@@ -92,7 +68,7 @@ public class TomlCursor
 			return (char32)0xFFFD;
 		}
 
-		char32 cp = DecodeAt(mOffset);
+		char32 cp = DecodeAt(mInput, mOffset, cpLen);
 		mOffset += cpLen;
 		mColumn++;
 		return cp;
@@ -128,7 +104,6 @@ public class TomlCursor
 		if (mOffset + s.Length > mInput.Length) return false;
 		for (int i = 0; i < s.Length; i++)
 			if (mInput[mOffset + i] != s[i]) return false;
-
 		for (int i = 0; i < s.Length; i++)
 			AdvanceByte();
 		return true;
@@ -177,26 +152,6 @@ public class TomlCursor
 		return .Ok;
 	}
 
-	public void SkipToNextLine()
-	{
-		while (mOffset < mInput.Length)
-		{
-			char8 b = mInput[mOffset];
-			if (b == '\r' || b == '\n') { SkipNewline(); break; }
-			AdvanceByte();
-		}
-	}
-
-	public SourceSpan Span(int length = 1)
-	{
-		return SourceSpan(mOffset, length, mLine, mColumn);
-	}
-
-	public TomlParseError Error(TomlErrorKind kind, StringView message, int length = 1)
-	{
-		return TomlParseError(kind, message, mLine, mColumn, mOffset, length);
-	}
-
 	public StringView Slice(int offset, int length)
 	{
 		if (offset < 0 || offset + length > mInput.Length) return StringView();
@@ -212,30 +167,27 @@ public class TomlCursor
 		return 0;
 	}
 
-	private char32 DecodeAt(int offset)
+	private static char32 DecodeAt(StringView input, int offset, int cpLen)
 	{
-		char8 b0 = mInput[offset];
-		int cpLen = Utf8SequenceLength(b0);
-		if (cpLen == 0 || offset + cpLen > mInput.Length) return (char32)0xFFFD;
-
+		char8 b0 = input[offset];
 		char32 cp;
 		switch (cpLen)
 		{
 		case 1: return (char32)b0;
 		case 2:
 			cp = (char32)((uint8)b0 & 0x1F) << 6;
-			cp |= (char32)((uint8)mInput[offset + 1] & 0x3F);
+			cp |= (char32)((uint8)input[offset + 1] & 0x3F);
 			return cp;
 		case 3:
 			cp = (char32)((uint8)b0 & 0x0F) << 12;
-			cp |= (char32)((uint8)mInput[offset + 1] & 0x3F) << 6;
-			cp |= (char32)((uint8)mInput[offset + 2] & 0x3F);
+			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 6;
+			cp |= (char32)((uint8)input[offset + 2] & 0x3F);
 			return cp;
 		case 4:
 			cp = (char32)((uint8)b0 & 0x07) << 18;
-			cp |= (char32)((uint8)mInput[offset + 1] & 0x3F) << 12;
-			cp |= (char32)((uint8)mInput[offset + 2] & 0x3F) << 6;
-			cp |= (char32)((uint8)mInput[offset + 3] & 0x3F);
+			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 12;
+			cp |= (char32)((uint8)input[offset + 2] & 0x3F) << 6;
+			cp |= (char32)((uint8)input[offset + 3] & 0x3F);
 			return cp;
 		default: return (char32)0xFFFD;
 		}

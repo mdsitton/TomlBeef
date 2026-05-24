@@ -304,6 +304,7 @@ public class TomlPathResolver
 		case .LocalTime:      outStr.Append("local time");
 		case .Array:        outStr.Append("array");
 		case .Table:        outStr.Append("table");
+		default:            outStr.Append("unknown");
 		}
 	}
 }

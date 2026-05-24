@@ -94,7 +94,7 @@ public class TomlParser
 			char8 b = mCursor.PeekByte();
 
 			// Reject bare CR (not part of CRLF) and other control chars at document level
-			if ((uint8)b == 0x0D && (uint8)mCursor.PeekByteAt(1) != 0x0A)
+			if (b == '\r' && mCursor.PeekByteAt(1) != '\n')
 				return .Err(Error(.ControlCharInDocument, "Bare CR not allowed"));
 			if ((uint8)b < 0x20 && b != '\t' && b != '\r' && b != '\n')
 				return .Err(Error(.ControlCharInDocument, "Control character in document"));

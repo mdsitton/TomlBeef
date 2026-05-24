@@ -21,6 +21,11 @@ public class TomlTable
 
 	public ~this()
 	{
+		if (mKeyOrder != null)
+		{
+			delete mKeyOrder;
+		}
+
 		if (mEntries != null)
 		{
 			for (var val in mEntries.Values)
@@ -28,13 +33,6 @@ public class TomlTable
 			for (var key in mEntries.Keys)
 				delete key;
 			delete mEntries;
-		}
-
-		if (mKeyOrder != null)
-		{
-			for (int i = 0; i < mKeyOrder.Count; i++)
-				mKeyOrder[i] = null;
-			delete mKeyOrder;
 		}
 	}
 
@@ -94,16 +92,6 @@ public class TomlTable
 		{
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
-		}
-	}
-
-	/// Sets the origin of the table stored at the given key (if it's a table).
-	public void SetTableOrigin(StringView key, TomlTableOrigin origin)
-	{
-		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
-		{
-			TomlTable tbl = null; if (val case .Table(ref tbl))
-				tbl.Origin = origin;
 		}
 	}
 
