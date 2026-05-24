@@ -89,7 +89,7 @@ public class TomlSerializer
 		}
 		else
 		{
-			value.ToString(outStr);
+			value.ToString(outStr, "R", null);
 		}
 
 		outStr.Append("\"}");

@@ -10,12 +10,6 @@ class Program
 		String input = scope String();
 		Console.In.ReadToEnd(input);
 
-		if (input.IsEmpty)
-		{
-			Console.Error.WriteLine("No input on stdin");
-			return 1;
-		}
-
 		TomlParser parser = scope TomlParser();
 		switch (parser.Parse(input))
 		{
