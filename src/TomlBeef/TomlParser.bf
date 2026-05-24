@@ -381,7 +381,7 @@ public class TomlParser
 			if (b == '"')
 			{
 				mCursor.AdvanceByte();
-				return TomlValue.FromString(result);
+				return TomlValue.String(result);
 			}
 			if (b == '\\')
 			{
@@ -428,7 +428,7 @@ public class TomlParser
 				if (mCursor.PeekByteAt(3) != '"')
 				{
 					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
-					return TomlValue.FromString(result);
+					return TomlValue.String(result);
 				}
 			}
 
@@ -586,7 +586,7 @@ public class TomlParser
 			if (b == '\'')
 			{
 				mCursor.AdvanceByte();
-				return TomlValue.FromString(result);
+				return TomlValue.String(result);
 			}
 			if (b == '\r' || b == '\n')
 			{
@@ -621,7 +621,7 @@ public class TomlParser
 				if (mCursor.PeekByteAt(3) != '\'')
 				{
 					mCursor.AdvanceByte(); mCursor.AdvanceByte(); mCursor.AdvanceByte();
-					return TomlValue.FromString(result);
+					return TomlValue.String(result);
 				}
 			}
 
@@ -666,8 +666,8 @@ public class TomlParser
 
 		StringView token = mCursor.Slice(start, mCursor.Offset - start);
 
-		if (token == "true") return TomlValue.FromBool(true);
-		if (token == "false") return TomlValue.FromBool(false);
+		if (token == "true") return TomlValue.Bool(true);
+		if (token == "false") return TomlValue.Bool(false);
 		return ParseBareToken(token);
 	}
 
@@ -703,15 +703,15 @@ public class TomlParser
 		if (token.IsEmpty)
 			return .Err(Error(.UnexpectedToken, "Empty value"));
 
-		if (token == "true") return TomlValue.FromBool(true);
-		if (token == "false") return TomlValue.FromBool(false);
+		if (token == "true") return TomlValue.Bool(true);
+		if (token == "false") return TomlValue.Bool(false);
 
 		if (token == "inf" || token == "+inf")
-			return TomlValue.FromFloat(double.PositiveInfinity);
+			return TomlValue.Float(double.PositiveInfinity);
 		if (token == "-inf")
-			return TomlValue.FromFloat(double.NegativeInfinity);
+			return TomlValue.Float(double.NegativeInfinity);
 		if (token == "nan" || token == "+nan" || token == "-nan")
-			return TomlValue.FromFloat(double.NaN);
+			return TomlValue.Float(double.NaN);
 
 		switch (TryParseDateTime(token))
 		{
@@ -817,14 +817,14 @@ public class TomlParser
 			if (uval > 0x8000000000000000)
 				return .Err(Error(.IntegerOverflow, "Integer overflow"));
 			if (uval == 0x8000000000000000)
-				return TomlValue.FromInteger(-9223372036854775808);
-			return TomlValue.FromInteger(-(int64)uval);
+				return TomlValue.Integer(-9223372036854775808);
+			return TomlValue.Integer(-(int64)uval);
 		}
 		else
 		{
 			if (uval > 0x7FFFFFFFFFFFFFFF)
 				return .Err(Error(.IntegerOverflow, "Integer overflow"));
-			return TomlValue.FromInteger((int64)uval);
+			return TomlValue.Integer((int64)uval);
 		}
 	}
 
@@ -850,7 +850,7 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in hex integer"));
-		return TomlValue.FromInteger((int64)val);
+		return TomlValue.Integer((int64)val);
 	}
 
 	private Result<TomlValue, TomlParseError> ParseOctInt(StringView token, bool negative, int pos)
@@ -871,7 +871,7 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in octal integer"));
-		return TomlValue.FromInteger((int64)val);
+		return TomlValue.Integer((int64)val);
 	}
 
 	private Result<TomlValue, TomlParseError> ParseBinInt(StringView token, bool negative, int pos)
@@ -892,7 +892,7 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in binary integer"));
-		return TomlValue.FromInteger((int64)val);
+		return TomlValue.Integer((int64)val);
 	}
 
 	private Result<TomlValue, TomlParseError> ParseFloatToken(StringView token)
@@ -907,7 +907,7 @@ public class TomlParser
 		switch (Double.Parse(cleanStr))
 		{
 		case .Err: return .Err(Error(.InvalidFloat, "Invalid float value"));
-		case .Ok(let val): return TomlValue.FromFloat(val);
+		case .Ok(let val): return TomlValue.Float(val);
 		}
 	}
 
@@ -990,7 +990,7 @@ public class TomlParser
 			else { return .Err(Error(.InvalidDateTime, "Expected timezone offset")); }
 		}
 
-		return TomlValue.FromOffsetDateTime(TomlOffsetDateTime(year, month, day, hour, minute, second, ns, offsetMinutes));
+		return TomlValue.OffsetDateTime(TomlOffsetDateTime(year, month, day, hour, minute, second, ns, offsetMinutes));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalDateTime(StringView token)
@@ -1009,7 +1009,7 @@ public class TomlParser
 		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns))
 			return .Err(Error(.InvalidTime, "Invalid time"));
 
-		return TomlValue.FromLocalDateTime(TomlLocalDateTime(year, month, day, hour, minute, second, ns));
+		return TomlValue.LocalDateTime(TomlLocalDateTime(year, month, day, hour, minute, second, ns));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalDate(StringView token)
@@ -1019,7 +1019,7 @@ public class TomlParser
 		if (!ParseDatePart(token, ref pos, out year, out month, out day))
 			return .Err(Error(.InvalidDate, "Invalid date"));
 		if (pos != token.Length) return .Err(Error(.InvalidDate, "Trailing characters in date"));
-		return TomlValue.FromLocalDate(TomlLocalDate(year, month, day));
+		return TomlValue.LocalDate(TomlLocalDate(year, month, day));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalTime(StringView token)
@@ -1029,7 +1029,7 @@ public class TomlParser
 		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns))
 			return .Err(Error(.InvalidTime, "Invalid time"));
 		if (pos != token.Length) return .Err(Error(.InvalidTime, "Trailing characters in time"));
-		return TomlValue.FromLocalTime(TomlLocalTime(hour, minute, second, ns));
+		return TomlValue.LocalTime(TomlLocalTime(hour, minute, second, ns));
 	}
 
 	private bool ParseDatePart(StringView token, ref int pos, out int32 year, out int32 month, out int32 day)
@@ -1123,7 +1123,7 @@ public class TomlParser
 		if (mCursor.PeekByte() == ']')
 		{
 			mCursor.AdvanceByte();
-			return TomlValue.FromArray(arr);
+			return TomlValue.Array(arr);
 		}
 
 		while (true)
@@ -1149,14 +1149,14 @@ public class TomlParser
 				if (mCursor.PeekByte() == ']')
 				{
 					mCursor.AdvanceByte();
-					return TomlValue.FromArray(arr);
+					return TomlValue.Array(arr);
 				}
 				continue;
 			}
 			else if (b == ']')
 			{
 				mCursor.AdvanceByte();
-				return TomlValue.FromArray(arr);
+				return TomlValue.Array(arr);
 			}
 			else
 			{
@@ -1180,7 +1180,7 @@ public class TomlParser
 		{
 			mCursor.AdvanceByte();
 			tbl.IsInlineSealed = true;
-			return TomlValue.FromTable(tbl);
+			return TomlValue.Table(tbl);
 		}
 
 		while (true)
@@ -1240,7 +1240,7 @@ public class TomlParser
 				{
 					mCursor.AdvanceByte();
 					tbl.IsInlineSealed = true;
-					return TomlValue.FromTable(tbl);
+					return TomlValue.Table(tbl);
 				}
 				continue;
 			}
@@ -1257,7 +1257,7 @@ public class TomlParser
 		}
 
 		tbl.IsInlineSealed = true;
-		return TomlValue.FromTable(tbl);
+		return TomlValue.Table(tbl);
 	}
 
 	private void InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
@@ -1268,21 +1268,19 @@ public class TomlParser
 			StringView key = keyPath[i];
 			if (current.TryGetValue(key, let existing))
 			{
-				if (existing.IsTable)
+				if (existing case .Table(let existingTable))
 				{
-					current = existing.AsTable;
+					current = existingTable;
 				}
 				else
 				{
-					TomlTable newTbl = new TomlTable(.InlineTable);
-					current.ReplaceValue(key, TomlValue.FromTable(newTbl));
-					current = newTbl;
+					return; // Type conflict: non-table at dotted key path — error is caught at final key
 				}
 			}
 			else
 			{
 				TomlTable newTbl = new TomlTable(.InlineTable);
-				current.Insert(key, TomlValue.FromTable(newTbl));
+				current.Insert(key, TomlValue.Table(newTbl));
 				current = newTbl;
 			}
 		}

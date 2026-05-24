@@ -102,8 +102,8 @@ public class TomlTable
 	{
 		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
 		{
-			if (val.IsTable)
-				val.AsTable.Origin = origin;
+			TomlTable tbl = null; if (val case .Table(ref tbl))
+				tbl.Origin = origin;
 		}
 	}
 

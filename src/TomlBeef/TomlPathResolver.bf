@@ -117,12 +117,9 @@ public class TomlPathResolver
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
-			if (existing.IsTable)
+			TomlTable existingTable = null; if (existing case .Table(ref existingTable))
 			{
-				TomlTable existingTable = existing.AsTable;
-
 				// Bug 2 fix: don't cross into ExplicitHeader tables from dotted-key implicit scope.
-				// Dotted keys (Implicit origin) can only traverse Implicit or ImplicitHeaderSuper tables.
 				if (implicitOrigin == .Implicit && existingTable.Origin == .ExplicitHeader)
 					return .Err(MakeError(.TypeConflict,
 						scope $"Key '{key}' references a table defined by a [table] header — cannot extend with dotted keys",
@@ -131,29 +128,28 @@ public class TomlPathResolver
 				mCurrentTable = existingTable;
 				return .Ok;
 			}
-			else if (existing.IsArray)
+			else if (existing case .Array(let arr))
 			{
 				// Only header navigation can traverse into array-of-tables.
-				// Dotted keys cannot traverse into arrays.
 				if (implicitOrigin == .Implicit)
 					return .Err(MakeError(.TypeConflict,
 						scope $"Cannot use dotted key to access elements of array-of-tables '{key}'", mCurrentOffset));
 
-				TomlArray arr = existing.AsArray;
 				if (arr.Count == 0)
 					return .Err(MakeError(.ArrayElementOrdering,
 						"Cannot access child of empty array-of-tables; define an [[array]] element first", mCurrentOffset));
 				TomlValue lastVal = arr[arr.Count - 1];
-				if (!lastVal.IsTable)
+				TomlTable lastTable = null; if (lastVal case .Table(ref lastTable))
+					mCurrentTable = lastTable;
+				else
 					return .Err(MakeError(.TypeConflict, "Expected table in array-of-tables element", mCurrentOffset));
-				mCurrentTable = lastVal.AsTable;
 				return .Ok;
 			}
 			else
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot use key '{}' as table — it is a ", key);
-				ValueTypeName(existing.mType, msg);
+				ValueTypeName(existing, msg);
 				return .Err(MakeError(.TypeConflict, msg, mCurrentOffset));
 			}
 		}
@@ -164,7 +160,7 @@ public class TomlPathResolver
 				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
 			TomlTable newTable = new TomlTable(implicitOrigin);
-			TomlValue tableVal = TomlValue.FromTable(newTable);
+			TomlValue tableVal =TomlValue.Table(newTable);
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
 			mCurrentPath.Add(new String(key));
@@ -180,16 +176,13 @@ public class TomlPathResolver
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
-			if (existing.IsTable)
+			TomlTable existingTable = null; if (existing case .Table(ref existingTable))
 			{
-				TomlTable existingTable = existing.AsTable;
-
 				// Only duplicate ExplicitHeader→ExplicitHeader is an error.
 				if (origin == .ExplicitHeader && existingTable.Origin == .ExplicitHeader)
 					return .Err(MakeError(.DuplicateTable, scope $"Duplicate table '[{key}]'", mCurrentOffset));
 
 				// Bug 1 fix: Implicit (from dotted key) cannot be redefined with explicit header.
-				// ImplicitHeaderSuper (from header super-path) CAN be redefined.
 				if (existingTable.Origin == .Implicit)
 					return .Err(MakeError(.DuplicateTable,
 						scope $"Cannot redefine implicit table '{key}' with explicit header", mCurrentOffset));
@@ -212,7 +205,7 @@ public class TomlPathResolver
 				mCurrentPath.Add(new String(key));
 				return .Ok;
 			}
-			else if (existing.IsArray)
+			else if (existing case .Array(let arr))
 			{
 				return .Err(MakeError(.TypeConflict,
 					scope $"Cannot define table '{key}' — name already used as array-of-tables", mCurrentOffset));
@@ -221,7 +214,7 @@ public class TomlPathResolver
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot define table '{}' — name already used as ", key);
-				ValueTypeName(existing.mType, msg);
+				ValueTypeName(existing, msg);
 				return .Err(MakeError(.TypeConflict, msg, mCurrentOffset));
 			}
 		}
@@ -231,7 +224,7 @@ public class TomlPathResolver
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
 		TomlTable newTable = new TomlTable(origin);
-		TomlValue tableVal = TomlValue.FromTable(newTable);
+		TomlValue tableVal =TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
 		mCurrentPath.Add(new String(key));
@@ -242,21 +235,21 @@ public class TomlPathResolver
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
-			if (existing.IsArray)
+			TomlArray arr = null; if (existing case .Array(ref arr))
 			{
-				TomlArray arr = existing.AsArray;
+				
 				// Reject append to static array
 				if (arr.mIsStatic)
 					return .Err(MakeError(.AppendToStaticArray,
 						scope $"Cannot define array-of-tables '[[{key}]]' — name already defined as a static array", mCurrentOffset));
 
 				TomlTable newElement = new TomlTable(.ArrayElement);
-				arr.Add(TomlValue.FromTable(newElement));
+				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
 				mCurrentPath.Add(new String(key));
 				return .Ok;
 			}
-			else if (existing.IsTable)
+			else if (existing case .Table)
 			{
 				return .Err(MakeError(.TypeConflict,
 					scope $"Cannot define array-of-tables '[[{key}]]' — name already used as table", mCurrentOffset));
@@ -265,15 +258,15 @@ public class TomlPathResolver
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot define array-of-tables '[[{key}]]' — name already defined as ", key);
-				ValueTypeName(existing.mType, msg);
+				ValueTypeName(existing, msg);
 				return .Err(MakeError(.AppendToStaticArray, msg, mCurrentOffset));
 			}
 		}
 
 		TomlArray newArray = new TomlArray();
 		TomlTable firstElement = new TomlTable(.ArrayElement);
-		newArray.Add(TomlValue.FromTable(firstElement));
-		mCurrentTable.Insert(key, TomlValue.FromArray(newArray));
+		newArray.Add(.Table(firstElement));
+		mCurrentTable.Insert(key,TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
 		mCurrentPath.Add(new String(key));
 		return .Ok;
@@ -297,21 +290,20 @@ public class TomlPathResolver
 		mCurrentTable = mDocument.mRootTable;
 	}
 
-	private void ValueTypeName(TomlValueType type, String outStr)
+	private void ValueTypeName(TomlValue value, String outStr)
 	{
-		switch (type)
+		switch (value)
 		{
-		case .String: outStr.Append("string");
-		case .Integer: outStr.Append("integer");
-		case .Float: outStr.Append("float");
-		case .Bool: outStr.Append("boolean");
+		case .String:       outStr.Append("string");
+		case .Integer:      outStr.Append("integer");
+		case .Float:        outStr.Append("float");
+		case .Bool:         outStr.Append("boolean");
 		case .OffsetDateTime: outStr.Append("offset datetime");
-		case .LocalDateTime: outStr.Append("local datetime");
-		case .LocalDate: outStr.Append("local date");
-		case .LocalTime: outStr.Append("local time");
-		case .Array: outStr.Append("array");
-		case .Table: outStr.Append("table");
-		default: outStr.Append("unknown");
+		case .LocalDateTime:  outStr.Append("local datetime");
+		case .LocalDate:      outStr.Append("local date");
+		case .LocalTime:      outStr.Append("local time");
+		case .Array:        outStr.Append("array");
+		case .Table:        outStr.Append("table");
 		}
 	}
 }

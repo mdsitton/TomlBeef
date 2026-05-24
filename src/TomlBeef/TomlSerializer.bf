@@ -39,19 +39,18 @@ public class TomlSerializer
 
 	private void SerializeValue(TomlValue val, String outStr)
 	{
-		switch (val.mType)
+		switch (val)
 		{
-		case .String: WriteTagged("string", val.AsString, outStr);
-		case .Integer: WriteTagged("integer", val.AsInteger, outStr);
-		case .Float: WriteTaggedFloat("float", val.AsFloat, outStr);
-		case .Bool: WriteTagged("bool", val.AsBool ? "true" : "false", outStr);
-		case .OffsetDateTime: WriteTaggedDateTime("datetime", val.AsOffsetDateTime, outStr);
-		case .LocalDateTime: WriteTaggedLocalDateTime("datetime-local", val.AsLocalDateTime, outStr);
-		case .LocalDate: WriteTaggedLocalDate("date-local", val.AsLocalDate, outStr);
-		case .LocalTime: WriteTaggedLocalTime("time-local", val.AsLocalTime, outStr);
-		case .Array: SerializeArray(val.AsArray, outStr);
-		case .Table: SerializeTable(val.AsTable, outStr);
-		default: outStr.Append("null");
+		case .String(let s):           WriteTagged("string", s, outStr);
+		case .Integer(let i):          WriteTagged("integer", i, outStr);
+		case .Float(let f):            WriteTaggedFloat("float", f, outStr);
+		case .Bool(let b):             WriteTagged("bool", b ? "true" : "false", outStr);
+		case .OffsetDateTime(let dt):  WriteTaggedDateTime("datetime", dt, outStr);
+		case .LocalDateTime(let dt):   WriteTaggedLocalDateTime("datetime-local", dt, outStr);
+		case .LocalDate(let d):        WriteTaggedLocalDate("date-local", d, outStr);
+		case .LocalTime(let t):        WriteTaggedLocalTime("time-local", t, outStr);
+		case .Array(let arr):          SerializeArray(arr, outStr);
+		case .Table(let tbl):          SerializeTable(tbl, outStr);
 		}
 	}
 

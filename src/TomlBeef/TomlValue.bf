@@ -2,158 +2,54 @@ using System;
 
 namespace TomlBeef;
 
-/// The type tag for a TomlValue.
-public enum TomlValueType : uint8
-{
-	String,
-	Integer,
-	Float,
-	Bool,
-	OffsetDateTime,
-	LocalDateTime,
-	LocalDate,
-	LocalTime,
-	Array,
-	Table
-}
-
 /// Origin of a TOML table, used for conflict detection during parsing.
 public enum TomlTableOrigin : uint8
 {
 	Root,
-	Implicit,              // Created by dotted key resolution (e.g., fruit.apple in fruit.apple.color)
-	ImplicitHeaderSuper,   // Created as super-path of a header (e.g., x in [x.y.z])
+	Implicit,
+	ImplicitHeaderSuper,
 	ExplicitHeader,
 	InlineTable,
 	ArrayElement
 }
 
 /// A TOML value — a tagged union supporting all TOML types.
-/// Struct-based with manual disposal of heap-allocated data.
-public struct TomlValue
+public enum TomlValue
 {
-	public TomlValueType mType;
+	case String(String s);
+	case Integer(int64 v);
+	case Float(double v);
+	case Bool(bool v);
+	case OffsetDateTime(TomlOffsetDateTime v);
+	case LocalDateTime(TomlLocalDateTime v);
+	case LocalDate(TomlLocalDate v);
+	case LocalTime(TomlLocalTime v);
+	case Array(TomlArray arr);
+	case Table(TomlTable tbl);
 
-	public String mStringVal;
-	public int64 mIntVal;
-	public double mFloatVal;
-	public bool mBoolVal;
-	public TomlOffsetDateTime mOffsetDtVal;
-	public TomlLocalDateTime mLocalDtVal;
-	public TomlLocalDate mDateVal;
-	public TomlLocalTime mTimeVal;
-	public TomlArray mArrayVal;
-	public TomlTable mTableVal;
+	public bool IsString         => this case .String;
+	public bool IsInteger        => this case .Integer;
+	public bool IsFloat          => this case .Float;
+	public bool IsBool           => this case .Bool;
+	public bool IsOffsetDateTime => this case .OffsetDateTime;
+	public bool IsLocalDateTime  => this case .LocalDateTime;
+	public bool IsLocalDate      => this case .LocalDate;
+	public bool IsLocalTime      => this case .LocalTime;
+	public bool IsArray          => this case .Array;
+	public bool IsTable          => this case .Table;
 
-	public static TomlValue FromString(StringView s)
-	{
-		TomlValue v = default;
-		v.mType = .String;
-		v.mStringVal = new String(s);
-		return v;
-	}
-
-	public static TomlValue FromInteger(int64 val)
-	{
-		TomlValue v = default;
-		v.mType = .Integer;
-		v.mIntVal = val;
-		return v;
-	}
-
-	public static TomlValue FromFloat(double val)
-	{
-		TomlValue v = default;
-		v.mType = .Float;
-		v.mFloatVal = val;
-		return v;
-	}
-
-	public static TomlValue FromBool(bool val)
-	{
-		TomlValue v = default;
-		v.mType = .Bool;
-		v.mBoolVal = val;
-		return v;
-	}
-
-	public static TomlValue FromOffsetDateTime(TomlOffsetDateTime val)
-	{
-		TomlValue v = default;
-		v.mType = .OffsetDateTime;
-		v.mOffsetDtVal = val;
-		return v;
-	}
-
-	public static TomlValue FromLocalDateTime(TomlLocalDateTime val)
-	{
-		TomlValue v = default;
-		v.mType = .LocalDateTime;
-		v.mLocalDtVal = val;
-		return v;
-	}
-
-	public static TomlValue FromLocalDate(TomlLocalDate val)
-	{
-		TomlValue v = default;
-		v.mType = .LocalDate;
-		v.mDateVal = val;
-		return v;
-	}
-
-	public static TomlValue FromLocalTime(TomlLocalTime val)
-	{
-		TomlValue v = default;
-		v.mType = .LocalTime;
-		v.mTimeVal = val;
-		return v;
-	}
-
-	public static TomlValue FromArray(TomlArray arr)
-	{
-		TomlValue v = default;
-		v.mType = .Array;
-		v.mArrayVal = arr;
-		return v;
-	}
-
-	public static TomlValue FromTable(TomlTable tbl)
-	{
-		TomlValue v = default;
-		v.mType = .Table;
-		v.mTableVal = tbl;
-		return v;
-	}
-
-	public bool IsString => mType == .String;
-	public bool IsInteger => mType == .Integer;
-	public bool IsFloat => mType == .Float;
-	public bool IsBool => mType == .Bool;
-	public bool IsOffsetDateTime => mType == .OffsetDateTime;
-	public bool IsLocalDateTime => mType == .LocalDateTime;
-	public bool IsLocalDate => mType == .LocalDate;
-	public bool IsLocalTime => mType == .LocalTime;
-	public bool IsArray => mType == .Array;
-	public bool IsTable => mType == .Table;
-
+	/// Disposes any heap-allocated payload (String, TomlArray, TomlTable).
 	public void Dispose()
 	{
-		switch (mType)
+		switch (this)
 		{
-		case .String:
-			if (mStringVal != null)
-				delete mStringVal;
-			return;
-		case .Array:
-			if (mArrayVal != null)
-				delete mArrayVal;
-			return;
-		case .Table:
-			if (mTableVal != null)
-				delete mTableVal;
-			return;
+		case .String(let s):
+			if (s != null) delete s;
+		case .Array(let arr):
+			if (arr != null) delete arr;
+		case .Table(let tbl):
+			if (tbl != null) delete tbl;
 		default:
-			return;
 		}
 	}
 
@@ -161,53 +57,99 @@ public struct TomlValue
 	{
 		get
 		{
-			Runtime.Assert(mType == .String, "TomlValue is not a String");
-			return StringView(mStringVal);
+			if (this case .String(let s))
+				return StringView(s);
+			Runtime.FatalError("TomlValue is not a String");
 		}
 	}
 
 	public int64 AsInteger
 	{
-		get { return mIntVal; }
+		get
+		{
+			if (this case .Integer(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not an Integer");
+		}
 	}
 
 	public double AsFloat
 	{
-		get { return mFloatVal; }
+		get
+		{
+			if (this case .Float(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not a Float");
+		}
 	}
 
 	public bool AsBool
 	{
-		get { return mBoolVal; }
+		get
+		{
+			if (this case .Bool(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not a Bool");
+		}
 	}
 
 	public TomlOffsetDateTime AsOffsetDateTime
 	{
-		get { return mOffsetDtVal; }
+		get
+		{
+			if (this case .OffsetDateTime(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not an OffsetDateTime");
+		}
 	}
 
 	public TomlLocalDateTime AsLocalDateTime
 	{
-		get { return mLocalDtVal; }
+		get
+		{
+			if (this case .LocalDateTime(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not a LocalDateTime");
+		}
 	}
 
 	public TomlLocalDate AsLocalDate
 	{
-		get { return mDateVal; }
+		get
+		{
+			if (this case .LocalDate(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not a LocalDate");
+		}
 	}
 
 	public TomlLocalTime AsLocalTime
 	{
-		get { return mTimeVal; }
+		get
+		{
+			if (this case .LocalTime(let v))
+				return v;
+			Runtime.FatalError("TomlValue is not a LocalTime");
+		}
 	}
 
 	public TomlArray AsArray
 	{
-		get { return mArrayVal; }
+		get
+		{
+			if (this case .Array(let arr))
+				return arr;
+			Runtime.FatalError("TomlValue is not an Array");
+		}
 	}
 
 	public TomlTable AsTable
 	{
-		get { return mTableVal; }
+		get
+		{
+			if (this case .Table(let tbl))
+				return tbl;
+			Runtime.FatalError("TomlValue is not a Table");
+		}
 	}
 }
