@@ -21,6 +21,7 @@ class Program
 		switch (parser.Parse(input))
 		{
 		case .Err(let err):
+			defer err.Dispose();
 			Console.Error.Write(scope $"Parse error at line {err.mLine}:{err.mColumn}: ");
 			Console.Error.WriteLine(err.mMessage);
 			return 1;

@@ -59,6 +59,10 @@ public class TomlParser
 		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
 			start = 3;
 
+		if (mPathResolver != null) delete mPathResolver;
+		if (mCursor != null) delete mCursor;
+		if (mDocument != null) delete mDocument;
+
 		mCursor = new TomlCursor(StringView(&input.Ptr[start], input.Length - start));
 		mDocument = new TomlDocument();
 		mPathResolver = new TomlPathResolver(mDocument);
@@ -352,6 +356,11 @@ public class TomlParser
 				delete result;
 				return .Err(Error(.UnterminatedString, "Unterminated string key"));
 			}
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
+			{
+				delete result;
+				return .Err(Error(.ControlCharInString, "Control character in string key"));
+			}
 			result.Append(mCursor.Advance());
 		}
 
@@ -375,6 +384,8 @@ public class TomlParser
 			}
 			if (b == '\r' || b == '\n')
 				return .Err(Error(.UnterminatedString, "Unterminated string key"));
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
+				return .Err(Error(.ControlCharInString, "Control character in string key"));
 			mCursor.AdvanceByte();
 		}
 
@@ -555,15 +566,17 @@ public class TomlParser
 
 			if (b == '\r')
 			{
-				mCursor.AdvanceByte();
 				// CR must be part of CRLF in multiline basic string
-				if (mCursor.PeekByte() != '\n')
+				if (mCursor.PeekByteAt(1) == '\n')
+				{
+					mCursor.AdvanceByte(); // consumes \r\n together (CRLF merging)
+					result.Append('\n');
+				}
+				else
 				{
 					delete result;
 					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline basic string"));
 				}
-				mCursor.AdvanceByte();
-				result.Append('\n');
 				continue;
 			}
 			if (b == '\n')
@@ -748,15 +761,17 @@ public class TomlParser
 
 			if (b == '\r')
 			{
-				mCursor.AdvanceByte();
 				// CR must be part of CRLF in multiline literal string
-				if (mCursor.PeekByte() != '\n')
+				if (mCursor.PeekByteAt(1) == '\n')
+				{
+					mCursor.AdvanceByte(); // consumes \r\n together (CRLF merging)
+					result.Append('\n');
+				}
+				else
 				{
 					delete result;
 					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline literal string"));
 				}
-				mCursor.AdvanceByte();
-				result.Append('\n');
 				continue;
 			}
 			if (b == '\n')
@@ -1027,6 +1042,8 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in hex integer"));
+		if (val > 0x7FFFFFFFFFFFFFFF)
+			return .Err(Error(.IntegerOverflow, "Hex integer exceeds signed 64-bit range"));
 		return TomlValue.Integer((int64)val);
 	}
 
@@ -1056,6 +1073,8 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in octal integer"));
+		if (val > 0x7FFFFFFFFFFFFFFF)
+			return .Err(Error(.IntegerOverflow, "Octal integer exceeds signed 64-bit range"));
 		return TomlValue.Integer((int64)val);
 	}
 
@@ -1085,6 +1104,8 @@ public class TomlParser
 			hasDigit = true;
 		}
 		if (!hasDigit) return .Err(Error(.InvalidInteger, "No digits in binary integer"));
+		if (val > 0x7FFFFFFFFFFFFFFF)
+			return .Err(Error(.IntegerOverflow, "Binary integer exceeds signed 64-bit range"));
 		return TomlValue.Integer((int64)val);
 	}
 
@@ -1339,7 +1360,7 @@ public class TomlParser
 	{
 		mCursor.AdvanceByte();
 		TomlArray arr = new TomlArray();
-		arr.mIsStatic = true; // inline [a, b, c] arrays are static
+		arr.IsStatic = true; // inline [a, b, c] arrays are static
 
 		switch (SkipWsAndComments())
 		{

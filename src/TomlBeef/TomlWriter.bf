@@ -27,7 +27,7 @@ public class TomlWriter
 			else if (val.IsArray)
 			{
 				TomlArray arr = val.AsArray;
-				if (arr.mIsStatic)
+				if (arr.IsStatic)
 					WriteKeyValLine(key, val, outStr);
 			}
 			else
@@ -72,7 +72,7 @@ public class TomlWriter
 			if (val.IsArray)
 			{
 				TomlArray arr = val.AsArray;
-				if (!arr.mIsStatic && arr.Count > 0)
+				if (!arr.IsStatic && arr.Count > 0)
 					EmitArrayOfTables(key, arr, pathPrefix, outStr);
 			}
 		}

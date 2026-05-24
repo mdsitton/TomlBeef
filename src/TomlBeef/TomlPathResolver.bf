@@ -8,17 +8,12 @@ namespace TomlBeef;
 public class TomlPathResolver
 {
 	private TomlDocument mDocument;
-	private List<String> mCurrentPath = new List<String>() ~ DeleteContainerAndItems!(_);
 	private TomlTable mCurrentTable;
 
 	public this(TomlDocument doc)
 	{
 		mDocument = doc;
 		mCurrentTable = doc.mRootTable;
-	}
-
-	public ~this()
-	{
 	}
 
 	public int mCurrentLine = 1;
@@ -37,7 +32,6 @@ public class TomlPathResolver
 	public Result<void, TomlParseError> EnterTable(List<String> path)
 	{
 		mCurrentTable = mDocument.mRootTable;
-		mCurrentPath.Clear();
 
 		if (path.Count == 0)
 			return .Ok;
@@ -57,7 +51,6 @@ public class TomlPathResolver
 	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path)
 	{
 		mCurrentTable = mDocument.mRootTable;
-		mCurrentPath.Clear();
 
 		if (path.Count == 0)
 			return .Err(MakeError(.UnexpectedToken, "Empty array-of-tables header", mCurrentOffset));
@@ -163,7 +156,6 @@ public class TomlPathResolver
 			TomlValue tableVal =TomlValue.Table(newTable);
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
-			mCurrentPath.Add(new String(key));
 			return .Ok;
 		}
 
@@ -202,7 +194,6 @@ public class TomlPathResolver
 				}
 
 				mCurrentTable = existingTable;
-				mCurrentPath.Add(new String(key));
 				return .Ok;
 			}
 			else if (existing case .Array(let arr))
@@ -227,7 +218,6 @@ public class TomlPathResolver
 		TomlValue tableVal =TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
-		mCurrentPath.Add(new String(key));
 		return .Ok;
 	}
 
@@ -239,14 +229,13 @@ public class TomlPathResolver
 			{
 				
 				// Reject append to static array
-				if (arr.mIsStatic)
+				if (arr.IsStatic)
 					return .Err(MakeError(.AppendToStaticArray,
 						scope $"Cannot define array-of-tables '[[{key}]]' — name already defined as a static array", mCurrentOffset));
 
 				TomlTable newElement = new TomlTable(.ArrayElement);
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
-				mCurrentPath.Add(new String(key));
 				return .Ok;
 			}
 			else if (existing case .Table)
@@ -268,7 +257,6 @@ public class TomlPathResolver
 		newArray.Add(.Table(firstElement));
 		mCurrentTable.Insert(key,TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
-		mCurrentPath.Add(new String(key));
 		return .Ok;
 	}
 
@@ -286,7 +274,6 @@ public class TomlPathResolver
 
 	public void Reset()
 	{
-		mCurrentPath.Clear();
 		mCurrentTable = mDocument.mRootTable;
 	}
 

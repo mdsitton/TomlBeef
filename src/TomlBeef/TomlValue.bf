@@ -49,7 +49,9 @@ public enum TomlValue
 			if (arr != null) delete arr;
 		case .Table(let tbl):
 			if (tbl != null) delete tbl;
-		default:
+		case .Integer, .Float, .Bool,
+		     .OffsetDateTime, .LocalDateTime,
+		     .LocalDate, .LocalTime:
 		}
 	}
 

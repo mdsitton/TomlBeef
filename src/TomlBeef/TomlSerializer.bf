@@ -89,7 +89,7 @@ public class TomlSerializer
 		}
 		else if (value == 0.0 && (1.0 / value) < 0.0)
 		{
-			outStr.Append("-0");
+			outStr.Append("-0.0");
 		}
 		else
 		{

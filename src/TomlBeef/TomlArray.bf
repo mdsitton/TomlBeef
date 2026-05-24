@@ -6,8 +6,15 @@ namespace TomlBeef;
 /// Represents a TOML array, owning a list of TomlValue items.
 public class TomlArray
 {
-	public List<TomlValue> mItems;
-	public bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
+	private List<TomlValue> mItems;
+	private bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
+
+	/// @brief Whether this array is a static inline array (true) or a dynamic array-of-tables (false).
+	public bool IsStatic
+	{
+		get { return mIsStatic; }
+		set { mIsStatic = value; }
+	}
 
 	public this()
 	{
