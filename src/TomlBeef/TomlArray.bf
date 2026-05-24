@@ -12,11 +12,13 @@ public class TomlArray
 	public this()
 	{
 		mItems = new List<TomlValue>();
+		mIsStatic = false;
 	}
 
 	public this(int capacity)
 	{
 		mItems = new List<TomlValue>(capacity);
+		mIsStatic = false;
 	}
 
 	public ~this()
@@ -42,6 +44,6 @@ public class TomlArray
 	public TomlValue this[int index]
 	{
 		get { return mItems[index]; }
-		set { mItems[index] = value; }
+		set { mItems[index].Dispose(); mItems[index] = value; }
 	}
 }

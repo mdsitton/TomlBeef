@@ -18,11 +18,18 @@ public class TomlParser
 
 	public ~this()
 	{
+		if (mPathResolver != null)
+			delete mPathResolver;
 	}
 
 	public Result<TomlDocument, TomlParseError> Parse(StringView input)
 	{
-		mCursor = new TomlCursor(input);
+		// Skip UTF-8 BOM if present
+		int start = 0;
+		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
+			start = 3;
+
+		mCursor = new TomlCursor(StringView(&input.Ptr[start], input.Length - start));
 		mDocument = new TomlDocument();
 		mPathResolver = new TomlPathResolver(mDocument);
 		mPathResolver.Reset();
@@ -731,11 +738,11 @@ public class TomlParser
 		if (token.IsEmpty)
 			return .Err(Error(.InvalidInteger, "Empty number"));
 
-		bool negative = false;
+		bool hasSign = false;
 		int pos = 0;
 
-		if (token[pos] == '-') { negative = true; pos++; }
-		else if (token[pos] == '+') { pos++; }
+		if (token[pos] == '-') { hasSign = true; pos++; }
+		else if (token[pos] == '+') { hasSign = true; pos++; }
 
 		if (pos >= token.Length)
 			return .Err(Error(.InvalidInteger, "Expected digits after sign"));
@@ -743,9 +750,21 @@ public class TomlParser
 		if (token[pos] == '0' && pos + 1 < token.Length)
 		{
 			char8 next = token[pos + 1];
-			if (next == 'x' || next == 'X') return ParseHexInt(token, negative, pos + 2);
-			if (next == 'o' || next == 'O') return ParseOctInt(token, negative, pos + 2);
-			if (next == 'b' || next == 'B') return ParseBinInt(token, negative, pos + 2);
+			if (next == 'x')
+			{
+				if (hasSign) return .Err(Error(.InvalidInteger, "Hex integers cannot have a sign"));
+				return ParseHexInt(token, pos + 2);
+			}
+			if (next == 'o')
+			{
+				if (hasSign) return .Err(Error(.InvalidInteger, "Octal integers cannot have a sign"));
+				return ParseOctInt(token, pos + 2);
+			}
+			if (next == 'b')
+			{
+				if (hasSign) return .Err(Error(.InvalidInteger, "Binary integers cannot have a sign"));
+				return ParseBinInt(token, pos + 2);
+			}
 		}
 
 		bool hasDot = false;
@@ -828,16 +847,23 @@ public class TomlParser
 		}
 	}
 
-	private Result<TomlValue, TomlParseError> ParseHexInt(StringView token, bool negative, int pos)
+	private Result<TomlValue, TomlParseError> ParseHexInt(StringView token, int pos)
 	{
-		if (negative) return .Err(Error(.InvalidInteger, "Hex integers cannot be negative"));
-
 		uint64 val = 0;
 		bool hasDigit = false;
 		for (int i = pos; i < token.Length; i++)
 		{
 			char8 c = token[i];
-			if (c == '_') continue;
+			if (c == '_')
+			{
+				if (i == pos || i == token.Length - 1)
+					return .Err(Error(.InvalidUnderscore, "Leading or trailing underscore in hex integer"));
+				char8 prev = token[i - 1];
+				char8 nextC = token[i + 1];
+				if (!TomlScanner.IsHexDigit(prev) || !TomlScanner.IsHexDigit(nextC))
+					return .Err(Error(.InvalidUnderscore, "Underscore must be between hex digits"));
+				continue;
+			}
 			uint64 digit;
 			if (c >= '0' && c <= '9') digit = (uint64)(c - '0');
 			else if (c >= 'A' && c <= 'F') digit = (uint64)(c - 'A' + 10);
@@ -853,16 +879,24 @@ public class TomlParser
 		return TomlValue.Integer((int64)val);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseOctInt(StringView token, bool negative, int pos)
+	private Result<TomlValue, TomlParseError> ParseOctInt(StringView token, int pos)
 	{
-		if (negative) return .Err(Error(.InvalidInteger, "Octal integers cannot be negative"));
 
 		uint64 val = 0;
 		bool hasDigit = false;
 		for (int i = pos; i < token.Length; i++)
 		{
 			char8 c = token[i];
-			if (c == '_') continue;
+			if (c == '_')
+			{
+				if (i == pos || i == token.Length - 1)
+					return .Err(Error(.InvalidUnderscore, "Leading or trailing underscore in octal integer"));
+				char8 prev = token[i - 1];
+				char8 nextC = token[i + 1];
+				if (!TomlScanner.IsOctalDigit(prev) || !TomlScanner.IsOctalDigit(nextC))
+					return .Err(Error(.InvalidUnderscore, "Underscore must be between octal digits"));
+				continue;
+			}
 			if (c < '0' || c > '7') return .Err(Error(.InvalidInteger, scope $"Invalid octal digit '{c}'"));
 			uint64 digit = (uint64)(c - '0');
 			if (val > (0xFFFFFFFFFFFFFFFF - digit) / 8)
@@ -874,16 +908,24 @@ public class TomlParser
 		return TomlValue.Integer((int64)val);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseBinInt(StringView token, bool negative, int pos)
+	private Result<TomlValue, TomlParseError> ParseBinInt(StringView token, int pos)
 	{
-		if (negative) return .Err(Error(.InvalidInteger, "Binary integers cannot be negative"));
 
 		uint64 val = 0;
 		bool hasDigit = false;
 		for (int i = pos; i < token.Length; i++)
 		{
 			char8 c = token[i];
-			if (c == '_') continue;
+			if (c == '_')
+			{
+				if (i == pos || i == token.Length - 1)
+					return .Err(Error(.InvalidUnderscore, "Leading or trailing underscore in binary integer"));
+				char8 prev = token[i - 1];
+				char8 nextC = token[i + 1];
+				if (!TomlScanner.IsBinaryDigit(prev) || !TomlScanner.IsBinaryDigit(nextC))
+					return .Err(Error(.InvalidUnderscore, "Underscore must be between binary digits"));
+				continue;
+			}
 			if (c != '0' && c != '1') return .Err(Error(.InvalidInteger, scope $"Invalid binary digit '{c}'"));
 			uint64 digit = (uint64)(c - '0');
 			if (val > (0xFFFFFFFFFFFFFFFF - digit) / 2)
@@ -1225,7 +1267,13 @@ public class TomlParser
 				}
 				else
 				{
-					InsertDottedKeyIntoTable(tbl, keyPath, val);
+					switch (InsertDottedKeyIntoTable(tbl, keyPath, val))
+					{
+					case .Err(let err):
+						delete tbl;
+						return .Err(err);
+					default:
+					}
 				}
 			}
 
@@ -1260,7 +1308,7 @@ public class TomlParser
 		return TomlValue.Table(tbl);
 	}
 
-	private void InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
+	private Result<void, TomlParseError> InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
 	{
 		TomlTable current = tbl;
 		for (int i = 0; i < keyPath.Count - 1; i++)
@@ -1274,7 +1322,10 @@ public class TomlParser
 				}
 				else
 				{
-					return; // Type conflict: non-table at dotted key path — error is caught at final key
+					// Type conflict: dotted key segment is not a table
+					String msg = scope String();
+					msg.AppendF("Key '{}' is not a table — cannot use dotted key path through it", key);
+					return .Err(Error(.TypeConflict, msg));
 				}
 			}
 			else
@@ -1287,9 +1338,9 @@ public class TomlParser
 
 		StringView finalKey = keyPath[keyPath.Count - 1];
 		if (current.ContainsKey(finalKey))
-			current.ReplaceValue(finalKey, value);
-		else
-			current.Insert(finalKey, value);
+			return .Err(Error(.DuplicateKey, scope $"Duplicate key '{finalKey}' in inline table"));
+		current.Insert(finalKey, value);
+		return .Ok;
 	}
 
 	// ================================================================
