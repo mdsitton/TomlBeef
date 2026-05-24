@@ -1,0 +1,11 @@
+build/
+dist/
+bin/
+obj/
+recovery/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe

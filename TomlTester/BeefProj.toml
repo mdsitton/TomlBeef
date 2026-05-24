@@ -1,0 +1,9 @@
+FileVersion = 1
+
+[Project]
+Name = "TomlTester"
+StartupObject = "TomlTester.Program"
+
+[Dependencies]
+corlib = "*"
+TomlBeef = "*"
