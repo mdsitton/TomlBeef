@@ -144,20 +144,10 @@ Prefer Doxygen tags over C# XML tags in this repository.
 ### Correct
 
 ```bf
-/// @brief Compute a diff between two UTF-8 buffers.
-/// @param oldPointer Pointer to the old text bytes. May be NULL only if oldLength is 0.
-/// @param oldLength Number of bytes in the old text.
-/// @param newPointer Pointer to the new text bytes. May be NULL only if newLength is 0.
-/// @param newLength Number of bytes in the new text.
-/// @param options Optional diff options. Pass NULL for defaults.
-/// @param outDiffHandle Receives an opaque handle on success.
-/// @return MINCE_STATUS_OK on success, or an error code on failure.
-[Export, CLink]
-public static MinceStatus mince_diff_compute(
-    uint8* oldPointer, int oldLength,
-    uint8* newPointer, int newLength,
-    MinceDiffOptions* options,
-    void** outDiffHandle)
+/// @brief Parse a TOML string into a document tree.
+/// @param input The TOML text to parse. Must be valid UTF-8.
+/// @return A TomlDocument on success, or a TomlParseError with line/column info on failure.
+public Result<TomlDocument, TomlParseError> Parse(StringView input)
 ```
 
 ### Repository-preferred incorrect style
@@ -190,17 +180,17 @@ public const int DefaultMaxInputBytes = 16 * 1024 * 1024;
 
 ```bf
 // CORRECT — explicit public on API surface
-public struct Utf8Slice
+public struct TomlCursor
 {
-    public uint8* Ptr { get { return mPointer; } }
+    public int Line { get; }
 
-    uint8* mPointer; // private by default
+    int mOffset; // private by default
 }
 
 // WRONG — missing public, defaults to private
-struct Utf8Slice
+struct TomlCursor
 {
-    uint8* Ptr { get { return mPointer; } }
+    public int Line { get; }
 }
 ```
 
@@ -210,12 +200,12 @@ Use expected-type shorthand when the target type is obvious and doing so improve
 
 ```bf
 // VERBOSE
-return Result<void, MinceError>.Err(MinceError.InvalidArgument);
-MinceDiffOptions options = MinceDiffOptions();
+return Result<void, TomlParseError>.Err(TomlParseError(.InvalidUtf8, "message", 0, 0, 0));
+TomlParser parser = TomlParser(.V1_1);
 
 // PREFERRED
-return .Err(.InvalidArgument);
-MinceDiffOptions options = .();
+return .Err(TomlParseError(.InvalidUtf8, "message", 0, 0, 0));
+TomlParser parser = scope .(.V1_1);
 ```
 
 The `.` shorthand also resolves enum cases in pattern matching:
@@ -257,7 +247,7 @@ public struct LineIndex
 
 ```bf
 // CORRECT — field with automatic cleanup
-private List<DiffEdit> mEdits = new List<DiffEdit>() ~ delete _;
+private List<TomlValue> mItems = new List<TomlValue>() ~ DeleteContainerAndDisposeItems!(_);
 
 // CORRECT — local allocation with deferred cleanup
 int[] temp = new int[1024];
@@ -296,17 +286,15 @@ builder.AppendF("Error: {}", code);
 
 Project rule:
 
-- Use `Result<T, MinceError>` for recoverable Beef-side errors.
-- Use `MinceStatus` only at the C ABI boundary.
-- If the C ABI depends on direct casting between `MinceError` and `MinceStatus`, keep their explicit values aligned.
+- Use `Result<T, TomlParseError>` for fallible operations.
+- Propagate errors with `if (X case .Err(let e)) return .Err(e);`.
 
 ```bf
-// CORRECT — Beef API returns Result
-public static Result<void, MinceError> Append(StringView text)
+// CORRECT — parser returns Result
+public Result<TomlDocument, TomlParseError> Parse(StringView input)
 
-// CORRECT — C ABI returns status enum
-[Export, CLink]
-public static MinceStatus mince_diff_compute(...)
+// CORRECT — path resolver returns Result
+private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value)
 ```
 
 ### No exceptions
@@ -329,85 +317,11 @@ var result = Try!(DoSomethingFallible());
 |------|-----------|----------|
 | `String` | Owned, mutable | Internal buffers, owned copies |
 | `StringView` | Borrowed | Function parameters, temporary views |
-| `Utf8Slice` | Borrowed | This repository's raw byte-view type in the text subsystem |
-| `char8*` | Raw pointer | FFI boundaries, low-level byte access |
+| `char8*` | Raw pointer | Low-level byte access |
 
 - Prefer `StringView` over `String` for borrowed input parameters.
 - Never store a `StringView` in a long-lived object unless you also own the backing storage.
 - Use `String` output buffers when you want the caller to control allocation.
-
-## C ABI Export Conventions
-
-### Use both attributes for exported C ABI symbols with exact C names
-
-```bf
-[Export, CLink]
-public static MinceStatus mince_diff_compute(...)
-```
-
-- `[Export]` exports the symbol.
-- `[CLink]` uses a C link name instead of C++-style mangling.
-
-For this repository's C ABI, use both together unless you have a documented reason not to.
-
-### References vs pointers
-
-- Prefer `ref` and `out` for internal Beef APIs.
-- Prefer raw pointers (`uint8*`, `void*`, etc.) at the C ABI boundary and in other low-level code where pointer semantics are intentional.
-- `out` parameters must be assigned before the method returns.
-
-```bf
-// CORRECT — internal Beef API
-public static void GetStats(StringView text, out int words, out int lines)
-
-// CORRECT — C ABI FFI
-[Export, CLink]
-public static void mince_get_stats(uint8* text_ptr, int text_len, int* out_words, int* out_lines)
-```
-
-### [CRepr] structs for C-visible data
-
-```bf
-[CRepr]
-public struct MinceDiffOptions
-{
-    public uint32 size;
-    public uint32 max_input_bytes;
-    ...
-}
-```
-
-- Use `[CRepr]` for C-visible structs.
-- Project rule: versioned C ABI structs should place `uint32 size` first for forward compatibility.
-- Keep the Beef `[CRepr]` struct and the C header declaration exactly aligned.
-- After changing either, update an offset/layout verification test.
-
-### Opaque handles
-
-- Use `void*` for opaque handles in the C ABI.
-- Inside Beef, recover the concrete object with `Internal.UnsafeCastToObject` or other appropriate unsafe cast helpers.
-- Document the concrete backing type in the Beef doc comment.
-
-```bf
-/// @brief Destroy a diff handle previously returned by mince_diff_compute.
-/// @param diffHandle The opaque handle. Safe to pass NULL (no-op).
-[Export, CLink]
-public static void mince_diff_destroy(void* diffHandle)
-{
-    if (diffHandle == null)
-        return;
-
-    var result = (DiffResult)Internal.UnsafeCastToObject(diffHandle);
-    delete result;
-}
-```
-
-### Null rules for this repository's C ABI
-
-- `ptr == NULL` is valid only when the corresponding length is 0.
-- Required output pointers must be non-null.
-- Options pointers may be null to request defaults.
-- Validate required pointers early and return `.InvalidArgument` on contract violations.
 
 ## Naming Conventions
 
@@ -415,35 +329,11 @@ public static void mince_diff_destroy(void* diffHandle)
 
 | Kind | Convention | Example |
 |------|-----------|---------|
-| Types | PascalCase | `DiffResult`, `MinceStatus` |
-| Methods/functions | PascalCase | `Compute`, `RenderUnified` |
+| Types | PascalCase | `TomlParser`, `TomlDocument` |
+| Methods/functions | PascalCase | `Parse`, `TryGetString` |
 | Fields (public) | camelCase | `maxInputBytes` |
-| Fields (private) | `m` + PascalCase | `mEdits`, `mOldText` |
+| Fields (private) | `m` + PascalCase | `mEntries`, `mRootTable` |
 | Constants / enum values | PascalCase | `DefaultMaxInputBytes`, `Ok` |
-| C ABI functions | `snake_case` with `mince_` prefix | `mince_diff_compute` |
-| C ABI types | PascalCase with `Mince` prefix | `MinceDiffOptions` |
-| C ABI struct fields | `snake_case` | `max_input_bytes` |
-
-### Consistency across layers
-
-Use consistent semantic names across the Beef API, the C ABI export layer, and the C header.
-
-```bf
-// Beef internal
-public static Result<void, MinceError> Compute(StringView oldText, StringView newText, ...)
-
-// C ABI export
-public static MinceStatus mince_diff_compute(uint8* oldPointer, int oldLength, ...)
-
-// C header
-MinceStatus mince_diff_compute(const uint8_t* old_pointer, size_t old_len, ...);
-```
-
-Prefer:
-
-- `oldText` / `newText` for `StringView`
-- `oldPointer` / `newPointer` for raw `uint8*`
-- `oldBytes` / `newBytes` when emphasizing byte-level contracts
 
 ## Code Organization
 
