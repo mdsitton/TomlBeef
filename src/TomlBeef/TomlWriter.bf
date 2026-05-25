@@ -5,6 +5,13 @@ namespace TomlBeef;
 
 public class TomlWriter
 {
+	private TomlVersion mVersion;
+
+	public this(TomlVersion version = .V1_1)
+	{
+		mVersion = version;
+	}
+
 	public void Write(TomlDocument doc, String outStr)
 	{
 		WriteTable(doc.mRootTable, "", outStr);
@@ -189,7 +196,12 @@ public class TomlWriter
 			case '\n': outStr.Append("\\n"); break;
 			case '\f': outStr.Append("\\f"); break;
 			case '\r': outStr.Append("\\r"); break;
-			case (char8)0x1B: outStr.Append("\\e"); break;
+			case (char8)0x1B:
+			if (mVersion == .V1_0)
+				outStr.Append("\\u001b");
+			else
+				outStr.Append("\\e");
+			break;
 			default:
 				if ((uint8)c < 0x20 || (uint8)c == 0x7F)
 				{

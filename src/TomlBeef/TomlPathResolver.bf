@@ -239,7 +239,7 @@ public class TomlPathResolver
 			else
 			{
 				String msg = scope String();
-				msg.AppendF("Cannot define array-of-tables '[[{key}]]' — name already defined as ", key);
+				msg.AppendF("Cannot define array-of-tables '[[{}]]' — name already defined as ", key);
 				ValueTypeName(existing, msg);
 				return .Err(MakeError(.AppendToStaticArray, msg, mCurrentOffset));
 			}

@@ -9,8 +9,14 @@ public class TomlParser
 	private TomlCursor mCursor ~ delete _;
 	private TomlDocument mDocument ~ delete _;
 	private TomlPathResolver mPathResolver ~ delete _;
+	private TomlVersion mVersion;
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
+
+	public this(TomlVersion version = .V1_1)
+	{
+		mVersion = version;
+	}
 
 	public Result<TomlDocument, TomlParseError> Parse(StringView input)
 	{
@@ -53,7 +59,12 @@ public class TomlParser
 		// Skip UTF-8 BOM if present
 		int start = 0;
 		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
+		{
 			start = 3;
+			// Reject a second BOM immediately following the first
+			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
+		}
 
 		if (mPathResolver != null) delete mPathResolver;
 		if (mCursor != null) delete mCursor;
@@ -92,6 +103,10 @@ public class TomlParser
 				break;
 
 			char8 b = mCursor.PeekByte();
+
+			// Reject BOM not at start of file
+			if ((uint8)b == 0xEF && (uint8)mCursor.PeekByteAt(1) == 0xBB && (uint8)mCursor.PeekByteAt(2) == 0xBF)
+				return .Err(Error(.ControlCharInDocument, "BOM must only appear at start of file"));
 
 			// Reject bare CR (not part of CRLF) and other control chars at document level
 			if (b == '\r' && mCursor.PeekByteAt(1) != '\n')
@@ -589,10 +604,16 @@ public class TomlParser
 		case 'n': result.Append('\n'); return .Ok;
 		case 'f': result.Append('\f'); return .Ok;
 		case 'r': result.Append('\r'); return .Ok;
-		case 'e': result.Append((char8)0x1B); return .Ok;
+		case 'e':
+			if (mVersion == .V1_0)
+				return .Err(Error(.ReservedEscape, "\\e escape requires TOML v1.1"));
+			result.Append((char8)0x1B); return .Ok;
 		case '"': result.Append('"'); return .Ok;
 		case '\\': result.Append('\\'); return .Ok;
-		case 'x': return ParseHexEscape(result, 2);
+		case 'x':
+			if (mVersion == .V1_0)
+				return .Err(Error(.ReservedEscape, "\\x escape requires TOML v1.1"));
+			return ParseHexEscape(result, 2);
 		case 'u': return ParseHexEscape(result, 4);
 		case 'U': return ParseHexEscape(result, 8);
 		default:
@@ -1172,8 +1193,11 @@ public class TomlParser
 		else return .Err(Error(.InvalidDateTime, "Expected date-time separator"));
 
 		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
-		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns))
+		bool secondsOmitted = false;
+		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time in datetime"));
+		if (mVersion == .V1_0 && secondsOmitted)
+			return .Err(Error(.InvalidTime, "Seconds are required in TOML v1.0"));
 
 		int32 offsetMinutes = 0;
 		if (pos >= token.Length)
@@ -1219,8 +1243,11 @@ public class TomlParser
 		else return .Err(Error(.InvalidDateTime, "Expected date-time separator"));
 
 		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
-		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns))
+		bool secondsOmitted = false;
+		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time"));
+		if (mVersion == .V1_0 && secondsOmitted)
+			return .Err(Error(.InvalidTime, "Seconds are required in TOML v1.0"));
 
 		return TomlValue.LocalDateTime(TomlLocalDateTime(year, month, day, hour, minute, second, ns));
 	}
@@ -1239,8 +1266,11 @@ public class TomlParser
 	{
 		int pos = 0;
 		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
-		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns))
+		bool secondsOmitted = false;
+		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time"));
+		if (mVersion == .V1_0 && secondsOmitted)
+			return .Err(Error(.InvalidTime, "Seconds are required in TOML v1.0"));
 		if (pos != token.Length) return .Err(Error(.InvalidTime, "Trailing characters in time"));
 		return TomlValue.LocalTime(TomlLocalTime(hour, minute, second, ns));
 	}
@@ -1271,9 +1301,12 @@ public class TomlParser
 		return true;
 	}
 
-	private bool ParseTimePart(StringView token, ref int pos, out int32 hour, out int32 minute, out int32 second, out int64 nanosecond)
+	private bool ParseTimePart(StringView token, ref int pos,
+		out int32 hour, out int32 minute, out int32 second, out int64 nanosecond,
+		out bool secondsOmitted)
 	{
 		hour = 0; minute = 0; second = 0; nanosecond = 0;
+		secondsOmitted = true;
 		if (!TryReadNDigits(token, ref pos, 2, out hour)) return false;
 		if (hour > 23) return false;
 		if (pos >= token.Length || token[pos] != ':') return false;
@@ -1283,6 +1316,7 @@ public class TomlParser
 
 		if (pos < token.Length && token[pos] == ':')
 		{
+			secondsOmitted = false;
 			pos++;
 			if (!TryReadNDigits(token, ref pos, 2, out second)) return false;
 			if (second > 60) return false; // 60 for leap seconds
@@ -1407,7 +1441,7 @@ public class TomlParser
 		mCursor.AdvanceByte();
 		TomlTable tbl = new TomlTable(.InlineTable);
 
-		if (SkipWsAndComments() case .Err(let e))
+		if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 		{
 			delete tbl;
 			return .Err(e);
@@ -1421,7 +1455,7 @@ public class TomlParser
 
 		while (true)
 		{
-			if (SkipWsAndComments() case .Err(let e))
+			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 			{
 				delete tbl;
 				return .Err(e);
@@ -1469,7 +1503,7 @@ public class TomlParser
 				}
 			}
 
-			if (SkipWsAndComments() case .Err(let e))
+			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 			{
 				delete tbl;
 				return .Err(e);
@@ -1479,7 +1513,15 @@ public class TomlParser
 			if (b == ',')
 			{
 				mCursor.AdvanceByte();
-				if (SkipWsAndComments() case .Err(let e))
+				mCursor.SkipWhitespace();
+				// Trailing comma: reject in v1.0
+				if (mVersion == .V1_0 && mCursor.PeekByte() == '}')
+				{
+					delete tbl;
+					return .Err(Error(.UnexpectedToken,
+						"Trailing comma in inline table requires TOML v1.1"));
+				}
+				if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 				{
 					delete tbl;
 					return .Err(e);
