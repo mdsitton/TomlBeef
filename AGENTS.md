@@ -14,6 +14,7 @@
 - **Always use `edit` for changes to existing files**, never `write` unless creating a new file or doing a complete rewrite.
 - **When using `edit` with multiple changes** in the same file, merge nearby changes into a single edit call with multiple entries in the `edits` array.
 - **Do not include large unchanged regions** in `edits[].oldText`. Keep it as small as possible while still being unique.
+- **NEVER REVERT CODE USING GIT OR ANY VERSION CONTROL.** Do not use `git checkout`, `git revert`, `git reset`, or any similar command that discards or rolls back code changes. This destroys work and context. If you think a revert is needed, **end your turn and ask for explicit permission first.**
 
 ## Doc Comment Style
 
