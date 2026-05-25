@@ -7,6 +7,8 @@
 - Beef uses manual and scope-based memory management. There is no tracing garbage collector.
 - This project currently targets Linux64 first. Treat Windows/macOS support as deferred unless project files or CI say otherwise.
 - Preferred CLI tool: `beefbuild` on Linux, `BeefBuild` on Windows. Use from `PATH`.
+- Treat `BJSON/` and `toml-test/` as external upstream/reference material; do not edit them unless the task explicitly targets those dependencies.
+- Treat `recovery/` as forensic/generated reference material; consult it only for historical context and do not edit it unless explicitly requested.
 
 ## Critical rules
 
@@ -15,6 +17,7 @@
 - **When using `edit` with multiple changes** in the same file, merge nearby changes into a single edit call with multiple entries in the `edits` array.
 - **Do not include large unchanged regions** in `edits[].oldText`. Keep it as small as possible while still being unique.
 - **NEVER REVERT CODE USING GIT OR ANY VERSION CONTROL.** Do not use `git checkout`, `git revert`, `git reset`, or any similar command that discards or rolls back code changes. This destroys work and context. If you think a revert is needed, **end your turn and ask for explicit permission first.**
+- **Verify Beef source/project changes.** After modifying `.bf`, `BeefProj.toml`, or workspace files, run the most relevant `beefbuild` check (`beefbuild -test`, `beefbuild -run`, or `beefbuild -config=Release -run`) and report results. For docs-only edits (including `AGENTS.md`), no build is required. If verification cannot be run, say why.
 
 ## Beef Language Gotchas
 
@@ -28,12 +31,14 @@ These are non-obvious Beef behaviors discovered through debugging. Violating the
 - **`~ delete _` is preferred** over manual `~this()` methods for field-level cleanup.
 - **`DeleteContainerAndDisposeItems!`, `ClearAndDeleteItems!`, `DeleteDictionaryAndKeys!`** are built-in mixins for container cleanup. Use them instead of manual loops.
 - **`defer` on a mixin requires a block wrapper**: `defer { ClearAndDeleteItems!(x); }` — NOT `defer ClearAndDeleteItems!(x);`
+- **`defer` runs in LIFO order.** For `defer SomeCall(arg)`, `arg` and `this` are evaluated immediately; for `defer { ... }`, captured variables are read when the scope exits.
 - **`delete` on value types (enums, structs) is a no-op.** Types without `~this()` (which structs can't have) need explicit `.Dispose()`.
 
 ### String formatting
 
-- **`$\"...{var}...\"` interpolation** is for string literals (`scope $\"key={key}\"`). Variable names are captured from scope.
-- **`AppendF(\"...{0}...\" , arg)`** uses `{0}` positional placeholders. Do NOT use `{variable}` syntax in `AppendF` — it compiles but crashes at runtime.
+- **`$"...{var}..."` interpolation** is for string literals (`scope $"key={key}"`). Variable names are captured from scope.
+- **`AppendF("...{}...", arg)` / `AppendF("...{0}...", arg)`** use positional placeholders. Do NOT use `{variable}` syntax in `AppendF` — it compiles but crashes at runtime.
+- **Do not mutate string literals.** `String s = "literal"; s.Append(...)` attempts to mutate read-only literal storage. Use `scope String()..Append(...)` or `scope $"..."`.
 - **`StringView.Substring(pos)` and `Substring(pos, length)`** exist. Prefer them over raw `StringView(&ptr[offset], length)`.
 
 ### Switch & pattern matching
@@ -63,6 +68,8 @@ These are non-obvious Beef behaviors discovered through debugging. Violating the
 - **`char8` vs `int` comparisons** need explicit `(uint8)` casts when comparing with hex literals like `0xEF`.
 - **Shadowed variable warnings (BF4200)** — reusing a name like `e` in nested `case .Err(let e)` produces warnings. Use unique names.
 - **`out` and `var` are mutually exclusive in parameter position.** You write `out existingVar` to assign to a pre-existing variable, or `var newVar` to declare inline. Writing `out var x` does **not** compile in Beef. The `out` keyword always pairs with a declared variable in an outer scope. Use `var` for inline declaration with type inference.
+- **Reserved identifiers include `box`.** Do not use `box` as a local/parameter/field name. For generated identifiers that may collide with keywords, prefix with `@` or use `Compiler.Identifier.GetSourceName`.
+- **Prefer Beef primitive aliases** (`int32`, `uint8`, `float`, `bool`) over wrapper type names such as `System.Int32`. Wrapper types are primarily for boxing/reflection and can create conversion friction.
 
 #### Special type references
 
@@ -124,7 +131,7 @@ Release builds strip debug info. Always debug against the Debug configuration (`
 
 - **Use `Result<T, E>` for fallible operations.** Propagate with `if (X case .Err(let e)) return .Err(e);`
 - **`scope String()` for temporary strings** in error messages is fine as long as the message is consumed immediately (e.g., copied into a `TomlParseError`).
-- **Don't mix `{key}` interpolation with `AppendF`** — it silently compiles wrong. Use `scope $\"...\"` for interpolation, `AppendF(\"{}\", arg)` for positional.
+- **Don't mix `{key}` interpolation with `AppendF`** — it silently compiles wrong. Use `scope $"..."` for interpolation, `AppendF("{}", arg)` for positional.
 
 ## Doc Comment Style
 
@@ -171,6 +178,12 @@ public const int DefaultMaxInputBytes = 16 * 1024 * 1024;
 ```
 
 ## Beef Language Conventions
+
+### Imports (`using`)
+
+- Keep all `using` directives at the top of the file.
+- Prefer ordering: `System*` namespaces first, then external/dependency namespaces, then project/app namespaces. Remove unused imports.
+- Common imports: `System.Collections` for `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`; `System.IO` for `File`, `Directory`, `Path`, streams; `System.Diagnostics` for `Debug` and `Stopwatch`; `System.Threading` for `Thread`, `Monitor`, `Interlocked`.
 
 ### Visibility
 
@@ -236,6 +249,12 @@ public struct LineIndex
     public void Increment() mut { mCount++; }
 }
 ```
+
+### Properties and fields
+
+- Beef properties are methods. Use properties for validation, computed values, ref returns, or API compatibility; simple data structs may use fields when no logic is needed.
+- A property setter on a struct that mutates fields must be marked `set mut`.
+- Ref-return properties (`ref T Prop => ref mValue`) expose mutation through assignment and by-reference calls; use them deliberately.
 
 ### Memory management
 
@@ -323,6 +342,7 @@ var result = Try!(DoSomethingFallible());
 - Prefer `StringView` over `String` for borrowed input parameters.
 - Never store a `StringView` in a long-lived object unless you also own the backing storage.
 - Use `String` output buffers when you want the caller to control allocation.
+- Prefer APIs that append into caller-provided `String` buffers for produced strings. Do not return `new String` unless ownership is explicit, and never return a `scope String`.
 
 ## Naming Conventions
 
@@ -334,6 +354,7 @@ var result = Try!(DoSomethingFallible());
 | Methods/functions | PascalCase | `Parse`, `TryGetString` |
 | Fields (public) | camelCase | `maxInputBytes` |
 | Fields (private) | `m` + PascalCase | `mEntries`, `mRootTable` |
+| Fields (static/private) | `s` + PascalCase | `sScratchBuffer` |
 | Constants / enum values | PascalCase | `DefaultMaxInputBytes`, `Ok` |
 
 ## Code Organization
@@ -349,11 +370,16 @@ Official Beef sample projects do not enumerate `src/` explicitly in `BeefProj.to
 
 ## Build and Test Conventions
 
+### General
+
+- Use `beefbuild -help` as the source of truth for supported CLI flags; on Linux, prefer the lowercase `beefbuild` executable.
+- For parser/serializer behavior changes, run the relevant repository acceptance scripts as well as Beef tests (for example `./test-toml.sh` and/or `./test-roundtrip.sh`).
+
 ### Running tests
 
 - `[Test]` methods must be static.
 - Keep repository tests under `src/tests/` unless the existing workspace already uses a different layout.
-- Run tests with: `BeefBuild -test`
+- Run tests with: `beefbuild -test`
 
 ### Running programs with arguments
 
@@ -363,8 +389,8 @@ Official Beef sample projects do not enumerate `src/` explicitly in `BeefProj.to
 - Not yet shown in `-help` output.
 
 ```bash
-BeefBuild -run -args hello world             # args = ["hello", "world"]
-BeefBuild -run -args "arg with spaces" more  # args = ["arg with spaces", "more"]
+beefbuild -run -args hello world             # args = ["hello", "world"]
+beefbuild -run -args "arg with spaces" more  # args = ["arg with spaces", "more"]
 ```
 
 ## References
