@@ -29,7 +29,7 @@ static class TomlTest
 		if (doc.Read(input) case .Err(let e))
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		else
-			Test.Assert(doc.mRootTable.Count == 1);
+			Test.Assert(doc.RootTable.Count == 1);
 	}
 
 	[Test]
@@ -146,7 +146,7 @@ static class TomlTest
 		}
 	}
 
-	private static bool TomlDocumentEquals(TomlDocument a, TomlDocument b) => TomlTableEquals(a.mRootTable, b.mRootTable);
+	private static bool TomlDocumentEquals(TomlDocument a, TomlDocument b) => TomlTableEquals(a.RootTable, b.RootTable);
 
 	private static bool TomlTableEquals(TomlTable a, TomlTable b)
 	{

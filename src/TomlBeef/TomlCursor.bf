@@ -2,7 +2,7 @@ using System;
 
 namespace TomlBeef;
 
-public class TomlCursor
+class TomlCursor
 {
 	private StringView mInput;
 	private int mOffset;

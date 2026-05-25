@@ -222,7 +222,7 @@ Keep the existing `AsXxx` properties for internal use (they assert correctness).
 
 ### Problem
 
-Users must reach into `doc.mRootTable` and manually navigate the table tree. No path-based lookup.
+Users must reach into `doc.RootTable` and manually navigate the table tree. No path-based lookup.
 
 ### Implementation
 

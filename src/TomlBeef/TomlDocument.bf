@@ -40,10 +40,24 @@ public struct TomlWriteConfig
 /// Owns the complete value tree; disposal of the document cleans up everything.
 public class TomlDocument
 {
+	/// @brief Global default read configuration. Set once at startup before any Read() calls.
+	/// Not thread-safe — changing this while other threads are reading produces undefined behavior.
 	public static TomlReadConfig DefaultReadConfig = .();
+
+	/// @brief Global default write configuration. Set once at startup before any Write() calls.
+	/// Not thread-safe — changing this while other threads are writing produces undefined behavior.
 	public static TomlWriteConfig DefaultWriteConfig = .();
 
-	public TomlTable mRootTable ~ delete _;
+	private TomlTable mRootTable ~ delete _;
+
+	/// @brief The document's root table (read-only). Modify via Insert/Remove, or use Read() to replace.
+	public TomlTable RootTable => mRootTable;
+
+	/// @brief Remove all content from this document.
+	public void Clear()
+	{
+		mRootTable.Clear();
+	}
 
 	public this()
 	{
@@ -99,6 +113,14 @@ public class TomlDocument
 	public void Write(String output, TomlWriteConfig config)
 	{
 		TomlWriterImpl.Write(this, output, config.Version);
+	}
+
+	/// @brief Remove a key and its value from the root table.
+	/// @param key The key to remove.
+	/// @return True if the key was found and removed.
+	public bool Remove(StringView key)
+	{
+		return mRootTable.Remove(key);
 	}
 
 	public Result<TomlValue> Get(StringView dottedPath)

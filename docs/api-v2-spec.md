@@ -14,7 +14,7 @@
 │  Write   doc.Write(output)                        │
 │  Write   doc.Write(output, config)                │
 │  Access  doc.Get(path), doc.TryGetString(...)     │
-│  Build   doc.mRootTable.Insert(...), etc.         │
+│  Build   doc.RootTable.Insert(...), etc.         │
 │  Dispose defer delete doc                         │
 └──────────────────────────────────────────────────┘
 ```
@@ -90,7 +90,8 @@ TomlDocument.DefaultWriteConfig = .() { Version = .V1_0 };
 /// Owns the complete value tree; disposal cleans up everything.
 public class TomlDocument
 {
-    public TomlTable mRootTable ~ delete _;
+    private TomlTable mRootTable ~ delete _;
+    public TomlTable RootTable => mRootTable;
 
     /// @brief Create an empty document with a fresh root table.
     public this()
@@ -244,8 +245,8 @@ if (doc.TryGetString("name", var name))
 var doc = new TomlDocument();
 defer delete doc;
 
-doc.mRootTable.Insert("name", .String(new String("TomlBeef")));
-doc.mRootTable.Insert("version", .Integer(42));
+doc.RootTable.Insert("name", .String(new String("TomlBeef")));
+doc.RootTable.Insert("version", .Integer(42));
 
 String output = scope String();
 doc.Write(output);
@@ -317,7 +318,7 @@ Not public. The class exists to thread mutable parse state (cursor, path resolve
 class TomlParserImpl
 {
     private TomlCursor mCursor ~ delete _;
-    private TomlPathResolver mPathResolver ~ delete _;
+    private TomlPathResolver mPathResolver;  // borrowed from caller
     private TomlVersion mVersion;
     private int mDepth = 0;
     private const int mMaxDepth = 256;
@@ -329,17 +330,16 @@ class TomlParserImpl
 
 Key changes from current:
 - `mDocument` / `mRootTable` field removed — the target table is threaded through `TomlPathResolver` only
-- Target table passed in by caller; parser constructs path resolver with it and never holds a direct reference
-- On error: `target` may contain partial data from the failed parse. The caller handles cleanup
-- On success: `target` is populated; caller integrates it into the document
-- `TomlPathResolver` constructed with the target table directly
+- Path resolver passed in by caller (constructed in `TomlDocument.Read`); parser borrows it, never owns
+- On error: target table may contain partial data from the failed parse
+- On success: target table is populated via the resolver; caller integrates it into the document
 
 ### Path resolver (`TomlPathResolver`)
 
 Changed from holding a `TomlDocument` to holding a `TomlTable`:
 
 ```bf
-public class TomlPathResolver
+class TomlPathResolver
 {
     private TomlTable mRootTable;  // was TomlDocument
     private TomlTable mCurrentTable;

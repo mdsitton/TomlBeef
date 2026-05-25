@@ -33,8 +33,12 @@ public class TomlTable
 
 	public int Count => mEntries.Count;
 
+	/// @brief Direct access to the internal entry dictionary. Modifying this directly will desync
+	/// key ordering and can cause leaks or crashes. Use Insert(), ReplaceValue(), and Clear() instead.
 	public Dictionary<String, TomlValue> Entries => mEntries;
 
+	/// @brief Direct access to the internal key order list. Modifying this directly will desync
+	/// the table state. Use Insert(), ReplaceValue(), and Clear() instead.
 	public List<String> KeyOrder => mKeyOrder;
 
 	public bool ContainsKey(StringView key)
@@ -69,13 +73,42 @@ public class TomlTable
 		mKeyOrder.Add(ownedKey);
 	}
 
-	public void ReplaceValue(StringView key, TomlValue value)
+	/// @brief Replace the value for an existing key. Does nothing if the key is not found.
+	/// @param key The key to replace.
+	/// @param value The new value. Consumed (disposed) if the key is not found.
+	/// @return True if the key was found and replaced.
+	public bool ReplaceValue(StringView key, TomlValue value)
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
+			return true;
 		}
+		value.Dispose();
+		return false;
+	}
+
+	/// @brief Remove a key and its value from this table.
+	/// @param key The key to remove.
+	/// @return True if the key was found and removed.
+	public bool Remove(StringView key)
+	{
+		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
+		{
+			existingVal.Dispose();
+			mEntries.Remove(existingKey);
+			for (int i = 0; i < mKeyOrder.Count; i++)
+			{
+				if (mKeyOrder[i] == existingKey)
+				{
+					mKeyOrder.RemoveAt(i);
+					delete existingKey;
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	public Result<TomlValue> Get(StringView key)
@@ -94,6 +127,126 @@ public class TomlTable
 		{
 			return Get(key);
 		}
+	}
+
+	/// @brief Try to get a String value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the string value.
+	/// @return True if the key exists and holds a String.
+	public bool TryGetString(StringView key, out StringView value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetString(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get an Integer value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the integer value.
+	/// @return True if the key exists and holds an Integer.
+	public bool TryGetInteger(StringView key, out int64 value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetInteger(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a Float value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the float value.
+	/// @return True if the key exists and holds a Float.
+	public bool TryGetFloat(StringView key, out double value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetFloat(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a Bool value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the boolean value.
+	/// @return True if the key exists and holds a Bool.
+	public bool TryGetBool(StringView key, out bool value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetBool(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a Table value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the table value.
+	/// @return True if the key exists and holds a Table.
+	public bool TryGetTable(StringView key, out TomlTable value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetTable(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get an Array value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the array value.
+	/// @return True if the key exists and holds an Array.
+	public bool TryGetArray(StringView key, out TomlArray value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetArray(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get an OffsetDateTime value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the offset date-time value.
+	/// @return True if the key exists and holds an OffsetDateTime.
+	public bool TryGetOffsetDateTime(StringView key, out TomlOffsetDateTime value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetOffsetDateTime(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a LocalDateTime value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the local date-time value.
+	/// @return True if the key exists and holds a LocalDateTime.
+	public bool TryGetLocalDateTime(StringView key, out TomlLocalDateTime value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetLocalDateTime(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a LocalDate value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the local date value.
+	/// @return True if the key exists and holds a LocalDate.
+	public bool TryGetLocalDate(StringView key, out TomlLocalDate value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetLocalDate(out value))
+			return true;
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to get a LocalTime value for a key.
+	/// @param key The key to look up.
+	/// @param value On success, the local time value.
+	/// @return True if the key exists and holds a LocalTime.
+	public bool TryGetLocalTime(StringView key, out TomlLocalTime value)
+	{
+		if (TryGetValue(key, let val) && val.TryGetLocalTime(out value))
+			return true;
+		value = default;
+		return false;
 	}
 
 	/// @brief Remove all entries from this table, freeing owned values.

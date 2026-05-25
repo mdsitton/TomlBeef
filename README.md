@@ -82,12 +82,14 @@ Full set of document-level typed accessors: `TryGetString`, `TryGetInteger`, `Tr
 **Navigating the tree directly:**
 
 ```bf
-doc.mRootTable           // The root table
+doc.RootTable           // The root table (read-only property)
 table["key"]             // Indexer → Result<TomlValue> (.Err if missing)
-table.Entries            // Dictionary<String, TomlValue>
-table.KeyOrder           // List<String> in insertion order
 table.ContainsKey("key")
 table.TryGetValue("key", out value)
+
+// Low-level access — modifying these directly can corrupt table state:
+table.Entries            // Dictionary<String, TomlValue> (owned by table)
+table.KeyOrder           // List<String> (owned by table)
 ```
 
 **Inspecting a TomlValue** — pattern matching is the idiomatic approach:
@@ -181,7 +183,7 @@ The writer produces valid TOML v1.1 output. Sub-tables are emitted as `[header]`
 
 ```bf
 var doc = new TomlDocument();
-var root = doc.mRootTable;
+var root = doc.RootTable;
 
 // Scalars
 root.Insert("name", .String(new String("TomlBeef")));
@@ -252,11 +254,13 @@ case .Err(let err):
 ### Memory Management
 
 - `TomlDocument` owns the entire parsed tree. `delete doc` frees everything.
-- `TomlValue` is a value type (enum). It may contain heap references (`String`, `TomlArray*`, `TomlTable*`). Call `Dispose()` when discarding an owned value.
+- **Ownership hazard**: `TomlValue` returned by `Get()`, `TryGetValue()`, indexers, and array accessors are **borrowed views** into document-owned memory. Do NOT call `Dispose()` on them — that will double-free or corrupt the document's data. Only `Dispose()` a `TomlValue` you created yourself (e.g., programmatic construction).
+- `TomlValue` is a value type (enum). It may contain heap references (`String`, `TomlArray*`, `TomlTable*`). Call `Dispose()` when discarding an **owned** value.
 - Tables and arrays own their contents. Deleting a table or array disposes all children.
 - `StringView` returned by `TryGetString()` and `AsString` is borrowed — it points into the owning `TomlValue`. Do not use after the value is disposed.
 - The caller owns the document and must `delete` it when done (`defer delete doc`).
 - Use `Clone()` for deep copies when you need independent ownership of a subtree.
+- `table.Entries` and `table.KeyOrder` expose the table's internal containers. Modifying them directly (e.g., adding/removing keys) will desync ordering and can cause leaks or crashes. Use `Insert()`, `ReplaceValue()`, and `Clear()` instead.
 
 ## Supported TOML Features
 

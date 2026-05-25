@@ -8,7 +8,7 @@ public class TomlSerializer
 {
 	public void Serialize(TomlDocument doc, String outStr)
 	{
-		SerializeTable(doc.mRootTable, outStr);
+		SerializeTable(doc.RootTable, outStr);
 	}
 
 	private void SerializeTable(TomlTable tbl, String outStr)

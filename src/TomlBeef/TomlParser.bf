@@ -854,8 +854,14 @@ class TomlParserImpl
 		if (token == "nan" || token == "+nan" || token == "-nan")
 			return TomlValue.Float(double.NaN);
 
-		if (TryParseDateTime(token) case .Ok(let val))
-			return val;
+		if (LooksLikeDateTime(token))
+		{
+			switch (TryParseDateTime(token))
+			{
+			case .Ok(let val): return val;
+			case .Err(let dtErr): return .Err(dtErr);
+			}
+		}
 
 		return ParseNumber(token);
 	}
@@ -1125,6 +1131,24 @@ class TomlParserImpl
 	// Date/Time parsing
 	// ================================================================
 
+	private static bool LooksLikeDateTime(StringView token)
+	{
+		// Date pattern: starts with YYYY-
+		if (token.Length >= 5 &&
+			TomlChar.IsDigit(token[0]) && TomlChar.IsDigit(token[1]) &&
+			TomlChar.IsDigit(token[2]) && TomlChar.IsDigit(token[3]) &&
+			token[4] == '-')
+			return true;
+
+		for (int i = 0; i < token.Length; i++)
+		{
+			char8 c = token[i];
+			if (c == 'T' || c == 't' || c == ':' || c == 'Z' || c == 'z')
+				return true;
+		}
+		return false;
+	}
+
 	private Result<TomlValue, TomlParseError> TryParseDateTime(StringView token)
 	{
 		bool hasT = false;
@@ -1141,10 +1165,7 @@ class TomlParserImpl
 			if (c == '-') hasDash = true;
 		}
 
-		if (!hasT && !hasColon && !hasZ && !hasDash)
-			return .Err(Error(.UnexpectedToken, "Not a date/time"));
-
-		// If token has Z or ends with offset pattern, it must be offset datetime — don't fall through
+		// If token has Z or ends with offset pattern, it must be offset datetime
 		bool hasOffsetIndicator = hasZ;
 		if (!hasOffsetIndicator)
 		{
@@ -1153,7 +1174,6 @@ class TomlParserImpl
 			{
 				if (token[i] == '+' || token[i] == '-')
 				{
-					// Must be after the date-time part, not the leading sign
 					if (i > 10) { hasOffsetIndicator = true; break; }
 				}
 			}
@@ -1161,19 +1181,16 @@ class TomlParserImpl
 
 		if (hasT || hasZ)
 		{
-			if (TryParseOffsetDateTime(token) case .Ok(let val))
-				return val;
-			// If the token has offset indicators, don't fall through — it's an error
 			if (hasOffsetIndicator)
-				return .Err(Error(.InvalidDateTime, "Invalid offset date-time"));
-		}
-		if (hasT)
+				return TryParseOffsetDateTime(token);
 			return TryParseLocalDateTime(token);
+		}
 		if (!hasColon && !hasT && hasDash)
 			return TryParseLocalDate(token);
 		if (hasColon && !hasT && !hasDash)
 			return TryParseLocalTime(token);
 
+		// Should not reach here — LooksLikeDateTime already filtered non-dates
 		return .Err(Error(.UnexpectedToken, "Cannot parse date/time"));
 	}
 
@@ -1224,6 +1241,8 @@ class TomlParserImpl
 			else { return .Err(Error(.InvalidDateTime, "Expected timezone offset")); }
 		}
 
+		if (pos != token.Length)
+			return .Err(Error(.InvalidDateTime, "Trailing characters after offset date-time"));
 		return TomlValue.OffsetDateTime(TomlOffsetDateTime(year, month, day, hour, minute, second, ns, offsetMinutes));
 	}
 
@@ -1246,6 +1265,8 @@ class TomlParserImpl
 		if (mVersion == .V1_0 && secondsOmitted)
 			return .Err(Error(.InvalidTime, "Seconds are required in TOML v1.0"));
 
+		if (pos != token.Length)
+			return .Err(Error(.InvalidDateTime, "Trailing characters after local date-time"));
 		return TomlValue.LocalDateTime(TomlLocalDateTime(year, month, day, hour, minute, second, ns));
 	}
 

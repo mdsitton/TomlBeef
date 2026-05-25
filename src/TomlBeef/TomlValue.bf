@@ -38,7 +38,9 @@ public enum TomlValue
 	public bool IsArray          => this case .Array;
 	public bool IsTable          => this case .Table;
 
-	/// Disposes any heap-allocated payload (String, TomlArray, TomlTable).
+	/// @brief Disposes any heap-allocated payload. Only call this on values you created yourself
+	/// (e.g., programmatic construction). Never call on values returned by Get(), TryGetValue(),
+	/// indexers, or array accessors — those are borrowed from document-owned memory.
 	public void Dispose()
 	{
 		switch (this)

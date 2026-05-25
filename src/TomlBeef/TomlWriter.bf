@@ -7,7 +7,7 @@ static class TomlWriterImpl
 {
 	public static void Write(TomlDocument doc, String outStr, TomlVersion version = .V1_1)
 	{
-		WriteTable(doc.mRootTable, "", outStr, version);
+		WriteTable(doc.RootTable, "", outStr, version);
 	}
 
 	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)

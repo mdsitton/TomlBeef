@@ -99,20 +99,20 @@ Priority list (most-used first):
 
 ```bf
 // AFTER — 1 call
-if (doc.TryGetString("name", out var name))
+if (doc.TryGetString("name", var name))
     Console.WriteLine($"Hello, {name}!");
 ```
 
 ```bf
 // Chain nested lookups
-if (doc.TryGetTable("server", out var server) &&
-    server.TryGetString("host", out var host))
+if (doc.TryGetTable("server", var server) &&
+    server.TryGetString("host", var host))
     Console.WriteLine($"Connecting to {host}");
 ```
 
 ```bf
 // Indexer with out param
-if (doc.mRootTable["server"] case .Ok(let val) && val.TryGetTable(out var t))
+if (doc.RootTable["server"] case .Ok(let val) && val.TryGetTable(var t))
     ...
 ```
 

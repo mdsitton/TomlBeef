@@ -5,7 +5,7 @@ namespace TomlBeef;
 
 /// Navigates the TOML table tree, handles implicit table creation,
 /// and enforces conflict detection rules.
-public class TomlPathResolver
+class TomlPathResolver
 {
 	private TomlTable mRootTable;
 	private TomlTable mCurrentTable;
