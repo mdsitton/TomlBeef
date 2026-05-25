@@ -63,6 +63,15 @@ These are non-obvious Beef behaviors discovered through debugging. Violating the
 - **`char8` vs `int` comparisons** need explicit `(uint8)` casts when comparing with hex literals like `0xEF`.
 - **Shadowed variable warnings (BF4200)** — reusing a name like `e` in nested `case .Err(let e)` produces warnings. Use unique names.
 
+#### Special type references
+
+- **`Self`** — The defining type. Within an interface, it refers to the implementing type.
+- **`SelfBase`** — The base class of the defining type.
+- **`SelfOuter`** — The outer type of the defining type (for nested types).
+- **`var`** — Mutable variable with type inference. `var x = 42;` infers `int32 x`.
+- **`let`** — Immutable variable with type inference. `let x = scope String();` infers the type but disallows reassignment.
+- **`.` (dot type)** — Refers to "the expected type". Used to turn implicit conversions into explicit ones without naming the type. E.g., `intVal = (.)floatVal` when the compiler expects `int`. Most common in `return .Err(...)` and `return .Ok(...)`. See "Expected-type shorthand" under Language Conventions for more examples.
+
 ### Console & debugging
 
 - **`Console.Out.Flush()`** is often needed to see output before a crash. Console output is buffered.
@@ -207,6 +216,17 @@ MinceDiffOptions options = MinceDiffOptions();
 // PREFERRED
 return .Err(.InvalidArgument);
 MinceDiffOptions options = .();
+```
+
+The `.` shorthand also resolves enum cases in pattern matching:
+
+```bf
+// PREFERRED — .Err and .Ok auto-resolve to the return type's enum cases
+switch (parser.Parse(input))
+{
+case .Err(let e): ...
+case .Ok(let doc): ...
+}
 ```
 
 ### Struct mutability
