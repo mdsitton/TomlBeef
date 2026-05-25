@@ -62,6 +62,7 @@ These are non-obvious Beef behaviors discovered through debugging. Violating the
 - **`StringView` cannot be null.** Passing `null` where `StringView` is expected creates a default/empty StringView. A `Test.Assert(path != null)` on a `StringView` always passes.
 - **`char8` vs `int` comparisons** need explicit `(uint8)` casts when comparing with hex literals like `0xEF`.
 - **Shadowed variable warnings (BF4200)** — reusing a name like `e` in nested `case .Err(let e)` produces warnings. Use unique names.
+- **`out` and `var` are mutually exclusive in parameter position.** You write `out existingVar` to assign to a pre-existing variable, or `var newVar` to declare inline. Writing `out var x` does **not** compile in Beef. The `out` keyword always pairs with a declared variable in an outer scope. Use `var` for inline declaration with type inference.
 
 #### Special type references
 
