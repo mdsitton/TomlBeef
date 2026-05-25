@@ -12,8 +12,8 @@ public struct TomlOffsetDateTime
 	public int32 mHour;
 	public int32 mMinute;
 	public int32 mSecond;
-	public int64 mNanosecond;     // Fractional seconds in nanoseconds (0-999999999)
-	public int32 mOffsetMinutes;  // UTC offset in minutes (e.g., Z = 0, +05:30 = 330)
+	public int64 mNanosecond; // Fractional seconds in nanoseconds (0-999999999)
+	public int32 mOffsetMinutes; // UTC offset in minutes (e.g., Z = 0, +05:30 = 330)
 
 	public this(int32 year, int32 month, int32 day,
 		int32 hour, int32 minute, int32 second, int64 nanosecond,

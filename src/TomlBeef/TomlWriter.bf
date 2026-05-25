@@ -150,18 +150,18 @@ public class TomlWriter
 				}
 				else
 				{
-				int before = outStr.Length;
-				v.ToString(outStr, "R", null);
-				// Ensure the output is unambiguously a float (must contain '.', 'e', or 'E')
-				bool hasDot = false;
-				for (int fi = before; fi < outStr.Length; fi++)
-				{
-					char8 fc = outStr[fi];
-					if (fc == '.' || fc == 'e' || fc == 'E')
-						{ hasDot = true; break; }
-				}
-				if (!hasDot)
-					outStr.Append(".0");
+					int before = outStr.Length;
+					v.ToString(outStr, "R", null);
+					// Ensure the output is unambiguously a float (must contain '.', 'e', or 'E')
+					bool hasDot = false;
+					for (int fi = before; fi < outStr.Length; fi++)
+					{
+						char8 fc = outStr[fi];
+						if (fc == '.' || fc == 'e' || fc == 'E')
+							{ hasDot = true; break; }
+					}
+					if (!hasDot)
+						outStr.Append(".0");
 				}
 			}
 		case .Bool(let v):        outStr.Append(v ? "true" : "false");
@@ -316,7 +316,7 @@ public class TomlWriter
 		{
 			char8 c = key[i];
 			if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-			      (c >= '0' && c <= '9') || c == '-' || c == '_'))
+				(c >= '0' && c <= '9') || c == '-' || c == '_'))
 				return false;
 		}
 		return true;

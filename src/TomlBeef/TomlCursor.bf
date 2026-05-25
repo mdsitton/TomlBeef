@@ -22,10 +22,7 @@ public class TomlCursor
 	public int Column => mColumn;
 	public bool IsEOF => mOffset >= mInput.Length;
 
-	public StringView Remaining
-	{
-		get { return StringView(&mInput.Ptr[mOffset], mInput.Length - mOffset); }
-	}
+	public StringView Remaining => mInput.Substring(mOffset);
 
 	public char8 PeekByte()
 	{
@@ -155,7 +152,7 @@ public class TomlCursor
 	public StringView Slice(int offset, int length)
 	{
 		if (offset < 0 || offset + length > mInput.Length) return StringView();
-		return StringView(&mInput.Ptr[offset], length);
+		return mInput.Substring(offset, length);
 	}
 
 	private static int Utf8SequenceLength(char8 lead)

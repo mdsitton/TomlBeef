@@ -114,9 +114,7 @@ public class TomlPathResolver
 			{
 				// Bug 2 fix: don't cross into ExplicitHeader tables from dotted-key implicit scope.
 				if (implicitOrigin == .Implicit && existingTable.Origin == .ExplicitHeader)
-					return .Err(MakeError(.TypeConflict,
-						scope $"Key '{key}' references a table defined by a [table] header — cannot extend with dotted keys",
-						mCurrentOffset));
+					return .Err(MakeError(.TypeConflict, scope $"Key '{key}' references a table defined by a [table] header - cannot extend with dotted keys" , mCurrentOffset));
 
 				mCurrentTable = existingTable;
 				return .Ok;
@@ -125,8 +123,7 @@ public class TomlPathResolver
 			{
 				// Only header navigation can traverse into array-of-tables.
 				if (implicitOrigin == .Implicit)
-					return .Err(MakeError(.TypeConflict,
-						scope $"Cannot use dotted key to access elements of array-of-tables '{key}'", mCurrentOffset));
+					return .Err(MakeError(.TypeConflict, scope $"Cannot use dotted key to access elements of array-of-tables '{key}'" , mCurrentOffset));
 
 				if (arr.Count == 0)
 					return .Err(MakeError(.ArrayElementOrdering,
@@ -153,13 +150,13 @@ public class TomlPathResolver
 				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
 			TomlTable newTable = new TomlTable(implicitOrigin);
-			TomlValue tableVal =TomlValue.Table(newTable);
+			TomlValue tableVal = TomlValue.Table(newTable);
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
 			return .Ok;
 		}
 
-		return .Err(MakeError(.TypeConflict, scope $"Table key '{key}' does not exist", mCurrentOffset));
+		return .Err(MakeError(.TypeConflict, scope $"Table key '{key}' does not exist" , mCurrentOffset));
 	}
 
 	/// Defines a table at the given key in the current table, or navigates into
@@ -172,16 +169,15 @@ public class TomlPathResolver
 			{
 				// Only duplicate ExplicitHeader→ExplicitHeader is an error.
 				if (origin == .ExplicitHeader && existingTable.Origin == .ExplicitHeader)
-					return .Err(MakeError(.DuplicateTable, scope $"Duplicate table '[{key}]'", mCurrentOffset));
+					return .Err(MakeError(.DuplicateTable, scope $"Duplicate table '[{key}]'" , mCurrentOffset));
 
 				// Bug 1 fix: Implicit (from dotted key) cannot be redefined with explicit header.
 				if (existingTable.Origin == .Implicit)
-					return .Err(MakeError(.DuplicateTable,
-						scope $"Cannot redefine implicit table '{key}' with explicit header", mCurrentOffset));
+					return .Err(MakeError(.DuplicateTable, scope $"Cannot redefine implicit table '{key}' with explicit header" , mCurrentOffset));
 
 				// Inline tables are sealed.
 				if (existingTable.Origin == .InlineTable)
-					return .Err(MakeError(.DuplicateTable, scope $"Cannot redefine inline table '{key}'", mCurrentOffset));
+					return .Err(MakeError(.DuplicateTable, scope $"Cannot redefine inline table '{key}'" , mCurrentOffset));
 
 				// Cannot enter a sealed inline table for header definition
 				if (existingTable.IsInlineSealed)
@@ -198,8 +194,7 @@ public class TomlPathResolver
 			}
 			else if (existing case .Array(let arr))
 			{
-				return .Err(MakeError(.TypeConflict,
-					scope $"Cannot define table '{key}' — name already used as array-of-tables", mCurrentOffset));
+				return .Err(MakeError(.TypeConflict, scope $"Cannot define table '{key}' - name already used as array-of-tables" , mCurrentOffset));
 			}
 			else
 			{
@@ -215,7 +210,7 @@ public class TomlPathResolver
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
 		TomlTable newTable = new TomlTable(origin);
-		TomlValue tableVal =TomlValue.Table(newTable);
+		TomlValue tableVal = TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
 		return .Ok;
@@ -227,11 +222,10 @@ public class TomlPathResolver
 		{
 			TomlArray arr = null; if (existing case .Array(ref arr))
 			{
-				
+
 				// Reject append to static array
 				if (arr.IsStatic)
-					return .Err(MakeError(.AppendToStaticArray,
-						scope $"Cannot define array-of-tables '[[{key}]]' — name already defined as a static array", mCurrentOffset));
+					return .Err(MakeError(.AppendToStaticArray, scope $"Cannot define array-of-tables '[[{key}]]' - name already defined as a static array" , mCurrentOffset));
 
 				TomlTable newElement = new TomlTable(.ArrayElement);
 				arr.Add(TomlValue.Table(newElement));
@@ -240,8 +234,7 @@ public class TomlPathResolver
 			}
 			else if (existing case .Table)
 			{
-				return .Err(MakeError(.TypeConflict,
-					scope $"Cannot define array-of-tables '[[{key}]]' — name already used as table", mCurrentOffset));
+				return .Err(MakeError(.TypeConflict, scope $"Cannot define array-of-tables '[[{key}]]' - name already used as table" , mCurrentOffset));
 			}
 			else
 			{
@@ -255,7 +248,7 @@ public class TomlPathResolver
 		TomlArray newArray = new TomlArray();
 		TomlTable firstElement = new TomlTable(.ArrayElement);
 		newArray.Add(.Table(firstElement));
-		mCurrentTable.Insert(key,TomlValue.Array(newArray));
+		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
 		return .Ok;
 	}
@@ -263,7 +256,7 @@ public class TomlPathResolver
 	private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value)
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
-			return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'", mCurrentOffset));
+			return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
 
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));

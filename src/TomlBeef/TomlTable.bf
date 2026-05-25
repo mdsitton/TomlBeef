@@ -8,8 +8,8 @@ public class TomlTable
 {
 	private TomlTableOrigin mOrigin;
 	private bool mIsInlineSealed;
-	private Dictionary<String, TomlValue> mEntries;
-	private List<String> mKeyOrder;
+	private Dictionary<String, TomlValue> mEntries ~ DeleteDictionaryAndKeysAndDisposeValues!(_);
+	private List<String> mKeyOrder ~ delete _;
 
 	public this(TomlTableOrigin origin)
 	{
@@ -19,33 +19,16 @@ public class TomlTable
 		mKeyOrder = new List<String>();
 	}
 
-	public ~this()
-	{
-		if (mKeyOrder != null)
-		{
-			delete mKeyOrder;
-		}
-
-		if (mEntries != null)
-		{
-			for (var val in mEntries.Values)
-				val.Dispose();
-			for (var key in mEntries.Keys)
-				delete key;
-			delete mEntries;
-		}
-	}
-
 	public TomlTableOrigin Origin
 	{
-		get { return mOrigin; }
-		set { mOrigin = value; }
+		get => mOrigin;
+		set => mOrigin = value;
 	}
 
 	public bool IsInlineSealed
 	{
-		get { return mIsInlineSealed; }
-		set { mIsInlineSealed = value; }
+		get => mIsInlineSealed;
+		set => mIsInlineSealed = value;
 	}
 
 	public int Count => mEntries.Count;

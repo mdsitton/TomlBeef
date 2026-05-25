@@ -6,17 +6,11 @@ namespace TomlBeef;
 /// Owns the complete value tree; disposal of the document cleans up everything.
 public class TomlDocument
 {
-	public TomlTable mRootTable;
+	public TomlTable mRootTable ~ delete _;
 
 	public this()
 	{
 		mRootTable = new TomlTable(.Root);
-	}
-
-	public ~this()
-	{
-		if (mRootTable != null)
-			delete mRootTable;
 	}
 
 	public Result<TomlValue> Get(StringView dottedPath)
