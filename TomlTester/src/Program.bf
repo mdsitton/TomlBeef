@@ -24,32 +24,30 @@ class Program
 		String input = scope String();
 		Console.In.ReadToEnd(input);
 
-		var parser = scope TomlParser(version);
-		switch (parser.Parse(input))
+		var doc = new TomlDocument();
+		defer delete doc;
+
+		if (doc.Read(input, .() { Version = version }) case .Err(let err))
 		{
-		case .Err(let err):
 			defer err.Dispose();
 			Console.Error.Write(scope $"Parse error at line {err.mLine}:{err.mColumn}: ");
 			Console.Error.WriteLine(err.mMessage);
 			return 1;
-		case .Ok(let doc):
-			defer delete doc;
-
-			if (encode)
-			{
-				var writer = scope TomlWriter();
-				String tomlOut = scope String();
-				writer.Write(doc, tomlOut);
-				Console.WriteLine(tomlOut);
-			}
-			else
-			{
-				var serializer = scope TomlSerializer();
-				String json = scope String();
-				serializer.Serialize(doc, json);
-				Console.WriteLine(json);
-			}
-			return 0;
 		}
+
+		if (encode)
+		{
+			String tomlOut = scope String();
+			doc.Write(tomlOut, .() { Version = version });
+			Console.WriteLine(tomlOut);
+		}
+		else
+		{
+			var serializer = scope TomlSerializer();
+			String json = scope String();
+			serializer.Serialize(doc, json);
+			Console.WriteLine(json);
+		}
+		return 0;
 	}
 }

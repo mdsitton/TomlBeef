@@ -85,6 +85,70 @@ public class TomlTable
 		return .Err;
 	}
 
+	/// @brief Indexer that returns the value for a key, or an error result if not found.
+	/// @param key The key to look up.
+	/// @return The TomlValue on success, or an error result.
+	public Result<TomlValue> this[StringView key]
+	{
+		get
+		{
+			return Get(key);
+		}
+	}
+
+	/// @brief Remove all entries from this table, freeing owned values.
+	public void Clear()
+	{
+		if (mEntries != null)
+		{
+			DeleteDictionaryAndKeysAndDisposeValues!(mEntries);
+			mEntries = new Dictionary<String, TomlValue>();
+		}
+		if (mKeyOrder != null)
+		{
+			delete mKeyOrder;
+			mKeyOrder = new List<String>();
+		}
+	}
+
+	/// @brief Merge keys from another table into this one.
+	/// @param source The table whose entries to merge. Unchanged on return.
+	/// @param onConflict How to handle duplicate keys (default: error).
+	/// @return .Ok on success, or .Err if a duplicate key was found with OnConflict == .Error.
+	public Result<void, TomlParseError> MergeFrom(TomlTable source, MergeConflict onConflict = .Error)
+	{
+		// Pass 1: validate — check for conflicting keys before modifying anything
+		if (onConflict == .Error)
+		{
+			for (int i = 0; i < source.mKeyOrder.Count; i++)
+			{
+				StringView key = source.mKeyOrder[i];
+				if (ContainsKey(key))
+					return .Err(TomlParseError(.DuplicateKey,
+						scope $"Duplicate key '{key}' during merge", 0, 0, 0));
+			}
+		}
+
+		// Pass 2: insert or replace
+		for (int i = 0; i < source.mKeyOrder.Count; i++)
+		{
+			String key = source.mKeyOrder[i];
+			TomlValue val = source.mEntries[key];
+
+			if (ContainsKey(key))
+			{
+				if (onConflict == .Overwrite)
+					ReplaceValue(key, val.Clone());
+				// .Skip: do nothing, keep existing
+			}
+			else
+			{
+				Insert(key, val.Clone());
+			}
+		}
+		return .Ok;
+	}
+
 	public TomlTable Clone()
 	{
 		TomlTable result = new TomlTable(mOrigin);

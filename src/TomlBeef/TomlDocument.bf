@@ -2,15 +2,103 @@ using System;
 
 namespace TomlBeef;
 
+/// Read mode for parsing TOML into a document.
+public enum TomlReadMode
+{
+	/// Clear existing root table, populate from input (default).
+	Replace,
+	/// Retain existing content, insert new top-level keys.
+	Merge
+}
+
+/// Conflict resolution strategy when merging duplicate keys.
+public enum MergeConflict
+{
+	/// Duplicate key returns an error (default — strict TOML semantics).
+	Error,
+	/// Keep the existing value, ignore the incoming duplicate.
+	Skip,
+	/// Replace the existing value with the incoming one.
+	Overwrite
+}
+
+/// Configuration for reading TOML into a document.
+public struct TomlReadConfig
+{
+	public TomlReadMode Mode = .Replace;
+	public MergeConflict OnConflict = .Error;
+	public TomlVersion Version = .V1_1;
+}
+
+/// Configuration for writing a document to a TOML string.
+public struct TomlWriteConfig
+{
+	public TomlVersion Version = .V1_1;
+}
+
 /// The root of a parsed TOML document.
 /// Owns the complete value tree; disposal of the document cleans up everything.
 public class TomlDocument
 {
+	public static TomlReadConfig DefaultReadConfig = .();
+	public static TomlWriteConfig DefaultWriteConfig = .();
+
 	public TomlTable mRootTable ~ delete _;
 
 	public this()
 	{
 		mRootTable = new TomlTable(.Root);
+	}
+
+	/// @brief Parse a TOML string into this document using the current DefaultReadConfig.
+	/// @param input The TOML text to parse. Must be valid UTF-8.
+	/// @return .Ok on success, or .Err with line/column info on failure.
+	public Result<void, TomlParseError> Read(StringView input)
+	{
+		return Read(input, DefaultReadConfig);
+	}
+
+	/// @brief Parse a TOML string into this document with an explicit configuration.
+	/// @param input The TOML text to parse. Must be valid UTF-8.
+	/// @param config Read mode, conflict strategy, and TOML version.
+	/// @return .Ok on success, or .Err with line/column info on failure.
+	public Result<void, TomlParseError> Read(StringView input, TomlReadConfig config)
+	{
+		let parser = scope TomlParserImpl(config.Version);
+
+		// Fast path: nothing to preserve — parse directly into root
+		if (mRootTable.Count == 0 || config.Mode == .Replace)
+		{
+			if (config.Mode == .Replace)
+				mRootTable.Clear();
+			let resolver = scope TomlPathResolver(mRootTable);
+			return parser.Parse(input, resolver);
+		}
+
+		// Merge with existing content — transactional via temp table
+		var incoming = new TomlTable(.Root);
+		defer delete incoming;
+		{
+			let resolver = scope TomlPathResolver(incoming);
+			if (parser.Parse(input, resolver) case .Err(let e))
+				return .Err(e);
+		}
+		return mRootTable.MergeFrom(incoming, config.OnConflict);
+	}
+
+	/// @brief Serialize this document to a TOML string using the current DefaultWriteConfig.
+	/// @param output The destination string to append to.
+	public void Write(String output)
+	{
+		Write(output, DefaultWriteConfig);
+	}
+
+	/// @brief Serialize this document to a TOML string with an explicit configuration.
+	/// @param output The destination string to append to.
+	/// @param config Write options.
+	public void Write(String output, TomlWriteConfig config)
+	{
+		TomlWriterImpl.Write(this, output, config.Version);
 	}
 
 	public Result<TomlValue> Get(StringView dottedPath)
@@ -39,5 +127,175 @@ public class TomlDocument
 			}
 		}
 		return .Err;
+	}
+
+	/// @brief Navigate a dotted path and extract a String value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the string value at the path.
+	/// @return True if the path exists and holds a String.
+	public bool TryGetString(StringView dottedPath, out StringView value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetString(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract an Integer value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the integer value at the path.
+	/// @return True if the path exists and holds an Integer.
+	public bool TryGetInteger(StringView dottedPath, out int64 value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetInteger(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a Float value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the float value at the path.
+	/// @return True if the path exists and holds a Float.
+	public bool TryGetFloat(StringView dottedPath, out double value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetFloat(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a Bool value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the boolean value at the path.
+	/// @return True if the path exists and holds a Bool.
+	public bool TryGetBool(StringView dottedPath, out bool value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetBool(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a Table value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the table value at the path.
+	/// @return True if the path exists and holds a Table.
+	public bool TryGetTable(StringView dottedPath, out TomlTable value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetTable(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract an Array value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the array value at the path.
+	/// @return True if the path exists and holds an Array.
+	public bool TryGetArray(StringView dottedPath, out TomlArray value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetArray(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract an OffsetDateTime value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the offset date-time value at the path.
+	/// @return True if the path exists and holds an OffsetDateTime.
+	public bool TryGetOffsetDateTime(StringView dottedPath, out TomlOffsetDateTime value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetOffsetDateTime(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a LocalDateTime value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the local date-time value at the path.
+	/// @return True if the path exists and holds a LocalDateTime.
+	public bool TryGetLocalDateTime(StringView dottedPath, out TomlLocalDateTime value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetLocalDateTime(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a LocalDate value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the local date value at the path.
+	/// @return True if the path exists and holds a LocalDate.
+	public bool TryGetLocalDate(StringView dottedPath, out TomlLocalDate value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetLocalDate(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Navigate a dotted path and extract a LocalTime value in a single call.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value On success, the local time value at the path.
+	/// @return True if the path exists and holds a LocalTime.
+	public bool TryGetLocalTime(StringView dottedPath, out TomlLocalTime value)
+	{
+		switch (Get(dottedPath))
+		{
+		case .Ok(let val):
+			if (val.TryGetLocalTime(out value))
+				return true;
+		default:
+		}
+		value = default;
+		return false;
 	}
 }

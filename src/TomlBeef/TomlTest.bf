@@ -24,12 +24,12 @@ static class TomlTest
 	public static void SmokeTest()
 	{
 		let input = "x = 42";
-		let parser = scope TomlParser();
-		switch (parser.Parse(input))
-		{
-		case .Err(let e): Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		case .Ok(let doc): defer delete doc; Test.Assert(doc.mRootTable.Count == 1);
-		}
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(input) case .Err(let e))
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		else
+			Test.Assert(doc.mRootTable.Count == 1);
 	}
 
 	[Test]
@@ -47,19 +47,22 @@ static class TomlTest
 				Test.Assert(false, scope $"FAIL [{name}]: {e.mMessage}"); e.Dispose(); failed++;
 			case .Ok(let doc1):
 				defer delete doc1;
-				let w1 = scope TomlWriter(); String t1 = scope String(); w1.Write(doc1, t1);
-				let p2 = scope TomlParser(.V1_1);
-				switch (p2.Parse(t1))
+				String t1 = scope String();
+				doc1.Write(t1);
+				var doc2 = new TomlDocument();
+				defer delete doc2;
+				if (doc2.Read(t1) case .Err(let e2))
 				{
-				case .Err(let e2):
 					Test.Assert(false, scope $"FAIL [{name}]: re-parse - {e2.mMessage}\n{t1}"); e2.Dispose(); failed++;
-				case .Ok(let doc2):
-					defer delete doc2;
+				}
+				else
+				{
 					if (!TomlDocumentEquals(doc1, doc2))
 						{ Test.Assert(false, scope $"FAIL [{name}]: mismatch\n{t1}"); failed++; }
 					else
 					{
-						let w2 = scope TomlWriter(); String t2 = scope String(); w2.Write(doc2, t2);
+						String t2 = scope String();
+						doc2.Write(t2);
 						if (t1 != t2)
 							{ Test.Assert(false, scope $"FAIL [{name}]: nondeterministic\n1:{t1}\n2:{t2}"); failed++; }
 						else passed++;
@@ -119,8 +122,13 @@ static class TomlTest
 		String content = scope String();
 		for (int i = 0; i < data.Count; i++)
 			content.Append((char8)data[i]);
-		let parser = scope TomlParser(version);
-		return parser.Parse(content);
+		var doc = new TomlDocument();
+		if (doc.Read(content, .() { Version = version }) case .Err(let e))
+		{
+			delete doc;
+			return .Err(e);
+		}
+		return doc;
 	}
 
 	private static void WalkTomlFiles(StringView dir, StringView excludeDir, delegate void(StringView path) onFile)

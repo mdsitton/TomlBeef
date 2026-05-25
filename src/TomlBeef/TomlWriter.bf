@@ -3,21 +3,14 @@ using System.Collections;
 
 namespace TomlBeef;
 
-public class TomlWriter
+static class TomlWriterImpl
 {
-	private TomlVersion mVersion;
-
-	public this(TomlVersion version = .V1_1)
+	public static void Write(TomlDocument doc, String outStr, TomlVersion version = .V1_1)
 	{
-		mVersion = version;
+		WriteTable(doc.mRootTable, "", outStr, version);
 	}
 
-	public void Write(TomlDocument doc, String outStr)
-	{
-		WriteTable(doc.mRootTable, "", outStr);
-	}
-
-	private void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr)
+	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)
 	{
 		// Phase 1: scalar keys, inline tables, static arrays
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
@@ -29,17 +22,17 @@ public class TomlWriter
 			{
 				TomlTable sub = val.AsTable;
 				if (sub.Origin == .InlineTable)
-					WriteKeyValLine(key, val, outStr);
+					WriteKeyValLine(key, val, outStr, version);
 			}
 			else if (val.IsArray)
 			{
 				TomlArray arr = val.AsArray;
 				if (arr.IsStatic)
-					WriteKeyValLine(key, val, outStr);
+					WriteKeyValLine(key, val, outStr, version);
 			}
 			else
 			{
-				WriteKeyValLine(key, val, outStr);
+				WriteKeyValLine(key, val, outStr, version);
 			}
 		}
 
@@ -60,12 +53,12 @@ public class TomlWriter
 						fullPath.Append(pathPrefix);
 						fullPath.Append(".");
 					}
-					AppendKey(key, fullPath);
+					AppendKey(key, fullPath, version);
 
 					outStr.Append("\n[");
 					outStr.Append(fullPath);
 					outStr.Append("]\n");
-					WriteTable(sub, fullPath, outStr);
+					WriteTable(sub, fullPath, outStr, version);
 				}
 			}
 		}
@@ -80,12 +73,12 @@ public class TomlWriter
 			{
 				TomlArray arr = val.AsArray;
 				if (!arr.IsStatic && arr.Count > 0)
-					EmitArrayOfTables(key, arr, pathPrefix, outStr);
+					EmitArrayOfTables(key, arr, pathPrefix, outStr, version);
 			}
 		}
 	}
 
-	private void EmitArrayOfTables(StringView key, TomlArray arr, StringView pathPrefix, String outStr)
+	private static void EmitArrayOfTables(StringView key, TomlArray arr, StringView pathPrefix, String outStr, TomlVersion version)
 	{
 		for (int i = 0; i < arr.Count; i++)
 		{
@@ -101,42 +94,42 @@ public class TomlWriter
 				fullPath.Append(pathPrefix);
 				fullPath.Append(".");
 			}
-			AppendKey(key, fullPath);
+			AppendKey(key, fullPath, version);
 
 			outStr.Append("\n[[");
 			outStr.Append(fullPath);
 			outStr.Append("]]\n");
 
-			WriteTable(sub, fullPath, outStr);
+			WriteTable(sub, fullPath, outStr, version);
 		}
 	}
 
-	private void WriteKeyValLine(StringView key, TomlValue val, String outStr)
+	private static void WriteKeyValLine(StringView key, TomlValue val, String outStr, TomlVersion version)
 	{
-		WriteKey(key, outStr);
+		WriteKey(key, outStr, version);
 		outStr.Append(" = ");
-		WriteValue(val, outStr);
+		WriteValue(val, outStr, version);
 		outStr.Append("\n");
 	}
 
-	private void WriteKey(StringView key, String outStr)
+	private static void WriteKey(StringView key, String outStr, TomlVersion version)
 	{
-		AppendKey(key, outStr);
+		AppendKey(key, outStr, version);
 	}
 
-	private void AppendKey(StringView key, String dest)
+	private static void AppendKey(StringView key, String dest, TomlVersion version)
 	{
 		if (IsBareKey(key))
 			dest.Append(key);
 		else
-			WriteBasicString(key, dest);
+			WriteBasicString(key, dest, version);
 	}
 
-	private void WriteValue(TomlValue val, String outStr)
+	private static void WriteValue(TomlValue val, String outStr, TomlVersion version)
 	{
 		switch (val)
 		{
-		case .String(let s):      WriteBasicString(s, outStr);
+		case .String(let s):      WriteBasicString(s, outStr, version);
 		case .Integer(let v):     v.ToString(outStr);
 		case .Float(let v):
 			if (v.IsInfinity)
@@ -176,12 +169,12 @@ public class TomlWriter
 		case .LocalDateTime(let v):  WriteLocalDateTime(v, outStr);
 		case .LocalDate(let v):      WriteLocalDate(v, outStr);
 		case .LocalTime(let v):      WriteLocalTime(v, outStr);
-		case .Array(let arr):     WriteInlineArray(arr, outStr);
-		case .Table(let tbl):     WriteInlineTable(tbl, outStr);
+		case .Array(let arr):     WriteInlineArray(arr, outStr, version);
+		case .Table(let tbl):     WriteInlineTable(tbl, outStr, version);
 		}
 	}
 
-	private void WriteBasicString(StringView s, String outStr)
+	private static void WriteBasicString(StringView s, String outStr, TomlVersion version)
 	{
 		outStr.Append('"');
 		for (int i = 0; i < s.Length; i++)
@@ -197,7 +190,7 @@ public class TomlWriter
 			case '\f': outStr.Append("\\f"); break;
 			case '\r': outStr.Append("\\r"); break;
 			case (char8)0x1B:
-			if (mVersion == .V1_0)
+			if (version == .V1_0)
 				outStr.Append("\\u001b");
 			else
 				outStr.Append("\\e");
@@ -220,7 +213,7 @@ public class TomlWriter
 		outStr.Append('"');
 	}
 
-	private void WriteOffsetDateTime(TomlOffsetDateTime dt, String outStr)
+	private static void WriteOffsetDateTime(TomlOffsetDateTime dt, String outStr)
 	{
 		FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
 		outStr.Append('T');
@@ -238,44 +231,44 @@ public class TomlWriter
 		}
 	}
 
-	private void WriteLocalDateTime(TomlLocalDateTime dt, String outStr)
+	private static void WriteLocalDateTime(TomlLocalDateTime dt, String outStr)
 	{
 		FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
 		outStr.Append('T');
 		FormatTime(dt.mHour, dt.mMinute, dt.mSecond, dt.mNanosecond, outStr);
 	}
 
-	private void WriteLocalDate(TomlLocalDate d, String outStr)
+	private static void WriteLocalDate(TomlLocalDate d, String outStr)
 	{
 		FormatDate(d.mYear, d.mMonth, d.mDay, outStr);
 	}
 
-	private void WriteLocalTime(TomlLocalTime t, String outStr)
+	private static void WriteLocalTime(TomlLocalTime t, String outStr)
 	{
 		FormatTime(t.mHour, t.mMinute, t.mSecond, t.mNanosecond, outStr);
 	}
 
-	private void WriteInlineArray(TomlArray arr, String outStr)
+	private static void WriteInlineArray(TomlArray arr, String outStr, TomlVersion version)
 	{
 		outStr.Append('[');
 		for (int i = 0; i < arr.Count; i++)
 		{
 			if (i > 0) outStr.Append(", ");
-			WriteValue(arr[i], outStr);
+			WriteValue(arr[i], outStr, version);
 		}
 		outStr.Append(']');
 	}
 
-	private void WriteInlineTable(TomlTable tbl, String outStr)
+	private static void WriteInlineTable(TomlTable tbl, String outStr, TomlVersion version)
 	{
 		outStr.Append('{');
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			if (i > 0) outStr.Append(", ");
 			String key = tbl.KeyOrder[i];
-			WriteKey(key, outStr);
+			WriteKey(key, outStr, version);
 			outStr.Append(" = ");
-			WriteValue(tbl.Entries[key], outStr);
+			WriteValue(tbl.Entries[key], outStr, version);
 		}
 		outStr.Append('}');
 	}

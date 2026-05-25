@@ -7,13 +7,13 @@ namespace TomlBeef;
 /// and enforces conflict detection rules.
 public class TomlPathResolver
 {
-	private TomlDocument mDocument;
+	private TomlTable mRootTable;
 	private TomlTable mCurrentTable;
 
-	public this(TomlDocument doc)
+	public this(TomlTable rootTable)
 	{
-		mDocument = doc;
-		mCurrentTable = doc.mRootTable;
+		mRootTable = rootTable;
+		mCurrentTable = rootTable;
 	}
 
 	public int mCurrentLine = 1;
@@ -31,7 +31,7 @@ public class TomlPathResolver
 
 	public Result<void, TomlParseError> EnterTable(List<String> path)
 	{
-		mCurrentTable = mDocument.mRootTable;
+		mCurrentTable = mRootTable;
 
 		if (path.Count == 0)
 			return .Ok;
@@ -50,7 +50,7 @@ public class TomlPathResolver
 
 	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path)
 	{
-		mCurrentTable = mDocument.mRootTable;
+		mCurrentTable = mRootTable;
 
 		if (path.Count == 0)
 			return .Err(MakeError(.UnexpectedToken, "Empty array-of-tables header", mCurrentOffset));
@@ -267,7 +267,7 @@ public class TomlPathResolver
 
 	public void Reset()
 	{
-		mCurrentTable = mDocument.mRootTable;
+		mCurrentTable = mRootTable;
 	}
 
 	private void ValueTypeName(TomlValue value, String outStr)

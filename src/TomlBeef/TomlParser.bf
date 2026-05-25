@@ -4,11 +4,10 @@ using System.Collections;
 namespace TomlBeef;
 
 /// Recursive descent parser for TOML v1.1.0.
-public class TomlParser
+class TomlParserImpl
 {
 	private TomlCursor mCursor ~ delete _;
-	private TomlDocument mDocument ~ delete _;
-	private TomlPathResolver mPathResolver ~ delete _;
+	private TomlPathResolver mPathResolver;
 	private TomlVersion mVersion;
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
@@ -18,7 +17,7 @@ public class TomlParser
 		mVersion = version;
 	}
 
-	public Result<TomlDocument, TomlParseError> Parse(StringView input)
+	public Result<void, TomlParseError> Parse(StringView input, TomlPathResolver resolver)
 	{
 		// Validate UTF-8
 		int i = 0;
@@ -66,28 +65,21 @@ public class TomlParser
 				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
 		}
 
-		if (mPathResolver != null) delete mPathResolver;
 		if (mCursor != null) delete mCursor;
-		if (mDocument != null) delete mDocument;
 
 		mCursor = new TomlCursor(StringView(&input.Ptr[start], input.Length - start));
-		mDocument = new TomlDocument();
-		mPathResolver = new TomlPathResolver(mDocument);
+		mPathResolver = resolver;
 		mPathResolver.Reset();
 		mDepth = 0;
 
 		switch (ParseDocument())
 		{
 		case .Err(let e):
-			delete mDocument;
-			mDocument = null;
 			return .Err(e);
 		default:
 		}
 
-		TomlDocument result = mDocument;
-		mDocument = null;
-		return result;
+		return .Ok;
 	}
 
 	// ================================================================
@@ -128,13 +120,13 @@ public class TomlParser
 
 			if (b == '[')
 			{
-				if (ParseHeader() case .Err(let e))
-					return .Err(e);
+				if (ParseHeader() case .Err(let headerErr))
+					return .Err(headerErr);
 				continue;
 			}
 
-			if (ParseKeyVal() case .Err(let e))
-				return .Err(e);
+			if (ParseKeyVal() case .Err(let kvErr))
+				return .Err(kvErr);
 
 			mCursor.SkipWhitespace();
 			if (!mCursor.IsEOF)
@@ -142,8 +134,8 @@ public class TomlParser
 				char8 afterB = mCursor.PeekByte();
 				if (afterB == '#')
 				{
-					if (mCursor.SkipComment() case .Err(let e))
-						return .Err(e);
+					if (mCursor.SkipComment() case .Err(let commentErr))
+						return .Err(commentErr);
 				}
 				else if (afterB != '\r' && afterB != '\n')
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
@@ -196,8 +188,8 @@ public class TomlParser
 			char8 b = mCursor.PeekByte();
 			if (b == '#')
 			{
-				if (mCursor.SkipComment() case .Err(let e))
-					return .Err(e);
+				if (mCursor.SkipComment() case .Err(let commentErr))
+					return .Err(commentErr);
 			}
 			else if (b == '\r' || b == '\n')
 				mCursor.SkipNewline();
@@ -235,12 +227,17 @@ public class TomlParser
 		TomlValue value = ?;
 		switch (ParseValue())
 		{
-		case .Err(let e): return .Err(e);
+		case .Err(let valErr): return .Err(valErr);
 		case .Ok(let val): value = val;
 		}
 
 		SyncPathResolver();
-		return mPathResolver.SetKeyValue(keyPath, value);
+		if (mPathResolver.SetKeyValue(keyPath, value) case .Err(let insertErr))
+		{
+			value.Dispose();
+			return .Err(insertErr);
+		}
+		return .Ok;
 	}
 
 	// ================================================================
@@ -1383,34 +1380,34 @@ public class TomlParser
 
 		while (true)
 		{
-			if (SkipWsAndComments() case .Err(let e))
+			if (SkipWsAndComments() case .Err(let wsErr))
 			{
 				delete arr;
-				return .Err(e);
+				return .Err(wsErr);
 			}
 
 			switch (ParseValue())
 			{
-			case .Err(let e):
+			case .Err(let valErr):
 				delete arr;
-				return .Err(e);
+				return .Err(valErr);
 			case .Ok(let val): arr.Add(val);
 			}
 
-			if (SkipWsAndComments() case .Err(let e))
+			if (SkipWsAndComments() case .Err(let trailWsErr))
 			{
 				delete arr;
-				return .Err(e);
+				return .Err(trailWsErr);
 			}
 
 			char8 b = mCursor.PeekByte();
 			if (b == ',')
 			{
 				mCursor.AdvanceByte();
-				if (SkipWsAndComments() case .Err(let e))
+				if (SkipWsAndComments() case .Err(let commaWsErr))
 				{
 					delete arr;
-					return .Err(e);
+					return .Err(commaWsErr);
 				}
 				if (mCursor.PeekByte() == ']')
 				{
@@ -1455,18 +1452,18 @@ public class TomlParser
 
 		while (true)
 		{
-			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
+			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let wsErr))
 			{
 				delete tbl;
-				return .Err(e);
+				return .Err(wsErr);
 			}
 
 			var keyPath = scope List<String>();
 			defer { ClearAndDeleteItems!(keyPath); }
-			if (ParseKeyPath(keyPath) case .Err(let e))
+			if (ParseKeyPath(keyPath) case .Err(let keyErr))
 			{
 				delete tbl;
-				return .Err(e);
+				return .Err(keyErr);
 			}
 
 			mCursor.SkipWhitespace();
@@ -1480,14 +1477,15 @@ public class TomlParser
 			mCursor.SkipWhitespace();
 			switch (ParseValue())
 			{
-			case .Err(let e):
+			case .Err(let valErr):
 				delete tbl;
-				return .Err(e);
+				return .Err(valErr);
 			case .Ok(let val):
 				if (keyPath.Count == 1)
 				{
 					if (tbl.ContainsKey(keyPath[0]))
 					{
+						val.Dispose();
 						delete tbl;
 						return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
 					}
@@ -1495,18 +1493,19 @@ public class TomlParser
 				}
 				else
 				{
-					if (InsertDottedKeyIntoTable(tbl, keyPath, val) case .Err(let e))
+					if (InsertDottedKeyIntoTable(tbl, keyPath, val) case .Err(let insertErr))
 					{
+						val.Dispose();
 						delete tbl;
-						return .Err(e);
+						return .Err(insertErr);
 					}
 				}
 			}
 
-			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
+			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let trailWsErr))
 			{
 				delete tbl;
-				return .Err(e);
+				return .Err(trailWsErr);
 			}
 
 			char8 b = mCursor.PeekByte();
@@ -1521,10 +1520,10 @@ public class TomlParser
 					return .Err(Error(.UnexpectedToken,
 						"Trailing comma in inline table requires TOML v1.1"));
 				}
-				if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
+				if (SkipWsAndComments(mVersion != .V1_0) case .Err(let commaWsErr))
 				{
 					delete tbl;
-					return .Err(e);
+					return .Err(commaWsErr);
 				}
 				if (mCursor.PeekByte() == '}')
 				{

@@ -225,6 +225,146 @@ public enum TomlValue
 		return .Err;
 	}
 
+	/// @brief Try to extract a String value, returning false if the type doesn't match.
+	/// @param value On success, the string value.
+	/// @return True if this TomlValue is a String.
+	public bool TryGetString(out StringView value)
+	{
+		if (this case .String(let s))
+		{
+			value = StringView(s);
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract an Integer value, returning false if the type doesn't match.
+	/// @param value On success, the integer value.
+	/// @return True if this TomlValue is an Integer.
+	public bool TryGetInteger(out int64 value)
+	{
+		if (this case .Integer(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a Float value, returning false if the type doesn't match.
+	/// @param value On success, the float value.
+	/// @return True if this TomlValue is a Float.
+	public bool TryGetFloat(out double value)
+	{
+		if (this case .Float(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a Bool value, returning false if the type doesn't match.
+	/// @param value On success, the boolean value.
+	/// @return True if this TomlValue is a Bool.
+	public bool TryGetBool(out bool value)
+	{
+		if (this case .Bool(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract an OffsetDateTime value, returning false if the type doesn't match.
+	/// @param value On success, the offset date-time value.
+	/// @return True if this TomlValue is an OffsetDateTime.
+	public bool TryGetOffsetDateTime(out TomlOffsetDateTime value)
+	{
+		if (this case .OffsetDateTime(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a LocalDateTime value, returning false if the type doesn't match.
+	/// @param value On success, the local date-time value.
+	/// @return True if this TomlValue is a LocalDateTime.
+	public bool TryGetLocalDateTime(out TomlLocalDateTime value)
+	{
+		if (this case .LocalDateTime(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a LocalDate value, returning false if the type doesn't match.
+	/// @param value On success, the local date value.
+	/// @return True if this TomlValue is a LocalDate.
+	public bool TryGetLocalDate(out TomlLocalDate value)
+	{
+		if (this case .LocalDate(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a LocalTime value, returning false if the type doesn't match.
+	/// @param value On success, the local time value.
+	/// @return True if this TomlValue is a LocalTime.
+	public bool TryGetLocalTime(out TomlLocalTime value)
+	{
+		if (this case .LocalTime(let v))
+		{
+			value = v;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract an Array value, returning false if the type doesn't match.
+	/// @param value On success, the array value.
+	/// @return True if this TomlValue is an Array.
+	public bool TryGetArray(out TomlArray value)
+	{
+		if (this case .Array(let arr))
+		{
+			value = arr;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
+	/// @brief Try to extract a Table value, returning false if the type doesn't match.
+	/// @param value On success, the table value.
+	/// @return True if this TomlValue is a Table.
+	public bool TryGetTable(out TomlTable value)
+	{
+		if (this case .Table(let tbl))
+		{
+			value = tbl;
+			return true;
+		}
+		value = default;
+		return false;
+	}
+
 	public TomlValue Clone()
 	{
 		switch (this)
