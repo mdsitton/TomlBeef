@@ -6,7 +6,7 @@
 - Beef `String` stores UTF-8 data and is mutable. Prefer `StringView` for borrowed string inputs.
 - Beef uses manual and scope-based memory management. There is no tracing garbage collector.
 - This project currently targets Linux64 first. Treat Windows/macOS support as deferred unless project files or CI say otherwise.
-- Preferred CLI tool: `BeefBuild`. Use `BeefBuild` from `PATH` when possible. If a maintainer-specific absolute path is required on Matthew's machine, it is `/home/matt/development/Beef/IDE/dist/BeefBuild`.
+- Preferred CLI tool: `beefbuild` on Linux, `BeefBuild` on Windows. Use from `PATH`.
 
 ## Critical rules
 
@@ -15,6 +15,106 @@
 - **When using `edit` with multiple changes** in the same file, merge nearby changes into a single edit call with multiple entries in the `edits` array.
 - **Do not include large unchanged regions** in `edits[].oldText`. Keep it as small as possible while still being unique.
 - **NEVER REVERT CODE USING GIT OR ANY VERSION CONTROL.** Do not use `git checkout`, `git revert`, `git reset`, or any similar command that discards or rolls back code changes. This destroys work and context. If you think a revert is needed, **end your turn and ask for explicit permission first.**
+
+## Beef Language Gotchas
+
+These are non-obvious Beef behaviors discovered through debugging. Violating these will cause crashes, leaks, or silent failures.
+
+### Memory & lifetime
+
+- **`scope` works for class types** — `scope TomlParser()`, `scope List<T>()` all work fine. The object lives for the enclosing scope.
+- **`scope List<String>()` does NOT delete String elements.** The list's internal buffer is freed but contained `String`/class instances leak. Use `defer { ClearAndDeleteItems!(list); }` for scope-allocated lists of owned items.
+- **Field initializers with `~ delete _` require an explicit constructor.** Beef's generated default constructor does NOT run field initializers when `~ delete _` is present. Always write `public this() { mField = new Type(); }` explicitly.
+- **`~ delete _` is preferred** over manual `~this()` methods for field-level cleanup.
+- **`DeleteContainerAndDisposeItems!`, `ClearAndDeleteItems!`, `DeleteDictionaryAndKeys!`** are built-in mixins for container cleanup. Use them instead of manual loops.
+- **`defer` on a mixin requires a block wrapper**: `defer { ClearAndDeleteItems!(x); }` — NOT `defer ClearAndDeleteItems!(x);`
+- **`delete` on value types (enums, structs) is a no-op.** Types without `~this()` (which structs can't have) need explicit `.Dispose()`.
+
+### String formatting
+
+- **`$\"...{var}...\"` interpolation** is for string literals (`scope $\"key={key}\"`). Variable names are captured from scope.
+- **`AppendF(\"...{0}...\" , arg)`** uses `{0}` positional placeholders. Do NOT use `{variable}` syntax in `AppendF` — it compiles but crashes at runtime.
+- **`StringView.Substring(pos)` and `Substring(pos, length)`** exist. Prefer them over raw `StringView(&ptr[offset], length)`.
+
+### Switch & pattern matching
+
+- **`switch` does NOT fall through in Beef.** Each case breaks automatically. `fallthrough;` needed to continue into the next case.
+- **`switch` on `Result<T, E>`**: `case .Ok(let val):` and `case .Err(let e):`
+- **`if (X case .Err(let e))`** is preferred over `switch` for simple error checks. But it does NOT bind the success value — for `.Ok(let val)` extraction, use `switch` or a temporary variable.
+- **Enum switches without `default:` warn on non-exhaustiveness** — useful for catching new enum variants.
+
+### Test framework
+
+- **`[Test]` methods must be static.**
+- **`beefbuild -test`** auto-discovers `[Test]` methods. No configuration needed.
+- **Test assertions produce virtually no console output.** Debug test failures in a console app first, then port to `[Test]` once proven.
+- **`[Test(ShouldFail=true)]`** marks an expected failure. If the test passes, the framework reports "Test should have failed but didn't" as an error.
+- **A segfault in a test is never acceptable.** `ShouldFail` is for assertion failures, not crashes.
+
+### File I/O
+
+- **`File.ReadAllText` strips exactly one BOM** via StreamReader. Use `File.ReadAll` with `List<uint8>` for raw bytes when BOM-preservation matters.
+- **`File.ReadAll` requires `using System.Collections;`** for `List<uint8>`.
+- **`entry.GetFilePath(.. scope .())`** — the `.. scope .()` syntax creates a scope-allocated out parameter.
+
+### Type system
+
+- **`StringView` cannot be null.** Passing `null` where `StringView` is expected creates a default/empty StringView. A `Test.Assert(path != null)` on a `StringView` always passes.
+- **`char8` vs `int` comparisons** need explicit `(uint8)` casts when comparing with hex literals like `0xEF`.
+- **Shadowed variable warnings (BF4200)** — reusing a name like `e` in nested `case .Err(let e)` produces warnings. Use unique names.
+
+### Console & debugging
+
+- **`Console.Out.Flush()`** is often needed to see output before a crash. Console output is buffered.
+- **`beefbuild -run`** runs the startup project. Use `-args` to pass arguments.
+- **The CLI tool is `beefbuild` (all lowercase).**
+
+## Debugging with lldb/gdb
+
+Beef compiles to native code via LLVM and emits DWARF debug info on Linux. Both lldb (LLVM-native) and gdb work. lldb is preferred since it shares the same toolchain.
+
+### Getting a backtrace on segfault
+
+```bash
+# Pipe input via a temp file (lldb doesn't support stdin redirection in batch mode)
+echo 'input data' > /tmp/test.toml
+
+# lldb
+lldb --batch -o "settings set target.input-path /tmp/test.toml" \
+     -o run -o bt ./build/Debug_Linux64/TomlTester/TomlTester
+
+# gdb
+echo 'input data' | gdb -batch -ex run -ex bt ./build/Debug_Linux64/TomlTester/TomlTester
+```
+
+### Finding the exact crash line
+
+The backtrace shows mangled C++ function names. Key patterns to recognize:
+
+| Mangled name | Beef source |
+|---|---|
+| `bf::TomlBeef::TomlParser::ParseKeyVal` | `TomlParser.bf` → `ParseKeyVal` |
+| `bf::TomlBeef::TomlPathResolver::InsertKeyValue` | `TomlPathResolver.bf` → `InsertKeyValue` |
+| `bf::TomlBeef::TomlValue::Dispose` | `TomlValue.bf` → `Dispose` |
+
+Frame #0 is the crash point. The line number appears in the source path suffix (e.g., `TomlPathResolver.bf:265`).
+
+### Diagnosing "Unhandled error in result"
+
+This fatal error means a `Result<T, E>` containing `.Err` was discarded without handling. Beef's `ReturnValueDiscarded()` triggers it. Common causes:
+
+- **Calling a function that returns `Result` without capturing it** — e.g., `AppendF(...)` returns `Result<void>`.
+- **`{name}` placeholder in `AppendF` with positional argument** — compiles but crashes at runtime. Use `{}` positional or `$"...{name}..."` interpolation instead.
+
+### Debug build required
+
+Release builds strip debug info. Always debug against the Debug configuration (`build/Debug_Linux64/...`).
+
+### Error patterns
+
+- **Use `Result<T, E>` for fallible operations.** Propagate with `if (X case .Err(let e)) return .Err(e);`
+- **`scope String()` for temporary strings** in error messages is fine as long as the message is consumed immediately (e.g., copied into a `TomlParseError`).
+- **Don't mix `{key}` interpolation with `AppendF`** — it silently compiles wrong. Use `scope $\"...\"` for interpolation, `AppendF(\"{}\", arg)` for positional.
 
 ## Doc Comment Style
 
