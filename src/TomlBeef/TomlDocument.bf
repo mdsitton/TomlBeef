@@ -157,13 +157,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a String.
 	public bool TryGetString(StringView dottedPath, out StringView value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetString(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetString(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -174,13 +169,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds an Integer.
 	public bool TryGetInteger(StringView dottedPath, out int64 value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetInteger(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetInteger(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -191,13 +181,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a Float.
 	public bool TryGetFloat(StringView dottedPath, out double value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetFloat(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetFloat(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -208,13 +193,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a Bool.
 	public bool TryGetBool(StringView dottedPath, out bool value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetBool(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetBool(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -225,13 +205,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a Table.
 	public bool TryGetTable(StringView dottedPath, out TomlTable value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetTable(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetTable(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -242,13 +217,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds an Array.
 	public bool TryGetArray(StringView dottedPath, out TomlArray value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetArray(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetArray(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -259,13 +229,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds an OffsetDateTime.
 	public bool TryGetOffsetDateTime(StringView dottedPath, out TomlOffsetDateTime value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetOffsetDateTime(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetOffsetDateTime(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -276,13 +241,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a LocalDateTime.
 	public bool TryGetLocalDateTime(StringView dottedPath, out TomlLocalDateTime value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetLocalDateTime(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetLocalDateTime(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -293,13 +253,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a LocalDate.
 	public bool TryGetLocalDate(StringView dottedPath, out TomlLocalDate value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetLocalDate(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetLocalDate(out value))
+			return true;
 		value = default;
 		return false;
 	}
@@ -310,13 +265,8 @@ public class TomlDocument
 	/// @return True if the path exists and holds a LocalTime.
 	public bool TryGetLocalTime(StringView dottedPath, out TomlLocalTime value)
 	{
-		switch (Get(dottedPath))
-		{
-		case .Ok(let val):
-			if (val.TryGetLocalTime(out value))
-				return true;
-		default:
-		}
+		if (Get(dottedPath) case .Ok(let val) && val.TryGetLocalTime(out value))
+			return true;
 		value = default;
 		return false;
 	}
