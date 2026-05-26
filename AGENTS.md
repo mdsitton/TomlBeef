@@ -185,9 +185,20 @@ public const int DefaultMaxInputBytes = 16 * 1024 * 1024;
 - Prefer ordering: `System*` namespaces first, then external/dependency namespaces, then project/app namespaces. Remove unused imports.
 - Common imports: `System.Collections` for `List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`; `System.IO` for `File`, `Directory`, `Path`, streams; `System.Diagnostics` for `Debug` and `Stopwatch`; `System.Threading` for `Thread`, `Monitor`, `Interlocked`.
 
-### Visibility
+### Member access
 
-- By default, **struct and class members** are `private`.
+By default, struct and class members are `private`.
+
+| Modifier | Accessible from |
+|----------|----------------|
+| `private` (default) | Only within the defining type |
+| `protected` | Defining type and derived types |
+| `internal` | Files specifying `using internal <namespace>;` |
+| `protected internal` | Combination of `protected` and `internal` |
+| `public` | Anywhere |
+
+Key detail: even types within the same namespace must explicitly write `using internal <namespace>;` to access `internal` members of each other. This is different from C# where `internal` is assembly-wide by default.
+
 - Be explicit with `public` on API surface.
 - Members intended for external use should always have an explicit access modifier.
 - Internal implementation details may omit `private` when that improves readability.
