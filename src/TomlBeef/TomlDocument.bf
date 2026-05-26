@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Collections;
 
 namespace TomlBeef;
 
@@ -78,7 +80,114 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err with line/column info on failure.
 	public Result<void, TomlParseError> Read(StringView input, TomlReadConfig config)
 	{
-		let parser = scope TomlParserImpl(config.Version);
+		int start = 0;
+		if (TomlChar.ValidateUtf8(input, out start) case .Err(let e))
+			return .Err(e);
+
+		let cursor = TomlByteCursor(StringView(&input.Ptr[start], input.Length - start));
+		return ReadWithCursor(cursor, config);
+	}
+
+	/// @brief Parse raw UTF-8 bytes into this document.
+	/// @param data The TOML input bytes. Must remain valid for the duration of the call.
+	/// @return .Ok on success, or .Err with line/column info on failure.
+	public Result<void, TomlParseError> ReadBytes(Span<uint8> data)
+	{
+		return ReadBytes(data, DefaultReadConfig);
+	}
+
+	/// @brief Parse raw UTF-8 bytes with an explicit configuration.
+	/// @param data The TOML input bytes. Must remain valid for the duration of the call.
+	/// @param config Read mode, conflict strategy, and TOML version.
+	/// @return .Ok on success, or .Err with line/column info on failure.
+	public Result<void, TomlParseError> ReadBytes(Span<uint8> data, TomlReadConfig config)
+	{
+		StringView sv = StringView((char8*)data.Ptr, data.Length);
+		int start = 0;
+		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let e))
+			return .Err(e);
+
+		let cursor = TomlByteCursor(Span<uint8>((uint8*)data.Ptr + start, data.Length - start));
+		return ReadWithCursor(cursor, config);
+	}
+
+	/// @brief Parse TOML from a stream into this document.
+	/// The stream must be readable. The caller owns the stream and should close it after.
+	/// @param stream The stream to read from.
+	/// @return .Ok on success, or .Err on parse error.
+	public Result<void, TomlParseError> Read(Stream stream)
+	{
+		return Read(stream, DefaultReadConfig);
+	}
+
+	/// @brief Parse TOML from a stream with an explicit configuration.
+	/// @param stream The stream to read from.
+	/// @param config Read mode, conflict strategy, and TOML version.
+	/// @return .Ok on success, or .Err on parse error.
+	public Result<void, TomlParseError> Read(Stream stream, TomlReadConfig config)
+	{
+		uint8[] buffer = new uint8[8192];
+		defer delete buffer;
+		String spill = new String();
+		defer delete spill;
+
+		var state = new TomlStreamState();
+		defer delete state;
+		var cursor = TomlBufferedStreamCursor(stream, buffer, spill, state);
+
+		// Handle optional UTF-8 BOM at stream start
+		{
+			char8 b0 = cursor.PeekByte();
+			if ((uint8)b0 == 0xEF)
+			{
+				char8 b1 = cursor.PeekByte(1);
+				char8 b2 = cursor.PeekByte(2);
+				if ((uint8)b1 == 0xBB && (uint8)b2 == 0xBF)
+				{
+					cursor.AdvanceByte();
+					cursor.AdvanceByte();
+					cursor.AdvanceByte();
+					// Reject a second BOM immediately following the first
+					b0 = cursor.PeekByte();
+					if ((uint8)b0 == 0xEF)
+					{
+						b1 = cursor.PeekByte(1);
+						b2 = cursor.PeekByte(2);
+						if ((uint8)b1 == 0xBB && (uint8)b2 == 0xBF)
+							return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
+					}
+					// Reset cursor position so parsing sees line 1, column 1 after BOM
+					cursor.ResetPosition();
+				}
+			}
+		}
+
+		if (ReadWithCursor(cursor, config) case .Err(let e))
+		{
+			if (state.mError)
+			{
+				e.Dispose();
+				return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
+			}
+			if (state.mUtf8Error)
+			{
+				e.Dispose();
+				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
+					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
+			}
+			return .Err(e);
+		}
+		if (state.mError)
+			return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
+		if (state.mUtf8Error)
+			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
+				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
+	{
+		let parser = scope TomlParserImpl<TCursor>(config.Version);
 
 		// Fast path: nothing to preserve — parse directly into root
 		if (mRootTable.Count == 0 || config.Mode == .Replace)
@@ -86,7 +195,7 @@ public class TomlDocument
 			if (config.Mode == .Replace)
 				mRootTable.Clear();
 			let resolver = scope TomlPathResolver(mRootTable);
-			return parser.Parse(input, resolver);
+			return parser.Parse(cursor, resolver);
 		}
 
 		// Merge with existing content — transactional via temp table
@@ -94,7 +203,7 @@ public class TomlDocument
 		defer delete incoming;
 		{
 			let resolver = scope TomlPathResolver(incoming);
-			if (parser.Parse(input, resolver) case .Err(let e))
+			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}
 		return mRootTable.MergeFrom(incoming, config.OnConflict);
@@ -269,5 +378,58 @@ public class TomlDocument
 			return true;
 		value = default;
 		return false;
+	}
+
+	/// @brief Parse a TOML file into this document. Convenience wrapper around Read().
+	/// @param path File path to read from.
+	/// @return .Ok on success, or .Err on file or parse error.
+	public Result<void, TomlParseError> ReadFile(StringView path)
+	{
+		return ReadFile(path, DefaultReadConfig);
+	}
+
+	/// @brief Parse a TOML file into this document with an explicit configuration.
+	/// @param path File path to read from.
+	/// @param config Read options.
+	/// @return .Ok on success, or .Err on file or parse error.
+	public Result<void, TomlParseError> ReadFile(StringView path, TomlReadConfig config)
+	{
+		String content = scope String();
+		if (ReadFileContent(path, content) case .Err(let e))
+			return .Err(e);
+		return Read(content, config);
+	}
+
+	/// @brief Write this document to a file. Convenience wrapper around Write().
+	/// @param path File path to write to. Overwrites existing files.
+	/// @return .Ok on success, or .Err if the write failed.
+	public Result<void, TomlParseError> WriteFile(StringView path)
+	{
+		return WriteFile(path, DefaultWriteConfig);
+	}
+
+	/// @brief Write this document to a file with an explicit configuration.
+	/// @param path File path to write to. Overwrites existing files.
+	/// @param config Write options.
+	/// @return .Ok on success, or .Err if the write failed.
+	public Result<void, TomlParseError> WriteFile(StringView path, TomlWriteConfig config)
+	{
+		String output = scope String();
+		Write(output, config);
+		if (File.WriteAllText(path, output) case .Err)
+			return .Err(TomlParseError(.IoError, scope $"Cannot write file: {path}" , 0, 0, 0));
+		return .Ok;
+	}
+
+	/// @brief Read raw bytes from a file into a String, returning an IoError on failure.
+	private static Result<void, TomlParseError> ReadFileContent(StringView path, String outContent)
+	{
+		var data = new List<uint8>();
+		defer delete data;
+		if (File.ReadAll(path, data) case .Err)
+			return .Err(TomlParseError(.IoError, scope $"Cannot read file: {path}" , 0, 0, 0));
+		for (int i = 0; i < data.Count; i++)
+			outContent.Append((char8)data[i]);
+		return .Ok;
 	}
 }

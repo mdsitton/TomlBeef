@@ -4,9 +4,9 @@ using System.Collections;
 namespace TomlBeef;
 
 /// Recursive descent parser for TOML v1.1.0.
-class TomlParserImpl
+class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 {
-	private TomlCursor mCursor ~ delete _;
+	private TCursor mCursor;
 	private TomlPathResolver mPathResolver;
 	private TomlVersion mVersion;
 	private int mDepth = 0;
@@ -17,57 +17,9 @@ class TomlParserImpl
 		mVersion = version;
 	}
 
-	public Result<void, TomlParseError> Parse(StringView input, TomlPathResolver resolver)
+	public Result<void, TomlParseError> Parse(TCursor cursor, TomlPathResolver resolver)
 	{
-		// Validate UTF-8
-		int i = 0;
-		while (i < input.Length)
-		{
-			uint8 b = (uint8)input[i];
-			if (b < 0x80) { i++; continue; }
-			int seqLen;
-			uint32 minCp;
-			if ((b & 0xE0) == 0xC0)      { seqLen = 2; minCp = 0x80; }
-			else if ((b & 0xF0) == 0xE0) { seqLen = 3; minCp = 0x800; }
-			else if ((b & 0xF8) == 0xF0) { seqLen = 4; minCp = 0x10000; }
-			else { return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", 1, 1, i)); }
-
-			if (i + seqLen > input.Length)
-				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", 1, 1, i));
-
-			uint32 cp = (uint32)(b & (seqLen == 2 ? 0x1F : seqLen == 3 ? 0x0F : 0x07));
-			for (int j = 1; j < seqLen; j++)
-			{
-				uint8 cb = (uint8)input[i + j];
-				if ((cb & 0xC0) != 0x80)
-					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", 1, 1, i + j));
-				cp = (cp << 6) | (uint32)(cb & 0x3F);
-			}
-
-			// Validate overlong sequences and surrogate range
-			if (cp < minCp)
-				return .Err(TomlParseError(.InvalidUtf8, "Overlong UTF-8 sequence", 1, 1, i));
-			if (cp >= 0xD800 && cp <= 0xDFFF)
-				return .Err(TomlParseError(.InvalidUtf8, "UTF-8 surrogate pair not allowed", 1, 1, i));
-			if (cp > 0x10FFFF)
-				return .Err(TomlParseError(.InvalidUtf8, "Codepoint beyond U+10FFFF", 1, 1, i));
-
-			i += seqLen;
-		}
-
-		// Skip UTF-8 BOM if present
-		int start = 0;
-		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
-		{
-			start = 3;
-			// Reject a second BOM immediately following the first
-			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
-				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
-		}
-
-		if (mCursor != null) delete mCursor;
-
-		mCursor = new TomlCursor(StringView(&input.Ptr[start], input.Length - start));
+		mCursor = cursor;
 		mPathResolver = resolver;
 		mPathResolver.Reset();
 		mDepth = 0;
@@ -280,7 +232,7 @@ class TomlParserImpl
 
 	private Result<String, TomlParseError> ParseBareKey()
 	{
-		int start = mCursor.Offset;
+		let mark = mCursor.Mark();
 
 		if (!mCursor.IsEOF && TomlChar.IsBareKeyChar(mCursor.PeekByte()))
 		{
@@ -294,7 +246,8 @@ class TomlParserImpl
 		while (!mCursor.IsEOF && TomlChar.IsBareKeyChar(mCursor.PeekByte()))
 			mCursor.AdvanceByte();
 
-		StringView sv = mCursor.Slice(start, mCursor.Offset - start);
+		String scratch = scope String();
+		StringView sv = mCursor.Slice(mark, scratch);
 		return new String(sv);
 	}
 
@@ -343,16 +296,17 @@ class TomlParserImpl
 
 	private Result<String, TomlParseError> ParseLiteralStringKey()
 	{
-		int start = mCursor.Offset;
-		mCursor.AdvanceByte();
+		mCursor.AdvanceByte(); // skip opening '
+		let mark = mCursor.Mark();
 
 		while (!mCursor.IsEOF)
 		{
 			char8 b = mCursor.PeekByte();
 			if (b == '\'')
 			{
-				mCursor.AdvanceByte();
-				StringView sv = mCursor.Slice(start + 1, mCursor.Offset - start - 2);
+				String scratch = scope String();
+				StringView sv = mCursor.Slice(mark, scratch);
+				mCursor.AdvanceByte(); // skip closing '
 				return new String(sv);
 			}
 			if (b == '\r' || b == '\n')
@@ -765,11 +719,12 @@ class TomlParserImpl
 
 	private Result<TomlValue, TomlParseError> ParseBool()
 	{
-		int start = mCursor.Offset;
+		let mark = mCursor.Mark();
 		while (!mCursor.IsEOF && TomlChar.IsBareValueChar(mCursor.PeekByte()))
 			mCursor.AdvanceByte();
 
-		StringView token = mCursor.Slice(start, mCursor.Offset - start);
+		String scratch = scope String();
+		StringView token = mCursor.Slice(mark, scratch);
 
 		if (token == "true") return TomlValue.Bool(true);
 		if (token == "false") return TomlValue.Bool(false);
@@ -782,7 +737,7 @@ class TomlParserImpl
 
 	private Result<TomlValue, TomlParseError> ParseBareValue()
 	{
-		int start = mCursor.Offset;
+		let mark = mCursor.Mark();
 
 		while (!mCursor.IsEOF)
 		{
@@ -794,11 +749,12 @@ class TomlParserImpl
 			mCursor.AdvanceByte();
 		}
 
-		int length = mCursor.Offset - start;
+		int length = mCursor.Offset - mark.mOffset;
 		if (length == 0)
 			return .Err(Error(.UnexpectedToken, "Expected value"));
 
-		StringView token = mCursor.Slice(start, length);
+		String scratch = scope String();
+		StringView token = mCursor.Slice(mark, scratch);
 		token.Trim();
 		return ParseBareToken(token);
 	}

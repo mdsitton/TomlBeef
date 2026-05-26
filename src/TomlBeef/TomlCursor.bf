@@ -2,45 +2,91 @@ using System;
 
 namespace TomlBeef;
 
-class TomlCursor
+interface ITomlCursor
 {
-	private StringView mInput;
+	int Offset { get; }
+	int Line { get; }
+	int Column { get; }
+	bool IsEOF { get; }
+
+	char8 PeekByte() mut;
+	char8 PeekByte(int lookahead) mut;
+	char8 PeekByteAt(int offset) mut;
+	char8 AdvanceByte() mut;
+	char32 Advance() mut;
+
+	void SkipWhitespace() mut;
+	void SkipNewline() mut;
+	Result<void, TomlParseError> SkipComment() mut;
+
+	TomlCursorMark Mark() mut;
+	StringView Slice(TomlCursorMark mark, String scratch) mut;
+}
+
+struct TomlCursorMark
+{
+	public int mOffset;
+}
+
+struct TomlByteCursor : ITomlCursor
+{
+	private Span<uint8> mData;
 	private int mOffset;
 	private int mLine;
 	private int mColumn;
 
 	public this(StringView input)
 	{
-		mInput = input;
+		mData = Span<uint8>((uint8*)input.Ptr, input.Length);
 		mOffset = 0;
 		mLine = 1;
 		mColumn = 1;
 	}
 
-	public int Offset => mOffset;
-	public int Line => mLine;
-	public int Column => mColumn;
-	public bool IsEOF => mOffset >= mInput.Length;
-
-	public StringView Remaining => mInput.Substring(mOffset);
-
-	public char8 PeekByte()
+	public this(Span<uint8> data)
 	{
-		if (mOffset >= mInput.Length) return 0;
-		return mInput[mOffset];
+		mData = data;
+		mOffset = 0;
+		mLine = 1;
+		mColumn = 1;
 	}
 
-	public char8 PeekByteAt(int offset)
+	[Inline]
+	public int Offset => mOffset;
+	[Inline]
+	public int Line => mLine;
+	[Inline]
+	public int Column => mColumn;
+	[Inline]
+	public bool IsEOF => mOffset >= mData.Length;
+
+	[Inline]
+	public char8 PeekByte() mut
+	{
+		if (mOffset >= mData.Length) return 0;
+		return (char8)mData[mOffset];
+	}
+
+	[Inline]
+	public char8 PeekByte(int lookahead) mut
+	{
+		int pos = mOffset + lookahead;
+		if (pos >= mData.Length || pos < 0) return 0;
+		return (char8)mData[pos];
+	}
+
+	[Inline]
+	public char8 PeekByteAt(int offset) mut
 	{
 		int pos = mOffset + offset;
-		if (pos >= mInput.Length || pos < 0) return 0;
-		return mInput[pos];
+		if (pos >= mData.Length || pos < 0) return 0;
+		return (char8)mData[pos];
 	}
 
-	public char32 Advance()
+	public char32 Advance() mut
 	{
-		if (mOffset >= mInput.Length) return 0;
-		char8 b0 = mInput[mOffset];
+		if (mOffset >= mData.Length) return 0;
+		char8 b0 = (char8)mData[mOffset];
 		if ((uint8)b0 < 0x80)
 		{
 			mOffset++;
@@ -56,7 +102,7 @@ class TomlCursor
 			return (char32)b0;
 		}
 
-		int remaining = mInput.Length - mOffset;
+		int remaining = mData.Length - mOffset;
 		int cpLen = TomlChar.Utf8SequenceLength(b0);
 		if (cpLen == 0 || cpLen > remaining)
 		{
@@ -65,21 +111,21 @@ class TomlCursor
 			return (char32)0xFFFD;
 		}
 
-		char32 cp = TomlChar.DecodeAt(mInput, mOffset, cpLen);
+		StringView sv = StringView((char8*)mData.Ptr + mOffset, remaining);
+		char32 cp = TomlChar.DecodeAt(sv, 0, cpLen);
 		mOffset += cpLen;
 		mColumn++;
 		return cp;
 	}
 
-	public char8 AdvanceByte()
+	public char8 AdvanceByte() mut
 	{
-		if (mOffset >= mInput.Length) return 0;
-		char8 b = mInput[mOffset];
+		if (mOffset >= mData.Length) return 0;
+		char8 b = (char8)mData[mOffset];
 		mOffset++;
 		if (b == '\r')
 		{
-			// CRLF: consume LF as part of this newline
-			if (mOffset < mInput.Length && mInput[mOffset] == '\n')
+			if (mOffset < mData.Length && mData[mOffset] == '\n')
 				mOffset++;
 			mLine++;
 			mColumn = 1;
@@ -96,50 +142,38 @@ class TomlCursor
 		return b;
 	}
 
-	public bool Match(StringView s)
+	public void SkipWhitespace() mut
 	{
-		if (mOffset + s.Length > mInput.Length) return false;
-		for (int i = 0; i < s.Length; i++)
-			if (mInput[mOffset + i] != s[i]) return false;
-		for (int i = 0; i < s.Length; i++)
-			AdvanceByte();
-		return true;
-	}
-
-	public void SkipWhitespace()
-	{
-		while (mOffset < mInput.Length)
+		while (mOffset < mData.Length)
 		{
-			char8 b = mInput[mOffset];
+			uint8 b = mData[mOffset];
 			if (b == ' ' || b == '\t') AdvanceByte();
 			else break;
 		}
 	}
 
-	public void SkipNewline()
+	public void SkipNewline() mut
 	{
-		if (mOffset < mInput.Length && mInput[mOffset] == '\r') AdvanceByte();
-		if (mOffset < mInput.Length && mInput[mOffset] == '\n') AdvanceByte();
+		if (mOffset < mData.Length && mData[mOffset] == '\r') AdvanceByte();
+		if (mOffset < mData.Length && mData[mOffset] == '\n') AdvanceByte();
 	}
 
-	public Result<void, TomlParseError> SkipComment()
+	public Result<void, TomlParseError> SkipComment() mut
 	{
-		if (mOffset >= mInput.Length || mInput[mOffset] != '#') return .Ok;
-		AdvanceByte(); // skip '#'
+		if (mOffset >= mData.Length || mData[mOffset] != '#') return .Ok;
+		AdvanceByte();
 
-		while (mOffset < mInput.Length)
+		while (mOffset < mData.Length)
 		{
-			char8 b = mInput[mOffset];
+			char8 b = (char8)mData[mOffset];
 			if (b == '\r')
 			{
-				// CR is only valid as part of CRLF; bare CR is a control char error
-				if (mOffset + 1 < mInput.Length && mInput[mOffset + 1] == '\n')
+				if (mOffset + 1 < mData.Length && mData[mOffset + 1] == '\n')
 					break;
 				return .Err(TomlParseError(.ControlCharInDocument, "Bare CR in comment", mLine, mColumn, mOffset));
 			}
 			if (b == '\n') break;
 
-			// Validate: control characters other than tab are forbidden in comments
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 				return .Err(TomlParseError(.ControlCharInDocument, "Control character in comment", mLine, mColumn, mOffset));
 
@@ -149,9 +183,16 @@ class TomlCursor
 		return .Ok;
 	}
 
-	public StringView Slice(int offset, int length)
+	[Inline]
+	public TomlCursorMark Mark() mut
 	{
-		if (offset < 0 || offset + length > mInput.Length) return StringView();
-		return mInput.Substring(offset, length);
+		return TomlCursorMark() { mOffset = mOffset };
+	}
+
+	public StringView Slice(TomlCursorMark mark, String scratch)
+	{
+		int length = mOffset - mark.mOffset;
+		if (length < 0 || mark.mOffset + length > mData.Length) return StringView();
+		return StringView((char8*)mData.Ptr + mark.mOffset, length);
 	}
 }

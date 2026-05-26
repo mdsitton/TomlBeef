@@ -192,4 +192,326 @@ static class TomlTest
 			return scope String(fullPath.Substring(prefixLen));
 		return scope String(fullPath);
 	}
+
+
+	// ================================================================
+	// Test helpers
+	// ================================================================
+
+	private static void AddAscii(List<uint8> bytes, StringView text)
+	{
+		for (int i = 0; i < text.Length; i++)
+			bytes.Add((uint8)text[i]);
+	}
+
+	private static void AddByte(List<uint8> bytes, uint8 b)
+	{
+		bytes.Add(b);
+	}
+
+	private static void AddBytes(List<uint8> bytes, params uint8[] raw)
+	{
+		for (let b in raw)
+			bytes.Add(b);
+	}
+
+	private static void AddRepeat(List<uint8> bytes, char8 c, int count)
+	{
+		for (int i = 0; i < count; i++)
+			bytes.Add((uint8)c);
+	}
+
+	private static Result<void, TomlParseError> ReadFromByteStream(List<uint8> bytes)
+	{
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		var doc = new TomlDocument();
+		defer delete doc;
+		return doc.Read(ms);
+	}
+
+	private static void AssertReadErr(TomlErrorKind kind, Result<void, TomlParseError> result)
+	{
+		switch (result)
+		{
+		case .Ok: Test.Assert(false, "Expected error");
+		case .Err(let e):
+			defer e.Dispose();
+			if (e.mKind != kind)
+				Test.Assert(false, scope $"Expected {kind}, got {e.mKind}: {e.mMessage}");
+		}
+	}
+
+	// ================================================================
+	// Stream buffer boundary tests
+	// ================================================================
+
+	[Test]
+	public static void Stream_CrlfCrossesBufferBoundary()
+	{
+		List<uint8> bytes = scope .();
+		AddRepeat(bytes, '#', 8191);
+		AddAscii(bytes, "\r\na = 1\n");
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.RootTable.Count == 1);
+	}
+
+	[Test]
+	public static void Stream_LongCommentCrossesBufferBoundary()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "# ");
+		AddRepeat(bytes, 'x', 8192);
+		AddAscii(bytes, "\na = 1\n");
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.RootTable.Count == 1);
+	}
+
+	[Test]
+	public static void Stream_LongLiteralStringCrossesBufferBoundary()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "a = '");
+		AddRepeat(bytes, 'x', 8192);
+		AddAscii(bytes, "'\n");
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetString("a", var val));
+		Test.Assert(val.Length == 8192);
+	}
+
+	[Test]
+	public static void Stream_LongBareKeyCrossesBufferBoundary()
+	{
+		List<uint8> bytes = scope .();
+		AddRepeat(bytes, 'k', 8192);
+		AddAscii(bytes, " = 1\n");
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.RootTable.Count == 1);
+	}
+
+	// ================================================================
+	// UTF-8 validation tests
+	// ================================================================
+
+	[Test]
+	public static void Utf8_StreamRejectsInvalidLeadByte()
+	{
+		List<uint8> bytes = scope .();
+		AddByte(bytes, 0xFF);
+		AddAscii(bytes, "\n");
+
+		AssertReadErr(.InvalidUtf8, ReadFromByteStream(bytes));
+	}
+
+	[Test]
+	public static void Utf8_StreamRejectsInvalidBytesInComment()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "# ");
+		AddByte(bytes, 0xFF);
+		AddAscii(bytes, "\na = 1\n");
+
+		AssertReadErr(.InvalidUtf8, ReadFromByteStream(bytes));
+	}
+
+	[Test]
+	public static void Utf8_StreamRejectsTruncatedSequenceAtEof()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "# ");
+		AddByte(bytes, 0xC3);
+
+		AssertReadErr(.InvalidUtf8, ReadFromByteStream(bytes));
+	}
+
+	[Test]
+	public static void Utf8_StreamRejectsOverlongSequence()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "\"");
+		AddByte(bytes, 0xC0);
+		AddByte(bytes, 0xAF);
+		AddAscii(bytes, "\"");
+
+		AssertReadErr(.InvalidUtf8, ReadFromByteStream(bytes));
+	}
+
+	[Test]
+	public static void Utf8_StreamAcceptsValidUtf8AcrossBuffer()
+	{
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "a = \"");
+		AddRepeat(bytes, 'x', 8185);
+		AddByte(bytes, 0xC2);
+		AddByte(bytes, 0xA9);
+		AddAscii(bytes, "\"\n");
+
+		var doc = new TomlDocument();
+		defer delete doc;
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetString("a", var val));
+		Test.Assert(val.Length == 8187);
+	}
+
+	// ================================================================
+	// BOM tests
+	// ================================================================
+
+	[Test]
+	public static void Bom_StreamPreservesContentAfterBom()
+	{
+		List<uint8> bytes = scope .();
+		AddBytes(bytes, 0xEF, 0xBB, 0xBF);
+		AddAscii(bytes, "a = 1\n");
+
+		var doc = new TomlDocument();
+		defer delete doc;
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		if (doc.Read(ms) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetInteger("a", var val));
+		Test.Assert(val == 1);
+	}
+
+	[Test]
+	public static void Bom_DoubleBomRejected()
+	{
+		List<uint8> bytes = scope .();
+		AddBytes(bytes, 0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF);
+
+		AssertReadErr(.ControlCharInDocument, ReadFromByteStream(bytes));
+	}
+
+	// ================================================================
+	// Stream I/O error tests
+	// ================================================================
+
+	[Test]
+	public static void Stream_ErrorBeforeFirstByteReturnsIoError()
+	{
+		var stream = new FailingAfterBytesStream(0, "");
+		defer delete stream;
+		var doc = new TomlDocument();
+		defer delete doc;
+		AssertReadErr(.IoError, doc.Read(stream));
+	}
+
+	[Test]
+	public static void Stream_ErrorMidStringReturnsIoError()
+	{
+		var stream = new FailingAfterBytesStream(4, "a = \"");
+		defer delete stream;
+		var doc = new TomlDocument();
+		defer delete doc;
+		AssertReadErr(.IoError, doc.Read(stream));
+	}
+}
+
+class FailingAfterBytesStream : Stream
+{
+	private int mFailAfter;
+	private String mData;
+	private int mPos;
+
+	public this(int failAfter, StringView initialData)
+	{
+		mFailAfter = failAfter;
+		mData = new String(initialData);
+		mPos = 0;
+	}
+
+	public ~this()
+	{
+		delete mData;
+	}
+
+	public override int64 Position
+	{
+		get => mPos;
+		set => mPos = (int)value;
+	}
+
+	public override int64 Length => mData.Length;
+	public override bool CanRead => true;
+	public override bool CanWrite => false;
+
+	public override Result<int> TryRead(Span<uint8> data)
+	{
+		if (mPos >= mFailAfter)
+			return .Err;
+
+		int remaining = mData.Length - mPos;
+		if (remaining <= 0)
+			return .Err;
+
+		int allowed = mFailAfter - mPos;
+		int toCopy = Math.Min(data.Length, Math.Min(remaining, allowed));
+		for (int i = 0; i < toCopy; i++)
+			data[i] = (uint8)mData[mPos + i];
+		mPos += toCopy;
+		return toCopy;
+	}
+
+	public override Result<int> TryWrite(Span<uint8> data)
+	{
+		return .Err;
+	}
+
+	public override Result<void> Close()
+	{
+		return .Ok;
+	}
 }

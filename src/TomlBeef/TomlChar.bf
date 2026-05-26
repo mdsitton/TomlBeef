@@ -147,4 +147,57 @@ public static class TomlChar
 	{
 		return v < 10 ? (char8)(v + '0') : (char8)(v - 10 + 'A');
 	}
+
+	/// @brief Validate a string as UTF-8 and return the start offset after an optional BOM.
+	/// @param input The string to validate.
+	/// @param start On success, the byte offset of the first content byte (0 or 3 if BOM was skipped).
+	/// @return .Ok on success, or .Err with line/column info on invalid UTF-8 or double BOM.
+	public static Result<void, TomlParseError> ValidateUtf8(StringView input, out int start)
+	{
+		start = 0;
+
+		int i = 0;
+		while (i < input.Length)
+		{
+			uint8 b = (uint8)input[i];
+			if (b < 0x80) { i++; continue; }
+			int seqLen = Utf8SequenceLength((char8)b);
+			if (seqLen == 0)
+				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", 1, 1, i));
+
+			if (i + seqLen > input.Length)
+				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", 1, 1, i));
+
+			// Validate continuation bytes
+			for (int j = 1; j < seqLen; j++)
+			{
+				if (((uint8)input[i + j] & 0xC0) != 0x80)
+					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", 1, 1, i + j));
+			}
+
+			char32 cp = DecodeAt(input, i, seqLen);
+			uint32 ucp = (uint32)cp;
+
+			// Validate overlong sequences and surrogate range
+			uint32 minCp = seqLen == 2 ? 0x80 : seqLen == 3 ? 0x800 : 0x10000;
+			if (ucp < minCp)
+				return .Err(TomlParseError(.InvalidUtf8, "Overlong UTF-8 sequence", 1, 1, i));
+			if (ucp >= 0xD800 && ucp <= 0xDFFF)
+				return .Err(TomlParseError(.InvalidUtf8, "UTF-8 surrogate pair not allowed", 1, 1, i));
+			if (ucp > 0x10FFFF)
+				return .Err(TomlParseError(.InvalidUtf8, "Codepoint beyond U+10FFFF", 1, 1, i));
+
+			i += seqLen;
+		}
+
+		// Skip UTF-8 BOM if present
+		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
+		{
+			start = 3;
+			// Reject a second BOM immediately following the first
+			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
+		}
+		return .Ok;
+	}
 }

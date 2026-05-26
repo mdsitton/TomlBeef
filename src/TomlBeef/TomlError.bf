@@ -40,7 +40,10 @@ public enum TomlErrorKind : uint8
 	// Document
 	MissingNewlineAfterKeyVal,
 	EmptyBareKey,
-	InvalidKey
+	InvalidKey,
+
+	// File I/O
+	IoError
 }
 
 /// A parse error with location information for precise error reporting.
