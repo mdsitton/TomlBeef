@@ -199,10 +199,9 @@ static class TomlWriterImpl
 				if ((uint8)c < 0x20 || (uint8)c == 0x7F)
 				{
 					outStr.Append("\\u00");
-					uint8 hi = ((uint8)c >> 4) & 0x0F;
-					uint8 lo = (uint8)c & 0x0F;
-					outStr.Append((char8)(hi < 10 ? '0' + hi : 'a' + hi - 10));
-					outStr.Append((char8)(lo < 10 ? '0' + lo : 'a' + lo - 10));
+					uint8 cb = (uint8)c;
+					outStr.Append(TomlChar.HexDigitChar((cb >> 4) & 0x0F));
+					outStr.Append(TomlChar.HexDigitChar(cb & 0x0F));
 				}
 				else
 				{
@@ -319,9 +318,7 @@ static class TomlWriterImpl
 		if (key.IsEmpty) return false;
 		for (int i = 0; i < key.Length; i++)
 		{
-			char8 c = key[i];
-			if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-				(c >= '0' && c <= '9') || c == '-' || c == '_'))
+			if (!TomlChar.IsBareKeyChar(key[i]))
 				return false;
 		}
 		return true;

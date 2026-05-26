@@ -57,7 +57,7 @@ class TomlCursor
 		}
 
 		int remaining = mInput.Length - mOffset;
-		int cpLen = Utf8SequenceLength(b0);
+		int cpLen = TomlChar.Utf8SequenceLength(b0);
 		if (cpLen == 0 || cpLen > remaining)
 		{
 			mOffset++;
@@ -65,7 +65,7 @@ class TomlCursor
 			return (char32)0xFFFD;
 		}
 
-		char32 cp = DecodeAt(mInput, mOffset, cpLen);
+		char32 cp = TomlChar.DecodeAt(mInput, mOffset, cpLen);
 		mOffset += cpLen;
 		mColumn++;
 		return cp;
@@ -153,40 +153,5 @@ class TomlCursor
 	{
 		if (offset < 0 || offset + length > mInput.Length) return StringView();
 		return mInput.Substring(offset, length);
-	}
-
-	private static int Utf8SequenceLength(char8 lead)
-	{
-		if ((uint8)lead < 0x80) return 1;
-		if (((uint8)lead & 0xE0) == 0xC0) return 2;
-		if (((uint8)lead & 0xF0) == 0xE0) return 3;
-		if (((uint8)lead & 0xF8) == 0xF0) return 4;
-		return 0;
-	}
-
-	private static char32 DecodeAt(StringView input, int offset, int cpLen)
-	{
-		char8 b0 = input[offset];
-		char32 cp;
-		switch (cpLen)
-		{
-		case 1: return (char32)b0;
-		case 2:
-			cp = (char32)((uint8)b0 & 0x1F) << 6;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F);
-			return cp;
-		case 3:
-			cp = (char32)((uint8)b0 & 0x0F) << 12;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 6;
-			cp |= (char32)((uint8)input[offset + 2] & 0x3F);
-			return cp;
-		case 4:
-			cp = (char32)((uint8)b0 & 0x07) << 18;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 12;
-			cp |= (char32)((uint8)input[offset + 2] & 0x3F) << 6;
-			cp |= (char32)((uint8)input[offset + 3] & 0x3F);
-			return cp;
-		default: return (char32)0xFFFD;
-		}
 	}
 }

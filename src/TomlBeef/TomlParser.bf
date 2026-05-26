@@ -72,12 +72,8 @@ class TomlParserImpl
 		mPathResolver.Reset();
 		mDepth = 0;
 
-		switch (ParseDocument())
-		{
-		case .Err(let e):
+		if (ParseDocument() case .Err(let e))
 			return .Err(e);
-		default:
-		}
 
 		return .Ok;
 	}
@@ -628,14 +624,8 @@ class TomlParserImpl
 				return .Err(Error(.InvalidEscape, "Incomplete escape sequence"));
 
 			char8 c = mCursor.PeekByte();
-			uint32 v;
-			if (c >= '0' && c <= '9')
-				v = (uint32)(c - '0');
-			else if (c >= 'A' && c <= 'F')
-				v = (uint32)(c - 'A' + 10);
-			else if (c >= 'a' && c <= 'f')
-				v = (uint32)(c - 'a' + 10);
-			else
+			uint8 v = TomlChar.HexDigitValue(c);
+			if (v == 255)
 				return .Err(Error(.InvalidEscape, "Invalid hex digit"));
 
 			cp = (cp << 4) | v;
@@ -645,34 +635,8 @@ class TomlParserImpl
 		if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
 			return .Err(Error(.InvalidUnicodeScalar, "Invalid Unicode scalar value"));
 
-		EncodeUtf8(result, cp);
+		TomlChar.EncodeUtf8(result, cp);
 		return .Ok;
-	}
-
-	private void EncodeUtf8(String result, uint32 cp)
-	{
-		if (cp < 0x80)
-		{
-			result.Append((char8)cp);
-		}
-		else if (cp < 0x800)
-		{
-			result.Append((char8)(0xC0 | (cp >> 6)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
-		else if (cp < 0x10000)
-		{
-			result.Append((char8)(0xE0 | (cp >> 12)));
-			result.Append((char8)(0x80 | ((cp >> 6) & 0x3F)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
-		else
-		{
-			result.Append((char8)(0xF0 | (cp >> 18)));
-			result.Append((char8)(0x80 | ((cp >> 12) & 0x3F)));
-			result.Append((char8)(0x80 | ((cp >> 6) & 0x3F)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
 	}
 
 	private Result<TomlValue, TomlParseError> ParseSingleLineLiteralString()
@@ -1034,11 +998,10 @@ class TomlParserImpl
 					return .Err(Error(.InvalidUnderscore, "Underscore must be between hex digits"));
 				continue;
 			}
-			uint64 digit;
-			if (c >= '0' && c <= '9') digit = (uint64)(c - '0');
-			else if (c >= 'A' && c <= 'F') digit = (uint64)(c - 'A' + 10);
-			else if (c >= 'a' && c <= 'f') digit = (uint64)(c - 'a' + 10);
-			else return .Err(Error(.InvalidInteger, scope $"Invalid hex digit '{c}'"));
+			uint8 hv = TomlChar.HexDigitValue(c);
+			if (hv == 255)
+				return .Err(Error(.InvalidInteger, scope $"Invalid hex digit '{c}'"));
+			uint64 digit = (uint64)hv;
 
 			if (val > (0xFFFFFFFFFFFFFFFF - digit) / 16)
 				return .Err(Error(.IntegerOverflow, "Hex integer overflow"));
