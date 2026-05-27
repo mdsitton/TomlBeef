@@ -130,6 +130,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mCursor.AdvanceByte();
 		}
 
+
 		mCursor.SkipWhitespace();
 		if (!mCursor.IsEOF)
 		{

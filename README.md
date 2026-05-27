@@ -20,7 +20,6 @@ if (doc.Read(input) case .Err(let err))
     return;
 }
 
-// doc is valid here — no nesting, straight-line code
 if (doc.TryGetString("name", var name))
     Console.WriteLine($"Hello, {name}!");
 
@@ -38,16 +37,14 @@ Console.WriteLine(output);
 var doc = new TomlDocument();
 defer delete doc;
 
-// Recommended: early-exit pattern
 if (doc.Read(input) case .Err(let err))
 {
     defer err.Dispose();
     // handle error, log, return...
 }
-// doc is valid — code continues at top level, no nesting
 ```
 
-`doc.Read` returns `Result<void, TomlParseError>`. On success, the document is populated. On error, the document's content is undefined — do not use. The caller owns the document and must eventually `delete` it.
+`doc.Read` returns `Result<void, TomlParseError>`. On success, the document is populated. On error, the document is left in a defined state: `Replace` failures leave it empty, while `Merge` failures leave existing content unchanged. The caller owns the document and must eventually `delete` it.
 
 A TOML specification version can be passed: `doc.Read(input, .() { Version = .V1_0 })`. Defaults to V1_1.
 
@@ -69,12 +66,21 @@ doc.Read(overrideFile, .() { Mode = .Merge });   // Merge on top
 if (doc.Get("fruit.apple.color") case .Ok(let val))
     ...
 
-// Typed one-call accessors — navigate path + type check in one call
+// Typed one-call accessors — convenient for one-off lookups
 if (doc.TryGetString("fruit.apple.color", var color))
     Console.WriteLine(color);
 
+// For several values under one prefix, look up the table once, then query locally.
+// This avoids repeated dotted-path traversal.
 if (doc.TryGetTable("server", var server))
-    server.TryGetString("host", var host);
+{
+    if (server.TryGetString("host", var host))
+        Console.WriteLine(host);
+    if (server.TryGetInteger("port", var port))
+        Console.WriteLine($"{}", port);
+    if (server.TryGetBool("tls", var tls))
+        Console.WriteLine(tls ? "TLS enabled" : "TLS disabled");
+}
 ```
 
 Full set of document-level typed accessors: `TryGetString`, `TryGetInteger`, `TryGetFloat`, `TryGetBool`, `TryGetTable`, `TryGetArray`, `TryGetOffsetDateTime`, `TryGetLocalDateTime`, `TryGetLocalDate`, `TryGetLocalTime`.

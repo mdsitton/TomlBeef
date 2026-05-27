@@ -68,7 +68,7 @@ public class TomlDocument
 
 	/// @brief Parse a TOML string into this document using the current DefaultReadConfig.
 	/// @param input The TOML text to parse. Must be valid UTF-8.
-	/// @return .Ok on success, or .Err with line/column info on failure.
+	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(StringView input)
 	{
 		return Read(input, DefaultReadConfig);
@@ -77,12 +77,12 @@ public class TomlDocument
 	/// @brief Parse a TOML string into this document with an explicit configuration.
 	/// @param input The TOML text to parse. Must be valid UTF-8.
 	/// @param config Read mode, conflict strategy, and TOML version.
-	/// @return .Ok on success, or .Err with line/column info on failure.
+	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(StringView input, TomlReadConfig config)
 	{
 		int start = 0;
-		if (TomlChar.ValidateUtf8(input, out start) case .Err(let e))
-			return .Err(e);
+		if (TomlChar.ValidateUtf8(input, out start) case .Err(let utf8Err))
+			return ReadFailure(utf8Err, config);
 
 		let cursor = TomlByteCursor(StringView(&input.Ptr[start], input.Length - start));
 		return ReadWithCursor(cursor, config);
@@ -90,7 +90,7 @@ public class TomlDocument
 
 	/// @brief Parse raw UTF-8 bytes into this document.
 	/// @param data The TOML input bytes. Must remain valid for the duration of the call.
-	/// @return .Ok on success, or .Err with line/column info on failure.
+	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadBytes(Span<uint8> data)
 	{
 		return ReadBytes(data, DefaultReadConfig);
@@ -99,13 +99,13 @@ public class TomlDocument
 	/// @brief Parse raw UTF-8 bytes with an explicit configuration.
 	/// @param data The TOML input bytes. Must remain valid for the duration of the call.
 	/// @param config Read mode, conflict strategy, and TOML version.
-	/// @return .Ok on success, or .Err with line/column info on failure.
+	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadBytes(Span<uint8> data, TomlReadConfig config)
 	{
 		StringView sv = StringView((char8*)data.Ptr, data.Length);
 		int start = 0;
-		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let e))
-			return .Err(e);
+		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let utf8Err))
+			return ReadFailure(utf8Err, config);
 
 		let cursor = TomlByteCursor(Span<uint8>((uint8*)data.Ptr + start, data.Length - start));
 		return ReadWithCursor(cursor, config);
@@ -114,7 +114,7 @@ public class TomlDocument
 	/// @brief Parse TOML from a stream into this document.
 	/// The stream must be readable. The caller owns the stream and should close it after.
 	/// @param stream The stream to read from.
-	/// @return .Ok on success, or .Err on parse error.
+	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream)
 	{
 		return Read(stream, DefaultReadConfig);
@@ -123,7 +123,7 @@ public class TomlDocument
 	/// @brief Parse TOML from a stream with an explicit configuration.
 	/// @param stream The stream to read from.
 	/// @param config Read mode, conflict strategy, and TOML version.
-	/// @return .Ok on success, or .Err on parse error.
+	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream, TomlReadConfig config)
 	{
 		uint8[] buffer = new uint8[8192];
@@ -154,7 +154,7 @@ public class TomlDocument
 						b1 = cursor.PeekByte(1);
 						b2 = cursor.PeekByte(2);
 						if ((uint8)b1 == 0xBB && (uint8)b2 == 0xBF)
-							return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
+							return ReadFailure(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3), config);
 					}
 					// Reset cursor position so parsing sees line 1, column 1 after BOM
 					cursor.ResetPosition();
@@ -162,7 +162,40 @@ public class TomlDocument
 			}
 		}
 
+		if (!ShouldParseDirectly(config))
+			return ReadMergeFromStreamCursor(cursor, config, state);
+
 		if (ReadWithCursor(cursor, config) case .Err(let e))
+		{
+			if (state.mError)
+			{
+				e.Dispose();
+				return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
+			}
+			if (state.mUtf8Error)
+			{
+				e.Dispose();
+				return ReadFailure(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
+					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset), config);
+			}
+			return .Err(e);
+		}
+		if (state.mError)
+			return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
+		if (state.mUtf8Error)
+			return ReadFailure(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
+				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset), config);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
+	{
+		let parser = scope TomlParserImpl<TCursor>(config.Version);
+		var incoming = new TomlTable(.Root);
+		defer delete incoming;
+
+		let resolver = scope TomlPathResolver(incoming);
+		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
 			if (state.mError)
 			{
@@ -182,7 +215,19 @@ public class TomlDocument
 		if (state.mUtf8Error)
 			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
-		return .Ok;
+		return mRootTable.MergeFrom(incoming, config.OnConflict);
+	}
+
+	private bool ShouldParseDirectly(TomlReadConfig config)
+	{
+		return mRootTable.Count == 0 || config.Mode == .Replace;
+	}
+
+	private Result<void, TomlParseError> ReadFailure(TomlParseError error, TomlReadConfig config)
+	{
+		if (ShouldParseDirectly(config))
+			mRootTable.Clear();
+		return .Err(error);
 	}
 
 	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
@@ -190,12 +235,17 @@ public class TomlDocument
 		let parser = scope TomlParserImpl<TCursor>(config.Version);
 
 		// Fast path: nothing to preserve — parse directly into root
-		if (mRootTable.Count == 0 || config.Mode == .Replace)
+		if (ShouldParseDirectly(config))
 		{
 			if (config.Mode == .Replace)
 				mRootTable.Clear();
 			let resolver = scope TomlPathResolver(mRootTable);
-			return parser.Parse(cursor, resolver);
+			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
+			{
+				mRootTable.Clear();
+				return .Err(parseErr);
+			}
+			return .Ok;
 		}
 
 		// Merge with existing content — transactional via temp table
@@ -382,7 +432,7 @@ public class TomlDocument
 
 	/// @brief Parse a TOML file into this document. Convenience wrapper around Read().
 	/// @param path File path to read from.
-	/// @return .Ok on success, or .Err on file or parse error.
+	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path)
 	{
 		return ReadFile(path, DefaultReadConfig);
@@ -391,12 +441,12 @@ public class TomlDocument
 	/// @brief Parse a TOML file into this document with an explicit configuration.
 	/// @param path File path to read from.
 	/// @param config Read options.
-	/// @return .Ok on success, or .Err on file or parse error.
+	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path, TomlReadConfig config)
 	{
 		String content = scope String();
 		if (ReadFileContent(path, content) case .Err(let e))
-			return .Err(e);
+			return ReadFailure(e, config);
 		return Read(content, config);
 	}
 

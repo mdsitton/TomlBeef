@@ -38,7 +38,11 @@ public class TomlArray
 	public TomlValue this[int index]
 	{
 		get => mItems[index];
-		set { mItems[index].Dispose(); mItems[index] = value; }
+		set
+		{
+			mItems[index].Dispose();
+			mItems[index] = value;
+		}
 	}
 
 	public TomlArray Clone()
