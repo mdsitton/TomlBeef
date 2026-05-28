@@ -13,10 +13,26 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
 
+	// Pending leading comments waiting to be attached to the next node.
+	private List<String> mPendingComments ~ { if (_ != null) { for (var item in _) delete item; delete _; } };
+	// Pending trailing comment text waiting to be attached to the current node.
+	private String mTrailingCommentText ~ delete _;
+	// Whether we've seen content (key/val or header) — used to detect file header comments.
+	private bool mSeenContent;
+	// Node ID of the last key/val for trailing comment attachment.
+	private TomlNodeId mLastNodeId;
+	// Whether a blank line was seen since the last comment. Used to classify detached vs leading.
+	private bool mBlankLineSinceComment;
+
 	public this(TomlVersion version = .V1_1)
 	{
 		mVersion = version;
 		mMetadata = null;
+		mPendingComments = new List<String>();
+		mTrailingCommentText = null;
+		mSeenContent = false;
+		mLastNodeId = .Invalid;
+		mBlankLineSinceComment = false;
 	}
 
 	public Result<void, TomlParseError> Parse(TCursor cursor, TomlPathResolver resolver)
@@ -63,22 +79,43 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			if (b == '#')
 			{
-				if (mCursor.SkipComment() case .Err(let e))
+				// If a blank line separated these comments from the next content,
+				// and we haven't seen content yet, flush to root (file header comments)
+				if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+					AttachPendingCommentsToRoot();
+				mBlankLineSinceComment = false;
+
+				if (CapturePendingComment() case .Err(let e))
 					return .Err(e);
 				continue;
 			}
 			if (b == '\r' || b == '\n')
 			{
+				// Track blank lines for comment classification
+				if (mMetadata != null && mPendingComments.Count > 0)
+					mBlankLineSinceComment = true;
 				mCursor.SkipNewline();
 				continue;
 			}
 
 			if (b == '[')
 			{
+				// If a blank line separated pending comments from this header,
+				// and we haven't seen content yet, flush to root (file header comments)
+				if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+					AttachPendingCommentsToRoot();
+				mBlankLineSinceComment = false;
+
 				if (ParseHeader() case .Err(let headerErr))
 					return .Err(headerErr);
 				continue;
 			}
+
+			// If a blank line separated pending comments from this key/val,
+			// and we haven't seen content yet, flush to root (file header comments)
+			if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+				AttachPendingCommentsToRoot();
+			mBlankLineSinceComment = false;
 
 			if (ParseKeyVal() case .Err(let kvErr))
 				return .Err(kvErr);
@@ -89,8 +126,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				char8 afterB = mCursor.PeekByte();
 				if (afterB == '#')
 				{
-					if (mCursor.SkipComment() case .Err(let commentErr))
+					if (CaptureTrailingComment() case .Err(let commentErr))
 						return .Err(commentErr);
+					// Attach trailing comment to the last key/val node
+					if (mMetadata != null && mLastNodeId.IsValid)
+						AttachTrailingComment(mLastNodeId);
 				}
 				else if (afterB != '\r' && afterB != '\n')
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
@@ -98,6 +138,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.SkipNewline();
 			}
 		}
+
+		// Attach any remaining pending comments as file header comments
+		if (mMetadata != null && mPendingComments.Count > 0)
+			AttachPendingCommentsToRoot();
 
 		return .Ok;
 	}
@@ -144,7 +188,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			char8 b = mCursor.PeekByte();
 			if (b == '#')
 			{
-				if (mCursor.SkipComment() case .Err(let commentErr))
+				if (CaptureTrailingComment() case .Err(let commentErr))
 					return .Err(commentErr);
 			}
 			else if (b == '\r' || b == '\n')
@@ -154,10 +198,27 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 
 		SyncPathResolver();
+		TomlNodeId nodeId = .Invalid;
 		if (isArray)
-			return mPathResolver.EnterArrayOfTables(path);
+		{
+			if (mPathResolver.EnterArrayOfTables(path, &nodeId) case .Err(let arrErr))
+				return .Err(arrErr);
+		}
 		else
-			return mPathResolver.EnterTable(path);
+		{
+			if (mPathResolver.EnterTable(path, &nodeId) case .Err(let tblErr))
+				return .Err(tblErr);
+		}
+
+		// Attach pending leading comments and trailing comment to the table node
+		if (mMetadata != null && nodeId.IsValid)
+		{
+			AttachPendingComments(nodeId);
+			AttachTrailingComment(nodeId);
+			mSeenContent = true;
+		}
+
+		return .Ok;
 	}
 
 	// ================================================================
@@ -217,6 +278,14 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(valueStart, scratch);
 			CaptureNumericFormat(nodeId, rawToken);
+		}
+
+		// Attach pending leading comments and track this node for trailing comments
+		if (mMetadata != null && nodeId.IsValid)
+		{
+			AttachPendingComments(nodeId);
+			mLastNodeId = nodeId;
+			mSeenContent = true;
 		}
 
 		return .Ok;
@@ -1574,7 +1643,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
 			if (b == '#')
 			{
-				if (mCursor.SkipComment() case .Err(let e))
+				if (SkipCommentText() case .Err(let e))
 					return .Err(e);
 				continue;
 			}
@@ -1768,6 +1837,169 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				break;
 			}
 		}
+	}
+
+	// ================================================================
+	// Comment capture helpers
+	// ================================================================
+
+	/// @brief Skip a TOML comment using parser-level TOML semantics.
+	/// Requires/consumes #, validates comment control chars, and consumes newline if present.
+	private Result<void, TomlParseError> SkipCommentText()
+	{
+		if (mCursor.PeekByte() != '#') return .Ok;
+		mCursor.AdvanceByte(); // skip #
+
+		while (!mCursor.IsEOF)
+		{
+			char8 b = mCursor.PeekByte();
+			// Handle stream EOF where PeekByte() returns 0 before IsEOF is true
+			if (b == 0 && mCursor.IsEOF)
+				break;
+			if (b == '\r')
+			{
+				if (mCursor.PeekByteAt(1) == '\n')
+					break;
+				return .Err(Error(.ControlCharInDocument, "Bare CR in comment"));
+			}
+			if (b == '\n') break;
+
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
+				return .Err(Error(.ControlCharInDocument, "Control character in comment"));
+
+			mCursor.AdvanceByte();
+		}
+		mCursor.SkipNewline();
+		return .Ok;
+	}
+
+	/// @brief Capture comment text from the cursor into outText.
+	/// Requires/consumes #, copies bytes until newline/CRLF/EOF,
+	/// validates comment control chars, consumes newline if present,
+	/// and normalizes only the single leading space after #.
+	private Result<void, TomlParseError> CaptureCommentText(String outText)
+	{
+		if (mCursor.PeekByte() != '#') return .Ok;
+		mCursor.AdvanceByte(); // skip #
+
+		while (!mCursor.IsEOF)
+		{
+			char8 b = mCursor.PeekByte();
+			// Handle stream EOF where PeekByte() returns 0 before IsEOF is true
+			if (b == 0 && mCursor.IsEOF)
+				break;
+			if (b == '\r')
+			{
+				if (mCursor.PeekByteAt(1) == '\n')
+					break;
+				return .Err(Error(.ControlCharInDocument, "Bare CR in comment"));
+			}
+			if (b == '\n') break;
+
+			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
+				return .Err(Error(.ControlCharInDocument, "Control character in comment"));
+
+			outText.Append(b);
+			mCursor.AdvanceByte();
+		}
+		mCursor.SkipNewline();
+		// Trim only leading space (the conventional space after #)
+		if (outText.Length > 0 && outText[0] == ' ')
+			outText.Remove(0, 1);
+		return .Ok;
+	}
+
+	/// @brief Capture a comment line and add it to the pending leading comments list.
+	private Result<void, TomlParseError> CapturePendingComment()
+	{
+		if (mMetadata == null)
+		{
+			// No metadata — just skip the comment
+			return SkipCommentText();
+		}
+
+		String commentText = new String();
+		if (CaptureCommentText(commentText) case .Err(let e))
+		{
+			delete commentText;
+			return .Err(e);
+		}
+		mPendingComments.Add(commentText);
+		return .Ok;
+	}
+
+	/// @brief Capture a trailing comment on the same line as a key/val or header.
+	/// Stores it in mTrailingCommentText for later attachment.
+	private Result<void, TomlParseError> CaptureTrailingComment()
+	{
+		if (mMetadata == null)
+		{
+			return SkipCommentText();
+		}
+
+		// Clear any previous trailing comment
+		if (mTrailingCommentText != null)
+		{
+			delete mTrailingCommentText;
+			mTrailingCommentText = null;
+		}
+
+		mTrailingCommentText = new String();
+		if (CaptureCommentText(mTrailingCommentText) case .Err(let e))
+		{
+			delete mTrailingCommentText;
+			mTrailingCommentText = null;
+			return .Err(e);
+		}
+		return .Ok;
+	}
+
+	/// @brief Attach pending leading comments to a node.
+	private void AttachPendingComments(TomlNodeId nodeId)
+	{
+		if (mMetadata == null || mPendingComments.Count == 0)
+			return;
+
+		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		if (commentSet != null)
+		{
+			for (int i = 0; i < mPendingComments.Count; i++)
+				commentSet.mLeading.Add(mPendingComments[i]);
+			mPendingComments.Clear(); // Ownership transferred
+		}
+	}
+
+	/// @brief Attach the stored trailing comment to a node.
+	private void AttachTrailingComment(TomlNodeId nodeId)
+	{
+		if (mMetadata == null || mTrailingCommentText == null)
+			return;
+
+		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		if (commentSet != null)
+		{
+			if (commentSet.mTrailing != null)
+				delete commentSet.mTrailing;
+			commentSet.mTrailing = mTrailingCommentText;
+			mTrailingCommentText = null; // Ownership transferred
+		}
+		else
+		{
+			delete mTrailingCommentText;
+			mTrailingCommentText = null;
+		}
+	}
+
+	/// @brief Attach any remaining pending comments as file header comments on the root node.
+	private void AttachPendingCommentsToRoot()
+	{
+		if (mMetadata == null || mPendingComments.Count == 0)
+			return;
+
+		let commentSet = mMetadata.GetOrCreateRootComments();
+		for (int i = 0; i < mPendingComments.Count; i++)
+			commentSet.mLeading.Add(mPendingComments[i]);
+		mPendingComments.Clear();
 	}
 
 	private TomlParseError Error(TomlErrorKind kind, StringView message)

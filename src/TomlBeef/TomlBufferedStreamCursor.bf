@@ -211,32 +211,6 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		if (mPos < mEnd && mBuffer[mPos] == '\n') AdvanceByte();
 	}
 
-	public Result<void, TomlParseError> SkipComment() mut
-	{
-		EnsureAvailable(1);
-		if (mPos >= mEnd) return .Ok;
-		if (mBuffer[mPos] != '#') return .Ok;
-		AdvanceByte();
-
-		while (true)
-		{
-			EnsureAvailable(2);
-			if (mPos >= mEnd) return .Ok;
-			char8 b = (char8)mBuffer[mPos];
-			if (b == '\r')
-			{
-				if (mPos + 1 < mEnd && mBuffer[mPos + 1] == '\n')
-					break;
-				return .Err(TomlParseError(.ControlCharInDocument, "Bare CR in comment", mLine, mColumn, (int)(mBaseOffset + mPos)));
-			}
-			if (b == '\n') break;
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(TomlParseError(.ControlCharInDocument, "Control character in comment", mLine, mColumn, (int)(mBaseOffset + mPos)));
-			AdvanceByte();
-		}
-		SkipNewline();
-		return .Ok;
-	}
 
 	[Inline]
 	public TomlCursorMark Mark() mut

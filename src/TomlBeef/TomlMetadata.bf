@@ -436,6 +436,9 @@ public class TomlDocumentMetadata
 {
 	public TomlMetadataMode mMode;
 
+	/// @brief Root/document-level comments. Allocated only when root comments exist.
+	public TomlCommentSet mRootComments ~ delete _;
+
 	public TomlDocumentStyle mDocumentStyle;
 
 	/// Per-node style records, indexed by TomlNodeId.mIndex.
@@ -454,6 +457,7 @@ public class TomlDocumentMetadata
 	public this(TomlMetadataMode mode)
 	{
 		mMode = mode;
+		mRootComments = null;
 		mDocumentStyle = .();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
@@ -516,5 +520,41 @@ public class TomlDocumentMetadata
 		let style = GetNodeStyle(nodeId);
 		if (style != null)
 			style.mDirtyFlags |= flags;
+	}
+
+	/// @brief Get or create the comment set for a node. Allocates the comment list entry if needed.
+	/// @param nodeId The node to get comments for.
+	/// @return The comment set, or null if nodeId is invalid.
+	public TomlCommentSet GetOrCreateCommentSet(TomlNodeId nodeId)
+	{
+		if (!nodeId.IsValid)
+			return null;
+
+		// Ensure the comments list is large enough
+		while (mComments.Count <= nodeId.mIndex)
+			mComments.Add(null);
+
+		if (mComments[nodeId.mIndex] == null)
+			mComments[nodeId.mIndex] = new TomlCommentSet();
+
+		return mComments[nodeId.mIndex];
+	}
+
+	/// @brief Get the comment set for a node, or null if none exists.
+	/// @param nodeId The node to look up.
+	/// @return The comment set, or null if the node has no comments or the ID is invalid.
+	public TomlCommentSet GetCommentSet(TomlNodeId nodeId)
+	{
+		if (!nodeId.IsValid || nodeId.mIndex >= mComments.Count)
+			return null;
+		return mComments[nodeId.mIndex];
+	}
+
+	/// @brief Get or create the root/document-level comment set.
+	public TomlCommentSet GetOrCreateRootComments()
+	{
+		if (mRootComments == null)
+			mRootComments = new TomlCommentSet();
+		return mRootComments;
 	}
 }

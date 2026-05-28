@@ -16,6 +16,9 @@ static class TomlWriterImpl
 	/// Metadata-aware write path that can reuse original tokens for clean string values.
 	private static void WritePreserving(TomlDocument doc, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
 	{
+		// Emit file header comments
+		if (metadata.mRootComments != null && metadata.mRootComments.mLeading.Count > 0)
+			EmitCommentSet(metadata.mRootComments, outStr);
 		WriteTablePreserving(doc.RootTable, "", outStr, version, metadata);
 	}
 
@@ -170,9 +173,23 @@ static class TomlWriterImpl
 					}
 					AppendKey(key, fullPath, version);
 
-					outStr.Append("\n[");
+					// Emit separator newline before comments (only if not at start)
+					if (outStr.Length > 0)
+						outStr.Append('\n');
+
+					// Emit leading comments for the table header
+					if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+						EmitLeadingComments(sub.MetadataContext.mNodeId, outStr, metadata);
+
+					outStr.Append('[');
 					outStr.Append(fullPath);
-					outStr.Append("]\n");
+					outStr.Append(']');
+
+					// Emit trailing comment on the header line
+					if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+						EmitTrailingComment(sub.MetadataContext.mNodeId, outStr, metadata);
+
+					outStr.Append("\n");
 					WriteTablePreserving(sub, fullPath, outStr, version, metadata);
 				}
 			}
@@ -211,9 +228,23 @@ static class TomlWriterImpl
 			}
 			AppendKey(key, fullPath, version);
 
-			outStr.Append("\n[[");
+			// Emit separator newline before comments (only if not at start)
+			if (outStr.Length > 0)
+				outStr.Append('\n');
+
+			// Emit leading comments for the array element header
+			if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+				EmitLeadingComments(sub.MetadataContext.mNodeId, outStr, metadata);
+
+			outStr.Append("[[");
 			outStr.Append(fullPath);
-			outStr.Append("]]\n");
+			outStr.Append("]]");
+
+			// Emit trailing comment on the header line
+			if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+				EmitTrailingComment(sub.MetadataContext.mNodeId, outStr, metadata);
+
+			outStr.Append("\n");
 
 			WriteTablePreserving(sub, fullPath, outStr, version, metadata);
 		}
@@ -221,9 +252,23 @@ static class TomlWriterImpl
 
 	private static void WriteKeyValLinePreserving(StringView key, TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, TomlDocumentMetadata metadata)
 	{
+		// Look up node ID for this entry
+		TomlNodeId nodeId = .Invalid;
+		if (parentTable.MetadataContext != null)
+			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+
+		// Emit leading comments
+		if (nodeId.IsValid)
+			EmitLeadingComments(nodeId, outStr, metadata);
+
 		WriteKey(key, outStr, version);
 		outStr.Append(" = ");
 		WriteValuePreserving(val, outStr, version, parentTable, key, metadata);
+
+		// Emit trailing comment on the same line
+		if (nodeId.IsValid)
+			EmitTrailingComment(nodeId, outStr, metadata);
+
 		outStr.Append("\n");
 	}
 
@@ -462,5 +507,55 @@ static class TomlWriterImpl
 				return false;
 		}
 		return true;
+	}
+
+	// ================================================================
+	// Comment emission helpers
+	// ================================================================
+
+	/// @brief Emit leading comments for a node (one # comment per line).
+	private static void EmitLeadingComments(TomlNodeId nodeId, String outStr, TomlDocumentMetadata metadata)
+	{
+		let commentSet = metadata.GetCommentSet(nodeId);
+		if (commentSet == null || commentSet.mLeading.Count == 0)
+			return;
+
+		EmitCommentSet(commentSet, outStr);
+	}
+
+	/// @brief Emit all leading comments from a comment set.
+	private static void EmitCommentSet(TomlCommentSet commentSet, String outStr)
+	{
+		if (commentSet == null || commentSet.mLeading.Count == 0)
+			return;
+
+		for (int i = 0; i < commentSet.mLeading.Count; i++)
+		{
+			outStr.Append('#');
+			let text = commentSet.mLeading[i];
+			if (!text.IsEmpty)
+			{
+				outStr.Append(' ');
+				outStr.Append(text);
+			}
+			outStr.Append('\n');
+		}
+	}
+
+	/// @brief Emit a trailing comment on the current line (after the value, before newline).
+	/// Emits the comment marker even for empty trailing comments (e.g., a = 1 #).
+	private static void EmitTrailingComment(TomlNodeId nodeId, String outStr, TomlDocumentMetadata metadata)
+	{
+		let commentSet = metadata.GetCommentSet(nodeId);
+		if (commentSet == null || commentSet.mTrailing == null)
+			return;
+
+		if (commentSet.mTrailing.IsEmpty)
+			outStr.Append(" #");
+		else
+		{
+			outStr.Append(" # ");
+			outStr.Append(commentSet.mTrailing);
+		}
 	}
 }

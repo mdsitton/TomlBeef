@@ -1096,6 +1096,428 @@ static class TomlTest
 		// Metadata should be cleaned up on error
 		Test.Assert(doc.Metadata == null);
 	}
+
+	// ================================================================
+	// Comment preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_LeadingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# leading comment\na = 1";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+
+		// Check that the node has a leading comment
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		Test.Assert(commentSet.mLeading.Count == 1);
+		Test.Assert(commentSet.mLeading[0] == "leading comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_TrailingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1 # trailing comment";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		Test.Assert(commentSet.mTrailing != null);
+		Test.Assert(commentSet.mTrailing == "trailing comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_LeadingAndTrailingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# leading\na = 1 # trailing";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		Test.Assert(commentSet.mLeading.Count == 1);
+		Test.Assert(commentSet.mLeading[0] == "leading");
+		Test.Assert(commentSet.mTrailing != null);
+		Test.Assert(commentSet.mTrailing == "trailing");
+	}
+
+	[Test]
+	public static void PreserveStyle_MultipleLeadingComments()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# comment 1\n# comment 2\na = 1";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		Test.Assert(commentSet.mLeading.Count == 2);
+		Test.Assert(commentSet.mLeading[0] == "comment 1");
+		Test.Assert(commentSet.mLeading[1] == "comment 2");
+	}
+
+	[Test]
+	public static void PreserveStyle_CommentBeforeTableHeader()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# table comment\n[server]\nport = 8080";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+
+		// The server table should have the comment
+		let serverTable = doc.RootTable.Entries["server"].AsTable;
+		Test.Assert(serverTable.MetadataContext != null);
+		let nodeId = serverTable.MetadataContext.mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		Test.Assert(commentSet.mLeading.Count == 1);
+		Test.Assert(commentSet.mLeading[0] == "table comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_FileHeaderComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Blank line separates the comment from [server], making it a root comment
+		let input = "# file header\n\n[server]\nport = 8080";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+
+		// The file header comment should be on the dedicated root comment set
+		let rootComments = doc.Metadata.mRootComments;
+		Test.Assert(rootComments != null);
+		Test.Assert(rootComments.mLeading.Count == 1);
+		Test.Assert(rootComments.mLeading[0] == "file header");
+	}
+
+	[Test]
+	public static void PreserveStyle_CommentEmission()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# leading\na = 1 # trailing";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Verify exact comment placement
+		Test.Assert(output.Contains("# leading\na = 1 # trailing"));
+	}
+
+	[Test]
+	public static void PreserveStyle_CommentOnMultpleKeys()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# first comment\na = 1\n# second comment\nb = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 2);
+
+		// Check first key
+		let nodeIdA = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSetA = doc.Metadata.GetCommentSet(nodeIdA);
+		Test.Assert(commentSetA != null);
+		Test.Assert(commentSetA.mLeading.Count == 1);
+		Test.Assert(commentSetA.mLeading[0] == "first comment");
+
+		// Check second key
+		let nodeIdB = doc.Metadata.mNodeStyles[1].mNodeId;
+		let commentSetB = doc.Metadata.GetCommentSet(nodeIdB);
+		Test.Assert(commentSetB != null);
+		Test.Assert(commentSetB.mLeading.Count == 1);
+		Test.Assert(commentSetB.mLeading[0] == "second comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_EmptyTrailingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1 #";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(commentSet != null);
+		// Trailing comment should exist (empty string, not null)
+		Test.Assert(commentSet.mTrailing != null);
+		Test.Assert(commentSet.mTrailing.IsEmpty);
+
+		// Writer should emit the # marker
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("a = 1 #"));
+	}
+
+	[Test]
+	public static void PreserveStyle_RootCommentDoesNotCollideWithFirstNode()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Blank line separates root comment from the leading comment for 'a'
+		let input = "# root comment\n\n# first node comment\na = 1";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+
+		// Root comment should be on dedicated root comment set
+		let rootComments = doc.Metadata.mRootComments;
+		Test.Assert(rootComments != null);
+		Test.Assert(rootComments.mLeading.Count == 1);
+		Test.Assert(rootComments.mLeading[0] == "root comment");
+
+		// First node comment should be on first node (node ID 0)
+		let firstNodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let firstComments = doc.Metadata.GetCommentSet(firstNodeId);
+		Test.Assert(firstComments != null);
+		Test.Assert(firstComments.mLeading.Count == 1);
+		Test.Assert(firstComments.mLeading[0] == "first node comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_DetachedCommentSeparatedByBlankLine()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# detached comment\n\n# leading comment\na = 1";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+
+		// Detached comment should be on root comment set (separated by blank line)
+		let rootComments = doc.Metadata.mRootComments;
+		Test.Assert(rootComments != null);
+		Test.Assert(rootComments.mLeading.Count == 1);
+		Test.Assert(rootComments.mLeading[0] == "detached comment");
+
+		// Leading comment should be on the key node
+		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
+		let nodeComments = doc.Metadata.GetCommentSet(nodeId);
+		Test.Assert(nodeComments != null);
+		Test.Assert(nodeComments.mLeading.Count == 1);
+		Test.Assert(nodeComments.mLeading[0] == "leading comment");
+	}
+
+	[Test]
+	public static void PreserveStyle_CommentEmissionExactOutput()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# leading\na = 1 # trailing";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Exact output assertion
+		let expected = "# leading\na = 1 # trailing\n";
+		Test.Assert(output == expected, scope $"Expected:\n{expected}\nGot:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_DetachedAfterContentStaysWithNextNode()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1\n\n# note for b\nb = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mNodeStyles.Count == 2);
+
+		// 'a' should have no comments
+		let nodeIdA = doc.Metadata.mNodeStyles[0].mNodeId;
+		let commentSetA = doc.Metadata.GetCommentSet(nodeIdA);
+		Test.Assert(commentSetA == null || commentSetA.mLeading.Count == 0);
+
+		// 'b' should have the comment (detached after content stays with next node)
+		let nodeIdB = doc.Metadata.mNodeStyles[1].mNodeId;
+		let commentSetB = doc.Metadata.GetCommentSet(nodeIdB);
+		Test.Assert(commentSetB != null);
+		Test.Assert(commentSetB.mLeading.Count == 1);
+		Test.Assert(commentSetB.mLeading[0] == "note for b");
+
+		// Root comments should be empty (no pre-content detached comments)
+		Test.Assert(doc.Metadata.mRootComments == null || doc.Metadata.mRootComments.mLeading.Count == 0);
+	}
+
+	[Test]
+	public static void PreserveStyle_EmptyTrailingCommentExactOutput()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1 #";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Exact output: should be 'a = 1 #' with no trailing space
+		let expected = "a = 1 #\n";
+		Test.Assert(output == expected, scope $"Expected: '{expected}' Got: '{output}'");
+	}
+
+	[Test]
+	public static void PreserveStyle_CommentedTableHeaderExactOutput()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "# server config\n[server]\nport = 8080";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Exact output: no leading blank line, comment directly before [server]
+		let expected = "# server config\n[server]\nport = 8080\n";
+		Test.Assert(output == expected, scope $"Expected:\n{expected}\nGot:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_StreamCommentAtEof()
+	{
+		// Build a comment at EOF (no trailing newline)
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "# eof comment");
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+
+		// First parse without metadata to establish a value
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("a = 1", config) case .Err(let setupErr))
+		{
+			defer setupErr.Dispose();
+			Test.Assert(false, scope $"Setup parse failed: {setupErr.mMessage}");
+		}
+
+		// Parse the stream comment (EOF without newline)
+		if (doc.Read(ms, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// The comment should be captured correctly (trimmed leading space)
+		Test.Assert(doc.Metadata != null);
+		Test.Assert(doc.Metadata.mRootComments != null);
+		Test.Assert(doc.Metadata.mRootComments.mLeading.Count == 1);
+		Test.Assert(doc.Metadata.mRootComments.mLeading[0] == "eof comment");
+	}
 }
 
 class FailingAfterBytesStream : Stream

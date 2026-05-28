@@ -17,7 +17,6 @@ interface ITomlCursor
 
 	void SkipWhitespace() mut;
 	void SkipNewline() mut;
-	Result<void, TomlParseError> SkipComment() mut;
 
 	TomlCursorMark Mark() mut;
 	StringView Slice(TomlCursorMark mark, String scratch) mut;
@@ -158,30 +157,6 @@ struct TomlByteCursor : ITomlCursor
 		if (mOffset < mData.Length && mData[mOffset] == '\n') AdvanceByte();
 	}
 
-	public Result<void, TomlParseError> SkipComment() mut
-	{
-		if (mOffset >= mData.Length || mData[mOffset] != '#') return .Ok;
-		AdvanceByte();
-
-		while (mOffset < mData.Length)
-		{
-			char8 b = (char8)mData[mOffset];
-			if (b == '\r')
-			{
-				if (mOffset + 1 < mData.Length && mData[mOffset + 1] == '\n')
-					break;
-				return .Err(TomlParseError(.ControlCharInDocument, "Bare CR in comment", mLine, mColumn, mOffset));
-			}
-			if (b == '\n') break;
-
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(TomlParseError(.ControlCharInDocument, "Control character in comment", mLine, mColumn, mOffset));
-
-			AdvanceByte();
-		}
-		SkipNewline();
-		return .Ok;
-	}
 
 	[Inline]
 	public TomlCursorMark Mark() mut

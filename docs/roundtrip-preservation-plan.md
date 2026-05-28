@@ -1118,7 +1118,7 @@ reuse clean scalar child tokens where possible
 
 Comments must be copied during parse because the input is not retained.
 
-Current-code note: comments are currently skipped inside cursor methods (`SkipComment`) and discarded before the parser sees their text. Preservation will require replacing or extending that path so the parser can capture comment text and placement. For the generic cursor design, this likely means a helper that marks the comment start, advances through the comment, slices/copies the text, then consumes the newline.
+Implementation note: comment handling now lives in parser helpers (`SkipCommentText()` and `CaptureCommentText()`) that use cursor primitives. Cursor implementations stay byte/stream oriented and do not contain TOML comment semantics.
 
 Do not store comment spans as the only data.
 
@@ -1756,7 +1756,7 @@ precision-ish hints
 
 Optionally copy non-default numeric tokens.
 
-### Stage 9: comments
+### Stage 9: comments ✅
 
 Copy comments into owned strings during parse.
 
@@ -1769,6 +1769,28 @@ detached/root
 ```
 
 Emit them during serialization.
+
+**Implemented:**
+- Parser-level `SkipCommentText()` and `CaptureCommentText()` helpers handle comment semantics using cursor primitives
+- Parser captures pending leading comments and trailing comments during parse
+- Comments attached to nodes via `TomlDocumentMetadata.GetOrCreateCommentSet()`
+- Root/document comments stored in dedicated `TomlDocumentMetadata.mRootComments` (not node ID)
+- Blank-line-based classification: comments separated by blank line from next content become root comments
+- Writer emits leading comments before nodes and trailing comments after values
+- Empty trailing comments (`a = 1 #`) preserved with marker
+- Comment text preserves content after `#` (only leading space trimmed)
+- 18 new tests verify comment capture, emission, root vs node separation, blank-line classification, stream EOF, and edge cases
+- Comment skipping/capture logic centralized in parser helpers (removed from cursor implementations)
+
+**Reviewer findings addressed:**
+1. Root comment collision: Fixed by using dedicated `mRootComments` field instead of node ID
+2. File-header vs leading semantics: Implemented blank-line-based classification
+3. Writer tests: Added exact-output tests with strict equality assertions
+4. Empty trailing comments: Preserved with `#` marker (no trailing space)
+5. Comment text normalization: Only leading space after `#` is trimmed, preserving intentional whitespace
+6. Detached/comments-inside-containers: Deferred (noted for future work)
+7. Table/AOT comment placement: Fixed by emitting separator newline before comments
+8. Detached comments after content: Only pre-content blank-line-separated comments become root comments
 
 ### Stage 10: key/container/date-time styles
 

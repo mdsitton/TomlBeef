@@ -40,6 +40,15 @@ class TomlPathResolver
 
 	public Result<void, TomlParseError> EnterTable(List<String> path)
 	{
+		return EnterTable(path, null);
+	}
+
+	/// @brief Enter a table header, optionally returning the allocated node ID.
+	/// @param path The key path for the table header.
+	/// @param outNodeId Receives the allocated node ID, or null if not needed.
+	/// @return .Ok on success, or .Err on conflict.
+	public Result<void, TomlParseError> EnterTable(List<String> path, TomlNodeId* outNodeId)
+	{
 		mCurrentTable = mRootTable;
 
 		if (path.Count == 0)
@@ -54,10 +63,19 @@ class TomlPathResolver
 			}
 		}
 
-		return DefineTable(path[path.Count - 1], .ExplicitHeader);
+		return DefineTable(path[path.Count - 1], .ExplicitHeader, outNodeId);
 	}
 
 	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path)
+	{
+		return EnterArrayOfTables(path, null);
+	}
+
+	/// @brief Enter an array-of-tables header, optionally returning the allocated node ID.
+	/// @param path The key path for the array-of-tables header.
+	/// @param outNodeId Receives the allocated node ID, or null if not needed.
+	/// @return .Ok on success, or .Err on conflict.
+	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path, TomlNodeId* outNodeId)
 	{
 		mCurrentTable = mRootTable;
 
@@ -73,7 +91,7 @@ class TomlPathResolver
 			}
 		}
 
-		return DefineArrayOfTables(path[path.Count - 1]);
+		return DefineArrayOfTables(path[path.Count - 1], outNodeId);
 	}
 
 	public Result<void, TomlParseError> SetKeyValue(List<String> keyPath, TomlValue value)
@@ -177,7 +195,7 @@ class TomlPathResolver
 
 	/// Defines a table at the given key in the current table, or navigates into
 	/// an existing table after conflict checks.
-	private Result<void, TomlParseError> DefineTable(StringView key, TomlTableOrigin origin)
+	private Result<void, TomlParseError> DefineTable(StringView key, TomlTableOrigin origin, TomlNodeId* outNodeId = null)
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
@@ -206,6 +224,15 @@ class TomlPathResolver
 				}
 
 				mCurrentTable = existingTable;
+				// Allocate node ID for existing table if requested
+				if (mMetadata != null && outNodeId != null)
+				{
+					let nodeId = mMetadata.AllocateNodeId();
+					*outNodeId = nodeId;
+					let ctx = EnsureTableContext(existingTable);
+					if (ctx != null)
+						ctx.mNodeId = nodeId;
+				}
 				return .Ok;
 			}
 			else if (existing case .Array(let arr))
@@ -229,10 +256,21 @@ class TomlPathResolver
 		TomlValue tableVal = TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
+
+		// Allocate node ID for new table if requested
+		if (mMetadata != null && outNodeId != null)
+		{
+			let nodeId = mMetadata.AllocateNodeId();
+			*outNodeId = nodeId;
+			let ctx = EnsureTableContext(newTable);
+			if (ctx != null)
+				ctx.mNodeId = nodeId;
+		}
+
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> DefineArrayOfTables(StringView key)
+	private Result<void, TomlParseError> DefineArrayOfTables(StringView key, TomlNodeId* outNodeId = null)
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
@@ -246,6 +284,17 @@ class TomlPathResolver
 				TomlTable newElement = new TomlTable(.ArrayElement);
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
+
+				// Allocate node ID for new array element if requested
+				if (mMetadata != null && outNodeId != null)
+				{
+					let nodeId = mMetadata.AllocateNodeId();
+					*outNodeId = nodeId;
+					let ctx = EnsureTableContext(newElement);
+					if (ctx != null)
+						ctx.mNodeId = nodeId;
+				}
+
 				return .Ok;
 			}
 			else if (existing case .Table)
@@ -266,6 +315,17 @@ class TomlPathResolver
 		newArray.Add(.Table(firstElement));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
+
+		// Allocate node ID for first array element if requested
+		if (mMetadata != null && outNodeId != null)
+		{
+			let nodeId = mMetadata.AllocateNodeId();
+			*outNodeId = nodeId;
+			let ctx = EnsureTableContext(firstElement);
+			if (ctx != null)
+				ctx.mNodeId = nodeId;
+		}
+
 		return .Ok;
 	}
 
