@@ -226,7 +226,7 @@ Add focused tests around `TomlReadConfig`.
 - `.Merge + .Error` rejects duplicates;
 - `.Merge + .Skip` keeps existing value;
 - `.Merge + .Overwrite` replaces existing value;
-- parse failure during merge leaves original document unchanged where intended.
+- parse or conflict failure during merge leaves existing content unchanged.
 
 ### Suggested tests
 
@@ -235,7 +235,7 @@ Add focused tests around `TomlReadConfig`.
 - `ReadMode_MergeConflictError`
 - `ReadMode_MergeConflictSkip`
 - `ReadMode_MergeConflictOverwrite`
-- `ReadMode_MergeParseErrorDoesNotMutateExistingDocument`
+- `ReadMode_MergeParseErrorLeavesDocumentUnchanged`
 
 ## Phase 7 — public accessor and dotted-path behavior
 

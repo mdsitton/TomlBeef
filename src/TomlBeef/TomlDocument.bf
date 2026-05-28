@@ -30,6 +30,7 @@ public struct TomlReadConfig
 	public TomlReadMode Mode = .Replace;
 	public MergeConflict OnConflict = .Error;
 	public TomlVersion Version = .V1_1;
+	public TomlMetadataMode MetadataMode = .None;
 }
 
 /// Configuration for writing a document to a TOML string.
@@ -51,14 +52,30 @@ public class TomlDocument
 	public static TomlWriteConfig DefaultWriteConfig = .();
 
 	private TomlTable mRootTable ~ delete _;
+	private TomlDocumentMetadata mMetadata ~ delete _;
 
 	/// @brief The document's root table (read-only). Modify via Insert/Remove, or use Read() to replace.
 	public TomlTable RootTable => mRootTable;
+
+	/// @brief Style metadata sidecar, or null if MetadataMode is None.
+	public TomlDocumentMetadata Metadata => mMetadata;
 
 	/// @brief Remove all content from this document.
 	public void Clear()
 	{
 		mRootTable.Clear();
+		ClearMetadata();
+	}
+
+	private void ClearMetadata()
+	{
+		if (mRootTable != null)
+			mRootTable.ClearMetadataContexts();
+		if (mMetadata != null)
+		{
+			delete mMetadata;
+			mMetadata = null;
+		}
 	}
 
 	public this()
@@ -194,7 +211,16 @@ public class TomlDocument
 		var incoming = new TomlTable(.Root);
 		defer delete incoming;
 
-		let resolver = scope TomlPathResolver(incoming);
+		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
+		TomlDocumentMetadata incomingMetadata = null;
+		if (wantsMetadata)
+		{
+			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			parser.SetMetadata(incomingMetadata);
+		}
+		defer { if (incomingMetadata != null) delete incomingMetadata; }
+
+		let resolver = scope TomlPathResolver(incoming, incomingMetadata);
 		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
 			if (state.mError)
@@ -215,7 +241,11 @@ public class TomlDocument
 		if (state.mUtf8Error)
 			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
-		return mRootTable.MergeFrom(incoming, config.OnConflict);
+		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
+		// Metadata-aware merge not yet implemented — clear metadata to prevent stale state
+		if (mergeResult case .Ok)
+			ClearMetadata();
+		return mergeResult;
 	}
 
 	private bool ShouldParseDirectly(TomlReadConfig config)
@@ -226,23 +256,36 @@ public class TomlDocument
 	private Result<void, TomlParseError> ReadFailure(TomlParseError error, TomlReadConfig config)
 	{
 		if (ShouldParseDirectly(config))
+		{
 			mRootTable.Clear();
+			ClearMetadata();
+		}
 		return .Err(error);
 	}
 
 	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
 	{
 		let parser = scope TomlParserImpl<TCursor>(config.Version);
+		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
 
 		// Fast path: nothing to preserve — parse directly into root
 		if (ShouldParseDirectly(config))
 		{
 			if (config.Mode == .Replace)
+			{
 				mRootTable.Clear();
-			let resolver = scope TomlPathResolver(mRootTable);
+				ClearMetadata();
+			}
+			if (wantsMetadata)
+			{
+				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
+				parser.SetMetadata(mMetadata);
+			}
+			let resolver = scope TomlPathResolver(mRootTable, mMetadata);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
 			{
 				mRootTable.Clear();
+				ClearMetadata();
 				return .Err(parseErr);
 			}
 			return .Ok;
@@ -251,12 +294,23 @@ public class TomlDocument
 		// Merge with existing content — transactional via temp table
 		var incoming = new TomlTable(.Root);
 		defer delete incoming;
+		TomlDocumentMetadata incomingMetadata = null;
+		if (wantsMetadata)
 		{
-			let resolver = scope TomlPathResolver(incoming);
+			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			parser.SetMetadata(incomingMetadata);
+		}
+		defer { if (incomingMetadata != null) delete incomingMetadata; }
+		{
+			let resolver = scope TomlPathResolver(incoming, incomingMetadata);
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}
-		return mRootTable.MergeFrom(incoming, config.OnConflict);
+		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
+		// Metadata-aware merge not yet implemented — clear metadata to prevent stale state
+		if (mergeResult case .Ok)
+			ClearMetadata();
+		return mergeResult;
 	}
 
 	/// @brief Serialize this document to a TOML string using the current DefaultWriteConfig.

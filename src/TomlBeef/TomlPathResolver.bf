@@ -9,11 +9,20 @@ class TomlPathResolver
 {
 	private TomlTable mRootTable;
 	private TomlTable mCurrentTable;
+	private TomlDocumentMetadata mMetadata;
 
 	public this(TomlTable rootTable)
 	{
 		mRootTable = rootTable;
 		mCurrentTable = rootTable;
+		mMetadata = null;
+	}
+
+	public this(TomlTable rootTable, TomlDocumentMetadata metadata)
+	{
+		mRootTable = rootTable;
+		mCurrentTable = rootTable;
+		mMetadata = metadata;
 	}
 
 	public int mCurrentLine = 1;
@@ -69,6 +78,13 @@ class TomlPathResolver
 
 	public Result<void, TomlParseError> SetKeyValue(List<String> keyPath, TomlValue value)
 	{
+		return SetKeyValue(keyPath, value, null);
+	}
+
+	/// SetKeyValue overload that allocates a node ID when metadata is present.
+	/// @param outNodeId Receives the allocated node ID, or remains default if metadata is null.
+	public Result<void, TomlParseError> SetKeyValue(List<String> keyPath, TomlValue value, TomlNodeId* outNodeId)
+	{
 		if (keyPath.Count == 0)
 			return .Err(MakeError(.EmptyBareKey, "Empty key", mCurrentOffset));
 
@@ -86,7 +102,7 @@ class TomlPathResolver
 		}
 
 		StringView finalKey = keyPath[keyPath.Count - 1];
-		switch (InsertKeyValue(finalKey, value))
+		switch (InsertKeyValue(finalKey, value, outNodeId))
 		{
 		case .Err(let err):
 			mCurrentTable = savedTable;
@@ -253,7 +269,7 @@ class TomlPathResolver
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value)
+	private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value, TomlNodeId* outNodeId)
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 			return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
@@ -261,8 +277,31 @@ class TomlPathResolver
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
+		if (mMetadata != null && outNodeId != null)
+		{
+			let nodeId = mMetadata.AllocateNodeId();
+			*outNodeId = nodeId;
+
+			// Ensure current table has a metadata context
+			let ctx = EnsureTableContext(mCurrentTable);
+			if (ctx != null)
+				ctx.SetEntryNodeId(key, nodeId);
+		}
+
 		mCurrentTable.Insert(key, value);
 		return .Ok;
+	}
+
+	/// Ensure a table has a metadata context allocated, if metadata is active.
+	private TomlContainerMetadataContext EnsureTableContext(TomlTable table)
+	{
+		if (mMetadata == null)
+			return null;
+		if (table.MetadataContext != null)
+			return table.MetadataContext;
+		let ctx = new TomlContainerMetadataContext(mMetadata, .Invalid, false);
+		table.MetadataContext = ctx;
+		return ctx;
 	}
 
 	public void Reset()

@@ -148,11 +148,11 @@ public class TomlDocument
 
 | Mode | Existing content | On success | On error |
 |------|-----------------|------------|----------|
-| Replace | Cleared, then parsed directly into root | Document holds new content | Table may have partial data; caller checks `.Err` |
-| Merge (non-empty) | Preserved | New top-level keys merged via temp table | Document **unchanged** — parsing used a temp table |
-| Merge (empty root) | — | Parsed directly into root | Table may have partial data; caller checks `.Err` |
+| Replace | Cleared, then parsed directly into root | Document holds new content | Document is empty |
+| Merge (non-empty) | Preserved during parse | New top-level keys merged via temp table | Document is unchanged |
+| Merge (empty root) | — | Parsed directly into root | Document is empty |
 
-The flow optimizes the common paths: if the root table is empty or mode is Replace, parsing writes directly into `mRootTable` (no temp table allocation). Merge into an already-populated document uses a temp table for transactional safety — the existing data is never touched until parsing succeeds.
+The flow optimizes the common paths: if the root table is empty or mode is Replace, parsing writes directly into `mRootTable` (no temp table allocation). Direct-parse failures clear the root before returning `.Err`, so callers never observe partial parse state. Merge into an already-populated document uses a temp table for transactional safety — existing data is not touched unless parsing and conflict handling succeed.
 
 ### TomlTable — new methods
 
@@ -425,20 +425,18 @@ static class TomlWriterImpl
 
 ## Error Handling Patterns
 
-### Read error — do not use document
+### Replace read error — document is empty
 
 ```bf
 if (doc.Read(input) case .Err(let err))
 {
     defer err.Dispose();
-    // For Replace or empty root: mRootTable may have partial data from the failed parse.
-    // For Merge into populated root: mRootTable is untouched.
-    // In all cases: check .Err before accessing values.
+    // doc.RootTable.Count == 0
     return;
 }
 ```
 
-### Merge error — document untouched
+### Merge error — document unchanged
 
 ```bf
 if (doc.Read(overrideFile, .() { Mode = .Merge }) case .Err(let err))
@@ -449,7 +447,7 @@ if (doc.Read(overrideFile, .() { Mode = .Merge }) case .Err(let err))
 }
 ```
 
-Note: if the root table was empty before the merge, the parser writes directly (optimization), so partial data may be present on error — same as Replace.
+Note: if the root table was empty before the merge, the parser writes directly (optimization), and failures leave the document empty.
 
 ### Write never fails
 

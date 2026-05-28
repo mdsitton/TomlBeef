@@ -10,6 +10,7 @@ public class TomlTable
 	private bool mIsInlineSealed;
 	private Dictionary<String, TomlValue> mEntries ~ DeleteDictionaryAndKeysAndDisposeValues!(_);
 	private List<String> mKeyOrder ~ delete _;
+	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 
 	public this(TomlTableOrigin origin)
 	{
@@ -17,6 +18,7 @@ public class TomlTable
 		mIsInlineSealed = false;
 		mEntries = new Dictionary<String, TomlValue>();
 		mKeyOrder = new List<String>();
+		mMetadataContext = null;
 	}
 
 	public TomlTableOrigin Origin
@@ -29,6 +31,13 @@ public class TomlTable
 	{
 		get => mIsInlineSealed;
 		set => mIsInlineSealed = value;
+	}
+
+	/// @brief Metadata context for style-preserving mode. Null in normal mode.
+	public TomlContainerMetadataContext MetadataContext
+	{
+		get => mMetadataContext;
+		set => mMetadataContext = value;
 	}
 
 	public int Count => mEntries.Count;
@@ -65,6 +74,7 @@ public class TomlTable
 		{
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
+			MarkEntryDirty(key);
 			return;
 		}
 
@@ -83,6 +93,7 @@ public class TomlTable
 		{
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
+			MarkEntryDirty(key);
 			return true;
 		}
 		value.Dispose();
@@ -96,6 +107,10 @@ public class TomlTable
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
+			// Remove node-ID mapping before disposing the value
+			if (mMetadataContext != null)
+				mMetadataContext.RemoveEntryNodeId(key);
+
 			existingVal.Dispose();
 			mEntries.Remove(existingKey);
 			for (int i = 0; i < mKeyOrder.Count; i++)
@@ -104,6 +119,7 @@ public class TomlTable
 				{
 					mKeyOrder.RemoveAt(i);
 					delete existingKey;
+					MarkChildrenDirty();
 					return true;
 				}
 			}
@@ -262,6 +278,11 @@ public class TomlTable
 			delete mKeyOrder;
 			mKeyOrder = new List<String>();
 		}
+		if (mMetadataContext != null)
+		{
+			delete mMetadataContext;
+			mMetadataContext = null;
+		}
 	}
 
 	/// @brief Merge keys from another table into this one.
@@ -313,5 +334,62 @@ public class TomlTable
 			result.Insert(key, val.Clone());
 		}
 		return result;
+	}
+
+	// ================================================================
+	// Dirty tracking helpers
+	// ================================================================
+
+	/// Recursively clear metadata contexts from this table and all descendant tables/arrays.
+	public void ClearMetadataContexts()
+	{
+		if (mMetadataContext != null)
+		{
+			delete mMetadataContext;
+			mMetadataContext = null;
+		}
+		for (int i = 0; i < mKeyOrder.Count; i++)
+		{
+			String key = mKeyOrder[i];
+			TomlValue val = mEntries[key];
+			ClearMetadataContextsFromValue(val);
+		}
+	}
+
+	private static void ClearMetadataContextsFromValue(TomlValue val)
+	{
+		switch (val)
+		{
+		case .Array(let arr):
+			if (arr != null) arr.ClearMetadataContexts();
+		case .Table(let tbl):
+			if (tbl != null) tbl.ClearMetadataContexts();
+		default:
+		}
+	}
+
+	/// Mark a specific entry as dirty in the metadata context.
+	private void MarkEntryDirty(StringView key)
+	{
+		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
+		{
+			if (mMetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			{
+				let style = mMetadataContext.mMetadata.GetNodeStyle(nodeId);
+				if (style != null)
+					style.mDirtyFlags |= .Value;
+			}
+		}
+	}
+
+	/// Mark the container as having changed children.
+	private void MarkChildrenDirty()
+	{
+		if (mMetadataContext != null && mMetadataContext.mMetadata != null && mMetadataContext.mNodeId.IsValid)
+		{
+			let style = mMetadataContext.mMetadata.GetNodeStyle(mMetadataContext.mNodeId);
+			if (style != null)
+				style.mDirtyFlags |= .Children;
+		}
 	}
 }

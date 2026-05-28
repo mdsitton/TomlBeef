@@ -9,12 +9,14 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TCursor mCursor;
 	private TomlPathResolver mPathResolver;
 	private TomlVersion mVersion;
+	private TomlDocumentMetadata mMetadata;
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
 
 	public this(TomlVersion version = .V1_1)
 	{
 		mVersion = version;
+		mMetadata = null;
 	}
 
 	public Result<void, TomlParseError> Parse(TCursor cursor, TomlPathResolver resolver)
@@ -28,6 +30,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return .Err(e);
 
 		return .Ok;
+	}
+
+	public void SetMetadata(TomlDocumentMetadata metadata)
+	{
+		mMetadata = metadata;
 	}
 
 	// ================================================================
@@ -173,6 +180,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		mCursor.SkipWhitespace();
 
+		// Mark value start for raw token capture
+		var valueStart = TomlCursorMark();
+		bool capturingToken = mMetadata != null;
+		if (capturingToken)
+			valueStart = mCursor.Mark();
+
 		TomlValue value = ?;
 		switch (ParseValue())
 		{
@@ -181,11 +194,31 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 
 		SyncPathResolver();
-		if (mPathResolver.SetKeyValue(keyPath, value) case .Err(let insertErr))
+		TomlNodeId nodeId = .Invalid;
+		if (mPathResolver.SetKeyValue(keyPath, value, &nodeId) case .Err(let insertErr))
 		{
 			value.Dispose();
 			return .Err(insertErr);
 		}
+
+		// Capture raw value token if metadata is enabled and value is a string
+		if (capturingToken && nodeId.IsValid && value.IsString)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			let tokenRef = mMetadata.AddOriginalToken(rawToken);
+			let style = mMetadata.GetNodeStyle(nodeId);
+			if (style != null)
+				style.mOriginalValueToken = tokenRef;
+			CaptureStringFormat(nodeId, rawToken);
+		}
+		else if (capturingToken && nodeId.IsValid && (value.IsInteger || value.IsFloat))
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			CaptureNumericFormat(nodeId, rawToken);
+		}
+
 		return .Ok;
 	}
 
@@ -1556,6 +1589,185 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mPathResolver.mCurrentLine = mCursor.Line;
 		mPathResolver.mCurrentColumn = mCursor.Column;
 		mPathResolver.mCurrentOffset = mCursor.Offset;
+	}
+
+	/// Capture string format metadata for a parsed string value.
+	private void CaptureStringFormat(TomlNodeId nodeId, StringView rawToken)
+	{
+		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+			return;
+
+		var fmt = TomlStringFormat();
+
+		char8 first = rawToken[0];
+		if (first == '"' && rawToken.Length >= 3 && rawToken[1] == '"' && rawToken[2] == '"')
+		{
+			fmt.mStyle = .MultilineBasic;
+			// Check for newline after opening quotes
+			if (rawToken.Length >= 4 && (rawToken[3] == '\n' || rawToken[3] == '\r'))
+				fmt.mStartsWithNewline = true;
+		}
+		else if (first == '"')
+		{
+			fmt.mStyle = .Basic;
+		}
+		else if (first == '\'' && rawToken.Length >= 3 && rawToken[1] == '\'' && rawToken[2] == '\'')
+		{
+			fmt.mStyle = .MultilineLiteral;
+			if (rawToken.Length >= 4 && (rawToken[3] == '\n' || rawToken[3] == '\r'))
+				fmt.mStartsWithNewline = true;
+		}
+		else if (first == '\'')
+		{
+			fmt.mStyle = .Literal;
+		}
+
+		// Detect escapes in basic strings
+		if (fmt.mStyle == .Basic || fmt.mStyle == .MultilineBasic)
+		{
+			for (int i = 1; i < rawToken.Length - 1; i++)
+			{
+				if (rawToken[i] == '\\') { fmt.mHadEscapes = true; break; }
+			}
+		}
+
+		let valueFormat = mMetadata.AddValueFormat(.String(fmt));
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mValueFormatRef = valueFormat;
+	}
+
+	/// Detect numeric format metadata from a raw token string.
+	private void CaptureNumericFormat(TomlNodeId nodeId, StringView rawToken)
+	{
+		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+			return;
+
+		// Skip sign
+		int pos = 0;
+		if (pos < rawToken.Length && (rawToken[pos] == '+' || rawToken[pos] == '-'))
+			pos++;
+
+		if (pos + 1 < rawToken.Length && rawToken[pos] == '0')
+		{
+			char8 next = rawToken[pos + 1];
+			if (next == 'x' || next == 'X')
+			{
+				var fmt = TomlIntegerFormat();
+				fmt.mBase = .Hex;
+				fmt.mUppercaseDigits = (next == 'X');
+				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				// Check for uppercase hex digits
+				if (!fmt.mUppercaseDigits)
+				{
+					for (int i = pos + 2; i < rawToken.Length; i++)
+					{
+						char8 c = rawToken[i];
+						if (c >= 'A' && c <= 'F') { fmt.mUppercaseDigits = true; break; }
+					}
+				}
+				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
+				let style = mMetadata.GetNodeStyle(nodeId);
+				if (style != null) style.mValueFormatRef = fmtRef;
+				return;
+			}
+			if (next == 'o' || next == 'O')
+			{
+				var fmt = TomlIntegerFormat();
+				fmt.mBase = .Octal;
+				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
+				let style = mMetadata.GetNodeStyle(nodeId);
+				if (style != null) style.mValueFormatRef = fmtRef;
+				return;
+			}
+			if (next == 'b' || next == 'B')
+			{
+				var fmt = TomlIntegerFormat();
+				fmt.mBase = .Binary;
+				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
+				let style = mMetadata.GetNodeStyle(nodeId);
+				if (style != null) style.mValueFormatRef = fmtRef;
+				return;
+			}
+		}
+
+		// Check for float indicators
+		bool hasDot = false;
+		bool hasExp = false;
+		for (int i = pos; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			if (c == '.') hasDot = true;
+			if (c == 'e' || c == 'E') { hasExp = true; break; }
+		}
+
+		if (hasDot || hasExp)
+		{
+			var fmt = TomlFloatFormat();
+			if (hasExp)
+			{
+				fmt.mStyle = .Scientific;
+				// Find the exponent marker
+				for (int i = pos; i < rawToken.Length; i++)
+				{
+					if (rawToken[i] == 'E') { fmt.mUppercaseExponent = true; break; }
+					if (rawToken[i] == 'e') { fmt.mUppercaseExponent = false; break; }
+				}
+				// Check for explicit + in exponent
+				for (int i = pos; i < rawToken.Length - 1; i++)
+				{
+					if ((rawToken[i] == 'e' || rawToken[i] == 'E') && rawToken[i + 1] == '+')
+					{
+						fmt.mExplicitPlusExponent = true;
+						break;
+					}
+				}
+			}
+			else
+			{
+				fmt.mStyle = .Decimal;
+			}
+			// Check for underscores
+			for (int i = pos; i < rawToken.Length; i++)
+			{
+				if (rawToken[i] == '_') { fmt.mUseUnderscores = true; break; }
+			}
+			let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
+			let style = mMetadata.GetNodeStyle(nodeId);
+			if (style != null) style.mValueFormatRef = fmtRef;
+			return;
+		}
+
+		// Plain decimal integer
+		{
+			var fmt = TomlIntegerFormat();
+			fmt.mBase = .Decimal;
+			DetectUnderscoreGrouping(rawToken, pos, ref fmt);
+			let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
+			let style = mMetadata.GetNodeStyle(nodeId);
+			if (style != null) style.mValueFormatRef = fmtRef;
+		}
+	}
+
+	/// Detect underscore grouping in an integer token starting at digitStart.
+	private void DetectUnderscoreGrouping(StringView rawToken, int digitStart, ref TomlIntegerFormat fmt)
+	{
+		for (int i = digitStart; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] == '_')
+			{
+				fmt.mUseUnderscores = true;
+				// Detect group size: count digits after this underscore until next underscore or end
+				int groupSize = 0;
+				for (int j = i + 1; j < rawToken.Length && rawToken[j] != '_'; j++)
+					groupSize++;
+				if (groupSize > 0)
+					fmt.mGroupSize = (uint8)groupSize;
+				break;
+			}
+		}
 	}
 
 	private TomlParseError Error(TomlErrorKind kind, StringView message)

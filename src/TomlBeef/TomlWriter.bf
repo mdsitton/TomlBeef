@@ -7,7 +7,16 @@ static class TomlWriterImpl
 {
 	public static void Write(TomlDocument doc, String outStr, TomlVersion version = .V1_1)
 	{
-		WriteTable(doc.RootTable, "", outStr, version);
+		if (doc.Metadata != null)
+			WritePreserving(doc, outStr, version, doc.Metadata);
+		else
+			WriteTable(doc.RootTable, "", outStr, version);
+	}
+
+	/// Metadata-aware write path that can reuse original tokens for clean string values.
+	private static void WritePreserving(TomlDocument doc, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	{
+		WriteTablePreserving(doc.RootTable, "", outStr, version, metadata);
 	}
 
 	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)
@@ -110,6 +119,137 @@ static class TomlWriterImpl
 		outStr.Append(" = ");
 		WriteValue(val, outStr, version);
 		outStr.Append("\n");
+	}
+
+	// ================================================================
+	// Preserving writer: reuses original tokens for clean string values
+	// ================================================================
+
+	private static void WriteTablePreserving(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	{
+		// Phase 1: scalar keys, inline tables, static arrays
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key];
+
+			if (val.IsTable)
+			{
+				TomlTable sub = val.AsTable;
+				if (sub.Origin == .InlineTable)
+					WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+			}
+			else if (val.IsArray)
+			{
+				TomlArray arr = val.AsArray;
+				if (arr.IsStatic)
+					WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+			}
+			else
+			{
+				WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+			}
+		}
+
+		// Phase 2: non-inline, non-array-element sub-tables as [header]
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key];
+
+			if (val.IsTable)
+			{
+				TomlTable sub = val.AsTable;
+				if (sub.Origin != .ArrayElement && sub.Origin != .InlineTable)
+				{
+					String fullPath = scope String();
+					if (!pathPrefix.IsEmpty)
+					{
+						fullPath.Append(pathPrefix);
+						fullPath.Append(".");
+					}
+					AppendKey(key, fullPath, version);
+
+					outStr.Append("\n[");
+					outStr.Append(fullPath);
+					outStr.Append("]\n");
+					WriteTablePreserving(sub, fullPath, outStr, version, metadata);
+				}
+			}
+		}
+
+		// Phase 3: array-of-tables
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key];
+
+			if (val.IsArray)
+			{
+				TomlArray arr = val.AsArray;
+				if (!arr.IsStatic && arr.Count > 0)
+					EmitArrayOfTablesPreserving(key, arr, pathPrefix, outStr, version, metadata);
+			}
+		}
+	}
+
+	private static void EmitArrayOfTablesPreserving(StringView key, TomlArray arr, StringView pathPrefix, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	{
+		for (int i = 0; i < arr.Count; i++)
+		{
+			TomlValue elem = arr[i];
+			if (!elem.IsTable)
+				continue;
+
+			TomlTable sub = elem.AsTable;
+
+			String fullPath = scope String();
+			if (!pathPrefix.IsEmpty)
+			{
+				fullPath.Append(pathPrefix);
+				fullPath.Append(".");
+			}
+			AppendKey(key, fullPath, version);
+
+			outStr.Append("\n[[");
+			outStr.Append(fullPath);
+			outStr.Append("]]\n");
+
+			WriteTablePreserving(sub, fullPath, outStr, version, metadata);
+		}
+	}
+
+	private static void WriteKeyValLinePreserving(StringView key, TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, TomlDocumentMetadata metadata)
+	{
+		WriteKey(key, outStr, version);
+		outStr.Append(" = ");
+		WriteValuePreserving(val, outStr, version, parentTable, key, metadata);
+		outStr.Append("\n");
+	}
+
+	/// Write a value, reusing the original token if available and clean.
+	private static void WriteValuePreserving(TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, StringView key, TomlDocumentMetadata metadata)
+	{
+		// Try to reuse original token for string values
+		if (val.IsString && parentTable != null && parentTable.MetadataContext != null)
+		{
+			if (parentTable.MetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			{
+				let style = metadata.GetNodeStyle(nodeId);
+				if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
+				{
+					let token = metadata.GetOriginalToken(style.mOriginalValueToken);
+					if (!token.IsEmpty)
+					{
+						outStr.Append(token);
+						return;
+					}
+				}
+			}
+		}
+
+		// Fall back to canonical generation
+		WriteValue(val, outStr, version);
 	}
 
 	private static void WriteKey(StringView key, String outStr, TomlVersion version)

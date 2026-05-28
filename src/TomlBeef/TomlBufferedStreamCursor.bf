@@ -132,7 +132,11 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		{
 			EnsureAvailable(1);
 			if (mPos < mEnd && mBuffer[mPos] == '\n')
+			{
+				if (mUsingSpill)
+					mSpill.Append('\n');
 				mPos++;
+			}
 			mLine++;
 			mColumn = 1;
 		}
@@ -156,6 +160,8 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		char8 b0 = (char8)mBuffer[mPos];
 		if ((uint8)b0 < 0x80)
 		{
+			if (mUsingSpill)
+				mSpill.Append(b0);
 			mPos++;
 			if (b0 == '\n') { mLine++; mColumn = 1; }
 			else mColumn++;
@@ -166,6 +172,8 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		int cpLen = TomlChar.Utf8SequenceLength(b0);
 		if (cpLen == 0 || cpLen > remaining)
 		{
+			if (mUsingSpill)
+				mSpill.Append(b0);
 			mPos++;
 			mColumn++;
 			return (char32)0xFFFD;
@@ -173,6 +181,11 @@ struct TomlBufferedStreamCursor : ITomlCursor
 
 		StringView sv = StringView((char8*)&mBuffer[mPos], remaining);
 		char32 cp = TomlChar.DecodeAt(sv, 0, cpLen);
+		if (mUsingSpill)
+		{
+			for (int i = 0; i < cpLen; i++)
+				mSpill.Append((char8)mBuffer[mPos + i]);
+		}
 		mPos += cpLen;
 		mColumn++;
 		return cp;
