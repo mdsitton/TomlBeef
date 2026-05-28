@@ -438,6 +438,8 @@ public class TomlDocumentMetadata
 
 	/// @brief Root/document-level comments. Allocated only when root comments exist.
 	public TomlCommentSet mRootComments ~ delete _;
+	/// @brief Footer/EOF comments that appear after all content. Allocated only when footer comments exist.
+	public TomlCommentSet mFooterComments ~ delete _;
 
 	public TomlDocumentStyle mDocumentStyle;
 
@@ -458,6 +460,7 @@ public class TomlDocumentMetadata
 	{
 		mMode = mode;
 		mRootComments = null;
+		mFooterComments = null;
 		mDocumentStyle = .();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
@@ -556,5 +559,13 @@ public class TomlDocumentMetadata
 		if (mRootComments == null)
 			mRootComments = new TomlCommentSet();
 		return mRootComments;
+	}
+
+	/// @brief Get or create the footer/EOF comment set.
+	public TomlCommentSet GetOrCreateFooterComments()
+	{
+		if (mFooterComments == null)
+			mFooterComments = new TomlCommentSet();
+		return mFooterComments;
 	}
 }

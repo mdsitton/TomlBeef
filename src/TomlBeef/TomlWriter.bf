@@ -20,6 +20,9 @@ static class TomlWriterImpl
 		if (metadata.mRootComments != null && metadata.mRootComments.mLeading.Count > 0)
 			EmitCommentSet(metadata.mRootComments, outStr);
 		WriteTablePreserving(doc.RootTable, "", outStr, version, metadata);
+		// Emit footer/EOF comments after content
+		if (metadata.mFooterComments != null && metadata.mFooterComments.mLeading.Count > 0)
+			EmitCommentSet(metadata.mFooterComments, outStr);
 	}
 
 	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)

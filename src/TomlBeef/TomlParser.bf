@@ -139,9 +139,14 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 		}
 
-		// Attach any remaining pending comments as file header comments
+		// Attach any remaining pending comments
 		if (mMetadata != null && mPendingComments.Count > 0)
-			AttachPendingCommentsToRoot();
+		{
+			if (mSeenContent)
+				AttachPendingCommentsToFooter();
+			else
+				AttachPendingCommentsToRoot();
+		}
 
 		return .Ok;
 	}
@@ -1717,6 +1722,21 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (pos < rawToken.Length && (rawToken[pos] == '+' || rawToken[pos] == '-'))
 			pos++;
 
+		// Check for special floats (inf, nan) before checking for 0x/0o/0b prefix
+		if (pos < rawToken.Length)
+		{
+			let body = rawToken.Substring(pos);
+			if (body == "inf" || body == "nan")
+			{
+				var fmt = TomlFloatFormat();
+				fmt.mStyle = .Special;
+				let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
+				let style = mMetadata.GetNodeStyle(nodeId);
+				if (style != null) style.mValueFormatRef = fmtRef;
+				return;
+			}
+		}
+
 		if (pos + 1 < rawToken.Length && rawToken[pos] == '0')
 		{
 			char8 next = rawToken[pos + 1];
@@ -1997,6 +2017,18 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return;
 
 		let commentSet = mMetadata.GetOrCreateRootComments();
+		for (int i = 0; i < mPendingComments.Count; i++)
+			commentSet.mLeading.Add(mPendingComments[i]);
+		mPendingComments.Clear();
+	}
+
+	/// @brief Attach any remaining pending comments as footer/EOF comments.
+	private void AttachPendingCommentsToFooter()
+	{
+		if (mMetadata == null || mPendingComments.Count == 0)
+			return;
+
+		let commentSet = mMetadata.GetOrCreateFooterComments();
 		for (int i = 0; i < mPendingComments.Count; i++)
 			commentSet.mLeading.Add(mPendingComments[i]);
 		mPendingComments.Clear();

@@ -505,6 +505,64 @@ static class TomlTest
 		AssertReadErr(.IoError, doc.Read(stream));
 	}
 
+	[Test]
+	public static void PreserveStyle_CapturesSpecialFloatFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("a = inf\nb = +inf\nc = -inf\nd = nan\ne = +nan\nf = -nan", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let metadata = doc.Metadata;
+		Test.Assert(metadata != null);
+		Test.Assert(metadata.mNodeStyles.Count == 6);
+		Test.Assert(metadata.mValueFormats.Count == 6);
+
+		// All should be Special float format
+		for (int i = 0; i < 6; i++)
+		{
+			let fmt = metadata.mValueFormats[i];
+			if (fmt case .Float(let floatFmt))
+				Test.Assert(floatFmt.mStyle == .Special);
+			else
+				Test.Assert(false, scope $"Expected Float format for node {i}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_EofCommentEmittedAfterContent()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1\n\n# eof comment";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify the comment was captured as footer
+		Test.Assert(doc.Metadata.mFooterComments != null);
+		Test.Assert(doc.Metadata.mFooterComments.mLeading.Count == 1);
+
+		// Write and verify output order
+		String output = scope String();
+		doc.Write(output);
+
+		// The comment should appear AFTER the content, not before
+		int aPos = output.IndexOf("a = 1");
+		int commentPos = output.IndexOf("# eof comment");
+		Test.Assert(aPos >= 0);
+		Test.Assert(commentPos >= 0);
+		Test.Assert(commentPos > aPos, "EOF comment should appear after content, not before");
+	}
+
 	// ================================================================
 	// PreserveStyle metadata tests
 	// ================================================================
