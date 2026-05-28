@@ -172,6 +172,7 @@ public struct TomlDocumentStyle
 	public bool mUseTabs = false;
 	public bool mPreferDottedKeys = false;
 	public TomlStringStyle mDefaultStringStyle = .Basic;
+	public TomlContainerStyle mDefaultArrayStyle = .Inline;
 }
 
 // ================================================================

@@ -559,39 +559,130 @@ static class TomlTest
 		defer delete doc;
 		var config = TomlReadConfig();
 		config.MetadataMode = .PreserveStyle;
-		// Top-level content starts at column 1 (valid TOML has no leading whitespace)
-		// So indent detection should see column 1 and leave indent at default.
+		// TOML allows leading whitespace before keys.
+		// First key at column 3 means 2-space indent.
+		let input = "  a = 1\n  b = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 2);
+	}
+
+	[Test]
+	public static void PreserveStyle_IndentDefaultForTopLevel()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Top-level keys at column 1 → indent stays at default
 		let input = "a = 1\nb = 2";
 		if (doc.Read(input, config) case .Err(let e))
 		{
 			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
-		// Top-level keys at column 1 → indent not inferred, stays at default
-		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 4);
+		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 4); // default
 	}
 
 	[Test]
-	public static void PreserveStyle_IndentDetectedFromIndentedContent()
+	public static void PreserveStyle_DetectsCrlfNewlines()
 	{
 		var doc = new TomlDocument();
 		defer delete doc;
 		var config = TomlReadConfig();
 		config.MetadataMode = .PreserveStyle;
-		// Feed indented content via stream to bypass top-level column check
-		// Valid TOML requires top-level at column 1, but inner content can be indented.
-		// The first content seen is [server] at column 1, so indent stays default.
-		// Test that the field is at least populated and accessible.
-		let input = "[server]\n  port = 8080";
+		let input = "a = 1\r\nb = 2\r\n";
 		if (doc.Read(input, config) case .Err(let e))
 		{
 			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
-		// [server] header is at column 1, so indent detection fires with column 1.
-		// Port is inside the table, not top-level, so indent detection doesn't see it.
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 4); // default, no top-level indent
+		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .CRLF);
+	}
+
+	[Test]
+	public static void PreserveStyle_DetectsLfNewlines()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "a = 1\nb = 2\n";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .LF);
+	}
+
+	[Test]
+	public static void PreserveStyle_DetectsMultilineArrayStyle()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  1,\n  2,\n  3,\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultArrayStyle == .Multiline);
+	}
+
+	[Test]
+	public static void PreserveStyle_DetectsInlineArrayStyle()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [1, 2, 3]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultArrayStyle == .Inline);
+	}
+
+	[Test]
+	public static void PreserveStyle_MixedNewlinesFavorsDominant()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// 2 CRLF, 1 LF → CRLF dominant
+		let input = "a = 1\r\nb = 2\r\nc = 3\n";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .CRLF);
+	}
+
+	[Test]
+	public static void PreserveStyle_LfDominantOverCrlf()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// 1 CRLF, 2 LF → LF dominant
+		let input = "a = 1\r\nb = 2\nc = 3\n";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .LF);
 	}
 
 	[Test]

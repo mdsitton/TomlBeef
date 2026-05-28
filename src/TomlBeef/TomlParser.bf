@@ -30,6 +30,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mStringStyleCount_Literal;
 	private int mStringStyleCount_MultilineBasic;
 	private int mStringStyleCount_MultilineLiteral;
+	private int mArrayStyleCount_Inline;
+	private int mArrayStyleCount_Multiline;
+	private int mCrlfCount;
+	private int mLfOnlyCount;
 
 	public this(TomlVersion version = .V1_1)
 	{
@@ -45,6 +49,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mStringStyleCount_Literal = 0;
 		mStringStyleCount_MultilineBasic = 0;
 		mStringStyleCount_MultilineLiteral = 0;
+		mArrayStyleCount_Inline = 0;
+		mArrayStyleCount_Multiline = 0;
+		mCrlfCount = 0;
+		mLfOnlyCount = 0;
 	}
 
 	public Result<void, TomlParseError> Parse(TCursor cursor, TomlPathResolver resolver)
@@ -106,7 +114,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				// Track blank lines for comment classification
 				if (mMetadata != null && mPendingComments.Count > 0)
 					mBlankLineSinceComment = true;
-				mCursor.SkipNewline();
+				CountAndSkipNewline();
 				continue;
 			}
 
@@ -118,9 +126,15 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					AttachPendingCommentsToRoot();
 				mBlankLineSinceComment = false;
 
-				// Detect indentation from cursor position before first content
+				// Detect indentation from whitespace before first content
 				if (!mInferredIndent && mMetadata != null)
-					InferDocumentIndent();
+				{
+					// SkipWhitespace was already called at loop top.
+					// Use cursor column as indent depth. Only update if indented.
+					if (mCursor.Column > 1)
+						mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+					mInferredIndent = true;
+				}
 
 				if (ParseHeader() case .Err(let headerErr))
 					return .Err(headerErr);
@@ -133,9 +147,13 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				AttachPendingCommentsToRoot();
 			mBlankLineSinceComment = false;
 
-			// Detect indentation from cursor position before first content
+			// Detect indentation from whitespace before first content
 			if (!mInferredIndent && mMetadata != null)
-				InferDocumentIndent();
+			{
+				if (mCursor.Column > 1)
+					mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+				mInferredIndent = true;
+			}
 
 			if (ParseKeyVal() case .Err(let kvErr))
 				return .Err(kvErr);
@@ -155,7 +173,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				else if (afterB != '\r' && afterB != '\n')
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
 				else
-					mCursor.SkipNewline();
+				{
+					CountAndSkipNewline();
+				}
 			}
 		}
 
@@ -220,7 +240,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(commentErr);
 			}
 			else if (b == '\r' || b == '\n')
-				mCursor.SkipNewline();
+				CountAndSkipNewline();
 			else
 				return .Err(Error(.UnexpectedToken, "Expected newline or comment after header"));
 		}
@@ -1447,6 +1467,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseArray()
 	{
 		mCursor.AdvanceByte();
+		int startLine = mCursor.Line;
 		TomlArray arr = new TomlArray();
 		arr.IsStatic = true;
 
@@ -1458,6 +1479,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() == ']')
 		{
 			mCursor.AdvanceByte();
+			CountArrayStyle(startLine, mCursor.Line);
 			return TomlValue.Array(arr);
 		}
 
@@ -1495,6 +1517,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				if (mCursor.PeekByte() == ']')
 				{
 					mCursor.AdvanceByte();
+					CountArrayStyle(startLine, mCursor.Line);
 					return TomlValue.Array(arr);
 				}
 				continue;
@@ -1502,6 +1525,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			else if (b == ']')
 			{
 				mCursor.AdvanceByte();
+				CountArrayStyle(startLine, mCursor.Line);
 				return TomlValue.Array(arr);
 			}
 			else
@@ -1687,7 +1711,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(e);
 				continue;
 			}
-			if (allowNewlines && (b == '\r' || b == '\n')) { mCursor.SkipNewline(); continue; }
+			if (allowNewlines && (b == '\r' || b == '\n')) { CountAndSkipNewline(); continue; }
 			break;
 		}
 		return .Ok;
@@ -1924,7 +1948,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			mCursor.AdvanceByte();
 		}
-		mCursor.SkipNewline();
+		CountAndSkipNewline();
 		return .Ok;
 	}
 
@@ -1957,7 +1981,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			outText.Append(b);
 			mCursor.AdvanceByte();
 		}
-		mCursor.SkipNewline();
+		CountAndSkipNewline();
 		// Trim only leading space (the conventional space after #)
 		if (outText.Length > 0 && outText[0] == ' ')
 			outText.Remove(0, 1);
@@ -2069,6 +2093,21 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mPendingComments.Clear();
 	}
 
+	/// Count and skip a newline for document-level style inference.
+	/// Use for document-structure newlines; string parsing should use plain SkipNewline().
+	private void CountAndSkipNewline()
+	{
+		if (mMetadata != null)
+		{
+			char8 b = mCursor.PeekByte();
+			if (b == '\r' && mCursor.PeekByteAt(1) == '\n')
+				mCrlfCount++;
+			else if (b == '\n')
+				mLfOnlyCount++;
+		}
+		mCursor.SkipNewline();
+	}
+
 	/// Count a string style occurrence for document-level inference.
 	/// Called from all string parse methods, not just key/val paths.
 	private void CountStringStyle(TomlStringStyle style)
@@ -2084,6 +2123,17 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
+	/// Count array style (inline vs multiline) for document-level inference.
+	private void CountArrayStyle(int startLine, int endLine)
+	{
+		if (mMetadata == null)
+			return;
+		if (endLine > startLine)
+			mArrayStyleCount_Multiline++;
+		else
+			mArrayStyleCount_Inline++;
+	}
+
 	private TomlParseError Error(TomlErrorKind kind, StringView message)
 	{
 		return TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset);
@@ -2092,27 +2142,6 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// ================================================================
 	// Document style inference
 	// ================================================================
-
-	/// Infer indentation style from the current cursor position.
-	/// Called once before the first key/header.
-	private void InferDocumentIndent()
-	{
-		if (mInferredIndent || mMetadata == null)
-			return;
-		mInferredIndent = true;
-
-		// The cursor is positioned at the first non-whitespace character.
-		// Column 1 means no indentation.
-		int col = mCursor.Column;
-		if (col <= 1)
-			return;
-
-		// We can't directly inspect the whitespace bytes from the cursor
-		// (they've been consumed). Use column as a proxy for indent depth.
-		// For tab detection, we'd need to capture whitespace before skipping.
-		// For now, store the indent size as a hint.
-		mMetadata.mDocumentStyle.mIndentSize = (uint8)(col - 1);
-	}
 
 	/// Infer document-level style from accumulated parsing state.
 	/// Called once at the end of ParseDocument.
@@ -2142,5 +2171,17 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 
 		mMetadata.mDocumentStyle.mDefaultStringStyle = dominant;
+
+		// Determine dominant array style
+		if (mArrayStyleCount_Multiline > mArrayStyleCount_Inline)
+			mMetadata.mDocumentStyle.mDefaultArrayStyle = .Multiline;
+		else
+			mMetadata.mDocumentStyle.mDefaultArrayStyle = .Inline;
+
+		// Detect CRLF from cursor
+		if (mCrlfCount > 0 && mCrlfCount >= mLfOnlyCount)
+			mMetadata.mDocumentStyle.mNewlineStyle = .CRLF;
+		else
+			mMetadata.mDocumentStyle.mNewlineStyle = .LF;
 	}
 }
