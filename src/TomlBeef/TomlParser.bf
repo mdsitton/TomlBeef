@@ -23,6 +23,13 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TomlNodeId mLastNodeId;
 	// Whether a blank line was seen since the last comment. Used to classify detached vs leading.
 	private bool mBlankLineSinceComment;
+	// Whether we've inferred the indentation style from the first key/header.
+	private bool mInferredIndent;
+	// String style usage counts for detecting the dominant style.
+	private int mStringStyleCount_Basic;
+	private int mStringStyleCount_Literal;
+	private int mStringStyleCount_MultilineBasic;
+	private int mStringStyleCount_MultilineLiteral;
 
 	public this(TomlVersion version = .V1_1)
 	{
@@ -33,6 +40,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mSeenContent = false;
 		mLastNodeId = .Invalid;
 		mBlankLineSinceComment = false;
+		mInferredIndent = false;
+		mStringStyleCount_Basic = 0;
+		mStringStyleCount_Literal = 0;
+		mStringStyleCount_MultilineBasic = 0;
+		mStringStyleCount_MultilineLiteral = 0;
 	}
 
 	public Result<void, TomlParseError> Parse(TCursor cursor, TomlPathResolver resolver)
@@ -106,6 +118,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					AttachPendingCommentsToRoot();
 				mBlankLineSinceComment = false;
 
+				// Detect indentation from cursor position before first content
+				if (!mInferredIndent && mMetadata != null)
+					InferDocumentIndent();
+
 				if (ParseHeader() case .Err(let headerErr))
 					return .Err(headerErr);
 				continue;
@@ -116,6 +132,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
 				AttachPendingCommentsToRoot();
 			mBlankLineSinceComment = false;
+
+			// Detect indentation from cursor position before first content
+			if (!mInferredIndent && mMetadata != null)
+				InferDocumentIndent();
 
 			if (ParseKeyVal() case .Err(let kvErr))
 				return .Err(kvErr);
@@ -147,6 +167,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			else
 				AttachPendingCommentsToRoot();
 		}
+
+		// Infer document-level style from accumulated parsing state
+		InferDocumentStyle();
 
 		return .Ok;
 	}
@@ -238,6 +261,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		defer { ClearAndDeleteItems!(keyPath); }
 		if (ParseKeyPath(keyPath) case .Err(let e))
 			return .Err(e);
+
+		// Detect dotted key usage for document style inference
+		if (mMetadata != null && keyPath.Count > 1)
+			mMetadata.mDocumentStyle.mPreferDottedKeys = true;
 
 		mCursor.SkipWhitespace();
 		if (mCursor.PeekByte() != '=')
@@ -464,14 +491,22 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseString()
 	{
 		if (mCursor.PeekByte() == '"' && mCursor.PeekByteAt(1) == '"' && mCursor.PeekByteAt(2) == '"')
+		{
+			CountStringStyle(.MultilineBasic);
 			return ParseMultiLineBasicString();
+		}
+		CountStringStyle(.Basic);
 		return ParseBasicString();
 	}
 
 	private Result<TomlValue, TomlParseError> ParseLiteralString()
 	{
 		if (mCursor.PeekByte() == '\'' && mCursor.PeekByteAt(1) == '\'' && mCursor.PeekByteAt(2) == '\'')
+		{
+			CountStringStyle(.MultilineLiteral);
 			return ParseMultiLineLiteralString();
+		}
+		CountStringStyle(.Literal);
 		return ParseSingleLineLiteralString();
 	}
 
@@ -2034,8 +2069,78 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mPendingComments.Clear();
 	}
 
+	/// Count a string style occurrence for document-level inference.
+	/// Called from all string parse methods, not just key/val paths.
+	private void CountStringStyle(TomlStringStyle style)
+	{
+		if (mMetadata == null)
+			return;
+		switch (style)
+		{
+		case .Basic: mStringStyleCount_Basic++;
+		case .Literal: mStringStyleCount_Literal++;
+		case .MultilineBasic: mStringStyleCount_MultilineBasic++;
+		case .MultilineLiteral: mStringStyleCount_MultilineLiteral++;
+		}
+	}
+
 	private TomlParseError Error(TomlErrorKind kind, StringView message)
 	{
 		return TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset);
+	}
+
+	// ================================================================
+	// Document style inference
+	// ================================================================
+
+	/// Infer indentation style from the current cursor position.
+	/// Called once before the first key/header.
+	private void InferDocumentIndent()
+	{
+		if (mInferredIndent || mMetadata == null)
+			return;
+		mInferredIndent = true;
+
+		// The cursor is positioned at the first non-whitespace character.
+		// Column 1 means no indentation.
+		int col = mCursor.Column;
+		if (col <= 1)
+			return;
+
+		// We can't directly inspect the whitespace bytes from the cursor
+		// (they've been consumed). Use column as a proxy for indent depth.
+		// For tab detection, we'd need to capture whitespace before skipping.
+		// For now, store the indent size as a hint.
+		mMetadata.mDocumentStyle.mIndentSize = (uint8)(col - 1);
+	}
+
+	/// Infer document-level style from accumulated parsing state.
+	/// Called once at the end of ParseDocument.
+	private void InferDocumentStyle()
+	{
+		if (mMetadata == null)
+			return;
+
+		// Determine dominant string style
+		int maxCount = mStringStyleCount_Basic;
+		var dominant = TomlStringStyle.Basic;
+
+		if (mStringStyleCount_Literal > maxCount)
+		{
+			maxCount = mStringStyleCount_Literal;
+			dominant = .Literal;
+		}
+		if (mStringStyleCount_MultilineBasic > maxCount)
+		{
+			maxCount = mStringStyleCount_MultilineBasic;
+			dominant = .MultilineBasic;
+		}
+		if (mStringStyleCount_MultilineLiteral > maxCount)
+		{
+			maxCount = mStringStyleCount_MultilineLiteral;
+			dominant = .MultilineLiteral;
+		}
+
+		mMetadata.mDocumentStyle.mDefaultStringStyle = dominant;
 	}
 }

@@ -171,6 +171,7 @@ public struct TomlDocumentStyle
 	public uint8 mIndentSize = 4;
 	public bool mUseTabs = false;
 	public bool mPreferDottedKeys = false;
+	public TomlStringStyle mDefaultStringStyle = .Basic;
 }
 
 // ================================================================
