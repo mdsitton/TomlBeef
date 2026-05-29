@@ -383,4 +383,39 @@ public enum TomlValue
 		case .Table(let tbl):     return .Table(tbl.Clone());
 		}
 	}
+
+	/// Semantic equality used by mutation dirty tracking.
+	/// Scalar values compare by value; arrays and tables compare by identity to avoid treating
+	/// replacement containers as unchanged when their ownership and metadata contexts differ.
+	internal bool IsSemanticallyEqualTo(TomlValue other)
+	{
+		switch (this)
+		{
+		case .String(let sa):
+			return other case .String(let sb) && sa == sb;
+		case .Integer(let ia):
+			return other case .Integer(let ib) && ia == ib;
+		case .Float(let fa):
+			if (other case .Float(let fb))
+			{
+				if (fa.IsNaN && fb.IsNaN) return true;
+				return fa == fb;
+			}
+			return false;
+		case .Bool(let ba):
+			return other case .Bool(let bb) && ba == bb;
+		case .OffsetDateTime(let da):
+			return other case .OffsetDateTime(let db) && da == db;
+		case .LocalDateTime(let da):
+			return other case .LocalDateTime(let db) && da == db;
+		case .LocalDate(let da):
+			return other case .LocalDate(let db) && da == db;
+		case .LocalTime(let da):
+			return other case .LocalTime(let db) && da == db;
+		case .Array(let aa):
+			return other case .Array(let ab) && aa === ab;
+		case .Table(let ta):
+			return other case .Table(let tb) && ta === tb;
+		}
+	}
 }

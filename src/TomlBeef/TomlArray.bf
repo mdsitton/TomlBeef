@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -9,6 +10,7 @@ public class TomlArray
 	private List<TomlValue> mItems ~ DeleteContainerAndDisposeItems!(_);
 	private bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
+	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
 
 	/// @brief Whether this array is a static inline array (true) or a dynamic array-of-tables (false).
 	public bool IsStatic
@@ -18,7 +20,7 @@ public class TomlArray
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.
-	public TomlContainerMetadataContext MetadataContext
+	internal TomlContainerMetadataContext MetadataContext
 	{
 		get => mMetadataContext;
 		set => mMetadataContext = value;
@@ -26,21 +28,69 @@ public class TomlArray
 
 	public this()
 	{
-		mItems = new List<TomlValue>();
-		mIsStatic = false;
-		mMetadataContext = null;
+		Init(0, false);
+	}
+
+	internal this(bool suppressAutoDirty)
+	{
+		Init(0, suppressAutoDirty);
 	}
 
 	public this(int capacity)
 	{
-		mItems = new List<TomlValue>(capacity);
+		Init(capacity, false);
+	}
+
+	internal this(int capacity, bool suppressAutoDirty)
+	{
+		Init(capacity, suppressAutoDirty);
+	}
+
+	private void Init(int capacity, bool suppressAutoDirty)
+	{
+		mItems = capacity > 0 ? new List<TomlValue>(capacity) : new List<TomlValue>();
 		mIsStatic = false;
 		mMetadataContext = null;
+		mSuppressAutoDirty = suppressAutoDirty;
 	}
 
 	public void Add(TomlValue value)
 	{
 		mItems.Add(value);
+
+		// Auto node-ID allocation when metadata context exists.
+		// During parsing, mSuppressAutoDirty is set to keep entries clean.
+		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
+		{
+			let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
+			mMetadataContext.AddItemNodeId(nodeId);
+			if (!mSuppressAutoDirty)
+				MarkChildrenDirty();
+			BindContainerMetadata(value);
+		}
+	}
+
+	/// Bind metadata context to inserted container values (tables/arrays).
+	private void BindContainerMetadata(TomlValue val)
+	{
+		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
+			return;
+		switch (val)
+		{
+		case .Table(let tbl):
+			if (tbl != null && tbl.MetadataContext == null)
+			{
+				let nid = mMetadataContext.mMetadata.AllocateNodeId();
+				tbl.MetadataContext = new TomlContainerMetadataContext(mMetadataContext.mMetadata, nid, false);
+			}
+		case .Array(let arr):
+			if (arr != null && arr.MetadataContext == null)
+			{
+				let nid = mMetadataContext.mMetadata.AllocateNodeId();
+				arr.MetadataContext = new TomlContainerMetadataContext(mMetadataContext.mMetadata, nid, true);
+			}
+		default:
+		}
 	}
 
 	public int Count => mItems.Count;
@@ -53,6 +103,7 @@ public class TomlArray
 			mItems[index].Dispose();
 			mItems[index] = value;
 			MarkItemDirty(index);
+			BindContainerMetadata(value);
 		}
 	}
 
@@ -90,8 +141,25 @@ public class TomlArray
 		}
 	}
 
+	/// Recursively re-enable automatic dirty tracking after parser construction completes.
+	internal void ClearAutoDirtySuppression()
+	{
+		mSuppressAutoDirty = false;
+		for (int i = 0; i < mItems.Count; i++)
+		{
+			switch (mItems[i])
+			{
+			case .Array(let arr):
+				if (arr != null) arr.ClearAutoDirtySuppression();
+			case .Table(let tbl):
+				if (tbl != null) tbl.ClearAutoDirtySuppression();
+			default:
+			}
+		}
+	}
+
 	/// Mark a specific array element as dirty in the metadata context.
-	private void MarkItemDirty(int index)
+	internal void MarkItemDirty(int index)
 	{
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
 		{
@@ -101,6 +169,17 @@ public class TomlArray
 				if (style != null)
 					style.mDirtyFlags |= .Value;
 			}
+		}
+	}
+
+	/// Mark the container as having changed children. Call after programmatic insert/remove.
+	internal void MarkChildrenDirty()
+	{
+		if (mMetadataContext != null && mMetadataContext.mMetadata != null && mMetadataContext.mNodeId.IsValid)
+		{
+			let style = mMetadataContext.mMetadata.GetNodeStyle(mMetadataContext.mNodeId);
+			if (style != null)
+				style.mDirtyFlags |= .Children;
 		}
 	}
 }

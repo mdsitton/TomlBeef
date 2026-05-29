@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections;
 using TomlBeef;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -652,6 +653,216 @@ static class TomlTest
 	}
 
 	[Test]
+	public static void PreserveStyle_CapturesDottedKeyFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("server.port = 8080", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let style = doc.Metadata.mNodeStyles[0];
+		Test.Assert(style.mKeyFormatRef.IsValid);
+		let fmt = doc.Metadata.mKeyFormats[style.mKeyFormatRef.mIndex];
+		Test.Assert(fmt.mStyle == .Bare);
+		Test.Assert(fmt.mPreferDottedPath == true);
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesQuotedKeyFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("\"my key\" = 42", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mKeyFormats[doc.Metadata.mNodeStyles[0].mKeyFormatRef.mIndex];
+		Test.Assert(fmt.mStyle == .QuotedBasic);
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesLiteralKeyFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("'raw key' = 99", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mKeyFormats[doc.Metadata.mNodeStyles[0].mKeyFormatRef.mIndex];
+		Test.Assert(fmt.mStyle == .QuotedLiteral);
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesBareKeyFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("simple = 1", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mKeyFormats[doc.Metadata.mNodeStyles[0].mKeyFormatRef.mIndex];
+		Test.Assert(fmt.mStyle == .Bare);
+		Test.Assert(fmt.mPreferDottedPath == false);
+	}
+
+	[Test]
+	public static void PreserveStyle_DocumentStyleFallbackForString()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Document uses mostly literal strings
+		let input = "a = 'hello'\nb = 'world'";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify dominant style is literal
+		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
+
+		// Mutate a value
+		doc.RootTable.ReplaceValue("a", .String(new String("changed")));
+
+		// Write - changed string should use document's literal style
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("'changed'"));
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesDateTimeFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("dob = 1979-05-27T07:32:00Z", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .DateTime(let dtFmt))
+		{
+			Test.Assert(dtFmt.mUsesUppercaseT == true);
+			Test.Assert(dtFmt.mUsesZ == true);
+			Test.Assert(dtFmt.mHasOffset == true);
+			Test.Assert(dtFmt.mHasSeconds == true);
+		}
+		else
+			Test.Assert(false, "Expected DateTime format");
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesDateTimeFormatWithOffset()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("dt = 1979-05-27 07:32:00-08:00", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .DateTime(let dtFmt))
+		{
+			Test.Assert(dtFmt.mUsesUppercaseT == false); // space separator
+			Test.Assert(dtFmt.mUsesZ == false); // offset, not Z
+			Test.Assert(dtFmt.mHasOffset == true);
+		}
+		else
+			Test.Assert(false, "Expected DateTime format");
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesLocalDateFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("dob = 1979-05-27", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .DateTime(let dtFmt))
+		{
+			// Local date has no time separator, no offset
+			Test.Assert(dtFmt.mHasOffset == false);
+			Test.Assert(dtFmt.mHasSeconds == false);
+		}
+		else
+			Test.Assert(false, "Expected DateTime format");
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesLocalTimeFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("t = 07:32:00", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .DateTime(let dtFmt))
+		{
+			Test.Assert(dtFmt.mHasOffset == false);
+			Test.Assert(dtFmt.mHasSeconds == true);
+		}
+		else
+			Test.Assert(false, "Expected DateTime format");
+	}
+
+	[Test]
+	public static void PreserveStyle_CapturesLocalDateTimeFormat()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("dt = 1979-05-27T07:32:00", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .DateTime(let dtFmt))
+		{
+			Test.Assert(dtFmt.mUsesUppercaseT == true);
+			Test.Assert(dtFmt.mHasOffset == false); // no offset
+			Test.Assert(dtFmt.mHasSeconds == true);
+		}
+		else
+			Test.Assert(false, "Expected DateTime format");
+	}
+
+	[Test]
 	public static void PreserveStyle_MixedNewlinesFavorsDominant()
 	{
 		var doc = new TomlDocument();
@@ -1253,6 +1464,330 @@ static class TomlTest
 
 		// Should preserve the multiline basic string token exactly
 		Test.Assert(output.Contains("msg = \"\"\"Hello,\\nWorld!\"\"\""));
+	}
+
+	[Test]
+	public static void PreserveStyle_IntegerFormatPreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("n = 0xDEAD_BEEF", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify format was captured
+		Test.Assert(doc.Metadata.mValueFormats.Count == 1);
+		let fmt = doc.Metadata.mValueFormats[0];
+		if (fmt case .Integer(let intFmt))
+			Test.Assert(intFmt.mBase == .Hex);
+		else
+			Test.Assert(false, "Expected Integer format");
+
+		// Verify node has format ref
+		let style = doc.Metadata.mNodeStyles[0];
+		Test.Assert(style.mValueFormatRef.IsValid);
+
+		// Mutate the value to a different hex value
+		bool replaced = doc.RootTable.ReplaceValue("n", .Integer(0x12345));
+		Test.Assert(replaced);
+
+		// Verify dirty
+		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .Value);
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Should regenerate using hex format, preserving original digit width and grouping
+		Test.Assert(output.Contains("0x0001_2345"), scope $"Expected hex, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_IntegerMinDigitsPreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("n = 0x00FF", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("n", .Integer(1));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("n = 0x0001"), scope $"Expected padded hex, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_NegativeDecimalIntegerKeepsGrouping()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("n = -1_000", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("n", .Integer(-2000));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("n = -2_000"), scope $"Expected grouped negative decimal, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_NegativeIntegerFallsBackToDecimal()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("n = 0xFF", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Mutate to a negative value
+		doc.RootTable.ReplaceValue("n", .Integer(-42));
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Negative values must be decimal, not hex
+		Test.Assert(output.Contains("n = -42"));
+		Test.Assert(!output.Contains("0x"));
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatPrecisionPreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("f = 1.000", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("f", .Float(2.5));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("f = 2.500"), scope $"Expected fixed precision, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatFormatPreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("f = 1E+06", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Mutate to a different float value
+		doc.RootTable.ReplaceValue("f", .Float(2.5e3));
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Should use scientific notation (from format metadata)
+		Test.Assert(output.Contains("e") || output.Contains("E"));
+	}
+
+	[Test]
+	public static void PreserveStyle_DateTimeOmittedSecondsPreservedOnDirtyWrite()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("dt = 1979-05-27 07:32Z", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("dt", .OffsetDateTime(TomlOffsetDateTime(1979, 5, 27, 8, 33, 0, 0, 0)));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("dt = 1979-05-27 08:33Z"), scope $"Expected omitted seconds, got: {output}");
+		Test.Assert(!output.Contains("08:33:00"));
+	}
+
+	[Test]
+	public static void PreserveStyle_MultilineArrayFormatPreservedOnDirtyWrite()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  1,\n  2,\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetArray("arr", var arr);
+		arr[1] = .Integer(3);
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("arr = [\n"), scope $"Expected multiline array, got: {output}");
+		Test.Assert(output.Contains("  3,"), scope $"Expected indented changed element with comma, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayAddMarksChildrenDirtyAfterParse()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("arr = [1]", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetArray("arr", var arr);
+		let nodeId = arr.MetadataContext.mNodeId;
+		Test.Assert(doc.Metadata.mNodeStyles[nodeId.mIndex].mDirtyFlags == .None);
+
+		arr.Add(.Integer(2));
+		Test.Assert(doc.Metadata.mNodeStyles[nodeId.mIndex].mDirtyFlags == .Children);
+	}
+
+	[Test]
+	public static void PreserveStyle_ReplaceEqualValueKeepsClean()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("s = 'original'", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let style = doc.Metadata.mNodeStyles[0];
+		Test.Assert(style.mOriginalValueToken.IsValid);
+		Test.Assert(style.mDirtyFlags == .None);
+
+		// Replace with same value
+		doc.RootTable.ReplaceValue("s", .String(new String("original")));
+		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .None); // still clean
+	}
+
+	[Test]
+	public static void PreserveStyle_InsertNewKeyMarksChildrenDirty()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("[tbl]\n  a = 1", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Insert a new key into the table — auto-allocates node ID and marks dirty
+		doc.RootTable.TryGetTable("tbl", var tbl);
+		tbl.Insert("b", .Integer(2));
+
+		// Write the document - new key 'b' should appear
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("b = 2"));
+	}
+
+	[Test]
+	public static void PreserveStyle_DottedKeysReemitted()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "server.port = 8080\nserver.host = 'localhost'";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Output should preserve dotted-key style, not normalize to [server] header
+		Test.Assert(output.Contains("server.port = 8080"));
+		Test.Assert(!output.Contains("[server]"));
+	}
+
+	[Test]
+	public static void PreserveStyle_DottedKeysNestedTables()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "server.port = 8080\nserver.db.host = 'localhost'";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+
+		// Both values should appear, and db.host should be emitted as a dotted key
+		Test.Assert(output.Contains("server.port = 8080"));
+		Test.Assert(output.Contains("server.db.host = 'localhost'"));
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayElementTokenReuse()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("arr = ['hello', 'world']", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify array has metadata context
+		doc.RootTable.TryGetArray("arr", var arr);
+		Test.Assert(arr.MetadataContext != null);
+		Test.Assert(arr.MetadataContext.mItemNodeIds.Count == 2);
+
+		// Write and verify original tokens reused
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("'hello'"));
+		Test.Assert(output.Contains("'world'"));
 	}
 
 	[Test]

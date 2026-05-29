@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -281,6 +282,7 @@ public class TomlDocument
 				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
 				parser.SetMetadata(mMetadata);
 			}
+			mRootTable.mSuppressAutoDirty = true;
 			let resolver = scope TomlPathResolver(mRootTable, mMetadata);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
 			{
@@ -288,11 +290,14 @@ public class TomlDocument
 				ClearMetadata();
 				return .Err(parseErr);
 			}
+			if (wantsMetadata && mRootTable.MetadataContext == null)
+				mRootTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, .Invalid, false);
+			mRootTable.ClearAutoDirtySuppression();
 			return .Ok;
 		}
 
 		// Merge with existing content — transactional via temp table
-		var incoming = new TomlTable(.Root);
+		var incoming = new TomlTable(.Root, true);
 		defer delete incoming;
 		TomlDocumentMetadata incomingMetadata = null;
 		if (wantsMetadata)
@@ -306,6 +311,7 @@ public class TomlDocument
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}
+		incoming.ClearAutoDirtySuppression();
 		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
 		// Metadata-aware merge not yet implemented — clear metadata to prevent stale state
 		if (mergeResult case .Ok)

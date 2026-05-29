@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -277,6 +278,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		SyncPathResolver();
 
+		// Mark key start for raw key text capture
+		var keyStart = TomlCursorMark();
+		if (mMetadata != null)
+			keyStart = mCursor.Mark();
+
 		var keyPath = scope List<String>();
 		defer { ClearAndDeleteItems!(keyPath); }
 		if (ParseKeyPath(keyPath) case .Err(let e))
@@ -285,6 +291,25 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// Detect dotted key usage for document style inference
 		if (mMetadata != null && keyPath.Count > 1)
 			mMetadata.mDocumentStyle.mPreferDottedKeys = true;
+
+		// Capture raw key text for key format detection
+		// Slice now before value parsing can invalidate the stream buffer
+		StringView rawKeyText = StringView();
+		String rawKeyScratch = scope String();
+		TomlKeyStyle keyStyle = .Bare;
+		if (mMetadata != null)
+		{
+			rawKeyText = mCursor.Slice(keyStart, rawKeyScratch);
+			// Detect key style immediately while the view is valid
+			if (!rawKeyText.IsEmpty)
+			{
+				char8 c = rawKeyText[0];
+				if (c == '"')
+					keyStyle = .QuotedBasic;
+				else if (c == '\'')
+					keyStyle = .QuotedLiteral;
+			}
+		}
 
 		mCursor.SkipWhitespace();
 		if (mCursor.PeekByte() != '=')
@@ -330,6 +355,24 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(valueStart, scratch);
 			CaptureNumericFormat(nodeId, rawToken);
+		}
+		else if (capturingToken && nodeId.IsValid && value.IsArray)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			CaptureArrayFormat(nodeId, rawToken);
+		}
+
+		// Capture key format metadata
+		if (capturingToken && nodeId.IsValid)
+			CaptureKeyFormat(nodeId, keyStyle, keyPath.Count > 1);
+
+		// Capture date-time format metadata
+		if (capturingToken && nodeId.IsValid && (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime))
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			CaptureDateTimeFormat(nodeId, rawToken);
 		}
 
 		// Attach pending leading comments and track this node for trailing comments
@@ -1468,7 +1511,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		int startLine = mCursor.Line;
-		TomlArray arr = new TomlArray();
+		TomlArray arr = new TomlArray(true);
 		arr.IsStatic = true;
 
 		if (SkipWsAndComments() case .Err(let e))
@@ -1491,12 +1534,21 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(wsErr);
 			}
 
+			// Mark value start for raw token capture
+			var elemStart = TomlCursorMark();
+			if (mMetadata != null)
+				elemStart = mCursor.Mark();
+
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
 				delete arr;
 				return .Err(valErr);
-			case .Ok(let val): arr.Add(val);
+			case .Ok(let val):
+				arr.Add(val);
+				// Capture metadata for this element
+				if (mMetadata != null)
+					CaptureArrayElement(arr, val, elemStart);
 			}
 
 			if (SkipWsAndComments() case .Err(let trailWsErr))
@@ -1543,7 +1595,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseInlineTable()
 	{
 		mCursor.AdvanceByte();
-		TomlTable tbl = new TomlTable(.InlineTable);
+		TomlTable tbl = new TomlTable(.InlineTable, true);
 
 		if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 		{
@@ -1681,7 +1733,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
-				TomlTable newTbl = new TomlTable(.InlineTable);
+				TomlTable newTbl = new TomlTable(.InlineTable, true);
 				current.Insert(key, TomlValue.Table(newTbl));
 				current = newTbl;
 			}
@@ -1805,6 +1857,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				fmt.mBase = .Hex;
 				fmt.mUppercaseDigits = (next == 'X');
 				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				DetectMinimumDigits(rawToken, pos + 2, ref fmt);
 				// Check for uppercase hex digits
 				if (!fmt.mUppercaseDigits)
 				{
@@ -1824,6 +1877,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				var fmt = TomlIntegerFormat();
 				fmt.mBase = .Octal;
 				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				DetectMinimumDigits(rawToken, pos + 2, ref fmt);
 				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
 				let style = mMetadata.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
@@ -1834,6 +1888,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				var fmt = TomlIntegerFormat();
 				fmt.mBase = .Binary;
 				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
+				DetectMinimumDigits(rawToken, pos + 2, ref fmt);
 				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
 				let style = mMetadata.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
@@ -1854,6 +1909,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (hasDot || hasExp)
 		{
 			var fmt = TomlFloatFormat();
+			DetectFloatPrecision(rawToken, pos, ref fmt);
 			if (hasExp)
 			{
 				fmt.mStyle = .Scientific;
@@ -1899,6 +1955,32 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
+	/// Detect fractional precision in a float token, ignoring underscores.
+	private void DetectFloatPrecision(StringView rawToken, int start, ref TomlFloatFormat fmt)
+	{
+		fmt.mPrecision = -1;
+		for (int i = start; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] == '.')
+			{
+				int digits = 0;
+				for (int j = i + 1; j < rawToken.Length; j++)
+				{
+					char8 c = rawToken[j];
+					if (c == 'e' || c == 'E') break;
+					if (c != '_') digits++;
+				}
+				fmt.mPrecision = (int16)digits;
+				return;
+			}
+			if (rawToken[i] == 'e' || rawToken[i] == 'E')
+			{
+				fmt.mPrecision = 0;
+				return;
+			}
+		}
+	}
+
 	/// Detect underscore grouping in an integer token starting at digitStart.
 	private void DetectUnderscoreGrouping(StringView rawToken, int digitStart, ref TomlIntegerFormat fmt)
 	{
@@ -1916,6 +1998,19 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				break;
 			}
 		}
+	}
+
+	/// Detect minimum digit width for prefixed integer tokens, ignoring underscores.
+	private void DetectMinimumDigits(StringView rawToken, int digitStart, ref TomlIntegerFormat fmt)
+	{
+		int digitCount = 0;
+		for (int i = digitStart; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] != '_')
+				digitCount++;
+		}
+		if (digitCount > 0 && digitCount <= 255)
+			fmt.mMinDigits = (uint8)digitCount;
 	}
 
 	// ================================================================
@@ -2106,6 +2201,197 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				mLfOnlyCount++;
 		}
 		mCursor.SkipNewline();
+	}
+
+	// ================================================================
+	// Key and container format capture
+	// ================================================================
+
+	/// Store key format metadata from pre-detected style and dotted path preference.
+	private void CaptureKeyFormat(TomlNodeId nodeId, TomlKeyStyle keyStyle, bool isDotted)
+	{
+		if (mMetadata == null || !nodeId.IsValid)
+			return;
+
+		var fmt = TomlKeyFormat();
+		fmt.mStyle = keyStyle;
+		if (isDotted)
+			fmt.mPreferDottedPath = true;
+
+		let fmtRef = mMetadata.AddKeyFormat(fmt);
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mKeyFormatRef = fmtRef;
+	}
+
+	/// Detect date-time format metadata from a raw token.
+	private void CaptureDateTimeFormat(TomlNodeId nodeId, StringView rawToken)
+	{
+		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+			return;
+
+		var fmt = TomlDateTimeFormat();
+
+		// Detect separator style (T vs t vs space)
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			if (c == 'T') { fmt.mUsesUppercaseT = true; break; }
+			if (c == 't') { fmt.mUsesUppercaseT = false; break; }
+			if (c == ' ') { fmt.mUsesUppercaseT = false; break; }
+		}
+
+		// Detect offset style (Z vs +00:00)
+		// Only scan after the time separator to avoid matching date dashes
+		int timeSepPos = -1;
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			if (c == 'T' || c == 't' || c == ' ') { timeSepPos = i; break; }
+		}
+		if (timeSepPos >= 0 && timeSepPos < rawToken.Length - 1)
+		{
+			for (int i = rawToken.Length - 1; i > timeSepPos; i--)
+			{
+				char8 c = rawToken[i];
+				if (c == 'Z' || c == 'z') { fmt.mUsesZ = true; fmt.mHasOffset = true; break; }
+				if (c == '+' || c == '-') { fmt.mUsesZ = false; fmt.mHasOffset = true; break; }
+			}
+		}
+
+		// Detect seconds and fractional digits
+		// Find the time separator first, then count colons only in the time component
+		int timeStart = 0;
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			if (c == 'T' || c == 't' || c == ' ') { timeStart = i + 1; break; }
+		}
+		int colonCount = 0;
+		int fracDigits = 0;
+		for (int i = timeStart; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			// Stop at timezone offset indicators
+			if (c == 'Z' || c == 'z' || (i > timeStart && (c == '+' || c == '-'))) break;
+			if (c == ':') colonCount++;
+			if (c == '.')
+			{
+				// Count fractional digits
+				for (int j = i + 1; j < rawToken.Length && TomlChar.IsDigit(rawToken[j]); j++)
+					fracDigits++;
+				break;
+			}
+		}
+		fmt.mHasSeconds = colonCount >= 2;
+		fmt.mFractionalDigits = (uint8)fracDigits;
+
+		let fmtRef = mMetadata.AddValueFormat(.DateTime(fmt));
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mValueFormatRef = fmtRef;
+	}
+
+	/// Detect array format metadata from a raw token.
+	private void CaptureArrayFormat(TomlNodeId nodeId, StringView rawToken)
+	{
+		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+			return;
+
+		var fmt = TomlArrayFormat();
+		fmt.mStyle = .Inline;
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] == '\n' || rawToken[i] == '\r')
+			{
+				fmt.mStyle = .Multiline;
+				break;
+			}
+		}
+
+		// Detect trailing comma before the closing bracket.
+		int pos = rawToken.Length - 1;
+		while (pos >= 0 && IsTokenWhitespace(rawToken[pos])) pos--;
+		if (pos >= 0 && rawToken[pos] == ']')
+		{
+			pos--;
+			while (pos >= 0 && IsTokenWhitespace(rawToken[pos])) pos--;
+			fmt.mTrailingComma = pos >= 0 && rawToken[pos] == ',';
+		}
+
+		fmt.mIndentSize = mMetadata.mDocumentStyle.mIndentSize;
+		let fmtRef = mMetadata.AddValueFormat(.Array(fmt));
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mValueFormatRef = fmtRef;
+	}
+
+	private static bool IsTokenWhitespace(char8 c)
+	{
+		return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+	}
+
+	/// Capture metadata for a single array element value.
+	private void CaptureArrayElement(TomlArray arr, TomlValue val, TomlCursorMark elemStart)
+	{
+		if (mMetadata == null)
+			return;
+
+		// Ensure the array has a metadata context
+		if (arr.MetadataContext == null)
+		{
+			let ctxNodeId = mMetadata.AllocateNodeId();
+			arr.MetadataContext = new TomlContainerMetadataContext(mMetadata, ctxNodeId, true);
+		}
+
+		// Reuse node ID if Add() already allocated one, otherwise allocate new
+		TomlNodeId nodeId;
+		if (arr.MetadataContext.mItemNodeIds != null && arr.MetadataContext.mItemNodeIds.Count >= arr.Count)
+		{
+			// Add() already allocated a node ID for this element
+			nodeId = arr.MetadataContext.mItemNodeIds[arr.Count - 1];
+		}
+		else
+		{
+			nodeId = mMetadata.AllocateNodeId();
+			arr.MetadataContext.AddItemNodeId(nodeId);
+		}
+
+		// Capture string token and format
+		if (val.IsString)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(elemStart, scratch);
+			let tokenRef = mMetadata.AddOriginalToken(rawToken);
+			let style = mMetadata.GetNodeStyle(nodeId);
+			if (style != null)
+				style.mOriginalValueToken = tokenRef;
+			CaptureStringFormat(nodeId, rawToken);
+		}
+		else if (val.IsInteger || val.IsFloat)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(elemStart, scratch);
+			CaptureNumericFormat(nodeId, rawToken);
+		}
+		else if (val.IsOffsetDateTime || val.IsLocalDateTime || val.IsLocalDate || val.IsLocalTime)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(elemStart, scratch);
+			CaptureDateTimeFormat(nodeId, rawToken);
+		}
+		else if (val.IsArray)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(elemStart, scratch);
+			CaptureArrayFormat(nodeId, rawToken);
+		}
+		else
+		{
+			// Bool and table: no token to capture, but must release the mark
+			String scratch = scope String();
+			mCursor.Slice(elemStart, scratch);
+		}
 	}
 
 	/// Count a string style occurrence for document-level inference.

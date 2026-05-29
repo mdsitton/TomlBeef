@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -11,14 +12,26 @@ public class TomlTable
 	private Dictionary<String, TomlValue> mEntries ~ DeleteDictionaryAndKeysAndDisposeValues!(_);
 	private List<String> mKeyOrder ~ delete _;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
+	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
 
 	public this(TomlTableOrigin origin)
+	{
+		Init(origin, false);
+	}
+
+	internal this(TomlTableOrigin origin, bool suppressAutoDirty)
+	{
+		Init(origin, suppressAutoDirty);
+	}
+
+	private void Init(TomlTableOrigin origin, bool suppressAutoDirty)
 	{
 		mOrigin = origin;
 		mIsInlineSealed = false;
 		mEntries = new Dictionary<String, TomlValue>();
 		mKeyOrder = new List<String>();
 		mMetadataContext = null;
+		mSuppressAutoDirty = suppressAutoDirty;
 	}
 
 	public TomlTableOrigin Origin
@@ -34,7 +47,7 @@ public class TomlTable
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.
-	public TomlContainerMetadataContext MetadataContext
+	internal TomlContainerMetadataContext MetadataContext
 	{
 		get => mMetadataContext;
 		set => mMetadataContext = value;
@@ -42,13 +55,23 @@ public class TomlTable
 
 	public int Count => mEntries.Count;
 
-	/// @brief Direct access to the internal entry dictionary. Modifying this directly will desync
-	/// key ordering and can cause leaks or crashes. Use Insert(), ReplaceValue(), and Clear() instead.
-	public Dictionary<String, TomlValue> Entries => mEntries;
+	/// @brief Read-only access to entries. Modifying this directly desyncs ordering and dirty tracking.
+	internal Dictionary<String, TomlValue> Entries => mEntries;
 
-	/// @brief Direct access to the internal key order list. Modifying this directly will desync
-	/// the table state. Use Insert(), ReplaceValue(), and Clear() instead.
-	public List<String> KeyOrder => mKeyOrder;
+	/// @brief Read-only access to key ordering. Modifying this directly desyncs the table state.
+	internal List<String> KeyOrder => mKeyOrder;
+
+	/// @brief Get the key at the given index in insertion order.
+	public StringView GetKeyAt(int index)
+	{
+		return mKeyOrder[index];
+	}
+
+	/// @brief Get the value for the key at the given index in insertion order.
+	public TomlValue GetValueAt(int index)
+	{
+		return mEntries[mKeyOrder[index]];
+	}
 
 	public bool ContainsKey(StringView key)
 	{
@@ -75,12 +98,51 @@ public class TomlTable
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
 			MarkEntryDirty(key);
+			BindContainerMetadata(value);
 			return;
 		}
 
 		String ownedKey = new String(key);
 		mEntries[ownedKey] = value;
 		mKeyOrder.Add(ownedKey);
+
+		// Auto node-ID allocation for new entries when metadata context exists.
+		// The parser pre-registers node IDs, so skip allocation if one already exists.
+		// Only mark dirty for genuinely new entries (not parser-inserted ones).
+		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
+		{
+			if (!mMetadataContext.TryGetEntryNodeId(key, let _))
+			{
+				let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
+				mMetadataContext.SetEntryNodeId(key, nodeId);
+				if (!mSuppressAutoDirty)
+					MarkChildrenDirty();
+			}
+			BindContainerMetadata(value);
+		}
+	}
+
+	/// Bind metadata context to inserted container values (tables/arrays).
+	private void BindContainerMetadata(TomlValue val)
+	{
+		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
+			return;
+		switch (val)
+		{
+		case .Table(let tbl):
+			if (tbl != null && tbl.MetadataContext == null)
+			{
+				let nid = mMetadataContext.mMetadata.AllocateNodeId();
+				tbl.MetadataContext = new TomlContainerMetadataContext(mMetadataContext.mMetadata, nid, false);
+			}
+		case .Array(let arr):
+			if (arr != null && arr.MetadataContext == null)
+			{
+				let nid = mMetadataContext.mMetadata.AllocateNodeId();
+				arr.MetadataContext = new TomlContainerMetadataContext(mMetadataContext.mMetadata, nid, true);
+			}
+		default:
+		}
 	}
 
 	/// @brief Replace the value for an existing key. Does nothing if the key is not found.
@@ -91,12 +153,41 @@ public class TomlTable
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
+			// If the new value is semantically equal, keep clean and discard new value
+			if (existingVal.IsSemanticallyEqualTo(value))
+			{
+				value.Dispose();
+				return true;
+			}
 			existingVal.Dispose();
 			mEntries[existingKey] = value;
 			MarkEntryDirty(key);
+			BindContainerMetadata(value);
 			return true;
 		}
 		value.Dispose();
+		return false;
+	}
+
+	/// @brief Check if entries in this table prefer dotted-key emission.
+	public bool HasDottedPreference(TomlDocumentMetadata metadata)
+	{
+		if (mMetadataContext == null || metadata == null)
+			return false;
+		for (int i = 0; i < mKeyOrder.Count; i++)
+		{
+			String key = mKeyOrder[i];
+			if (mMetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			{
+				let style = metadata.GetNodeStyle(nodeId);
+				if (style != null && style.mKeyFormatRef.IsValid)
+				{
+					let fmt = metadata.mKeyFormats[style.mKeyFormatRef.mIndex];
+					if (fmt.mPreferDottedPath)
+						return true;
+				}
+			}
+		}
 		return false;
 	}
 
@@ -283,6 +374,7 @@ public class TomlTable
 			delete mMetadataContext;
 			mMetadataContext = null;
 		}
+		mSuppressAutoDirty = false;
 	}
 
 	/// @brief Merge keys from another table into this one.
@@ -368,8 +460,26 @@ public class TomlTable
 		}
 	}
 
-	/// Mark a specific entry as dirty in the metadata context.
-	private void MarkEntryDirty(StringView key)
+	/// Recursively re-enable automatic dirty tracking after parser construction completes.
+	internal void ClearAutoDirtySuppression()
+	{
+		mSuppressAutoDirty = false;
+		for (int i = 0; i < mKeyOrder.Count; i++)
+		{
+			String key = mKeyOrder[i];
+			switch (mEntries[key])
+			{
+			case .Array(let arr):
+				if (arr != null) arr.ClearAutoDirtySuppression();
+			case .Table(let tbl):
+				if (tbl != null) tbl.ClearAutoDirtySuppression();
+			default:
+			}
+		}
+	}
+
+	/// Mark a specific entry as dirty. Call after programmatic value changes.
+	internal void MarkEntryDirty(StringView key)
 	{
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
 		{
@@ -382,8 +492,8 @@ public class TomlTable
 		}
 	}
 
-	/// Mark the container as having changed children.
-	private void MarkChildrenDirty()
+	/// Mark the container as having changed children. Call after programmatic insert/remove.
+	internal void MarkChildrenDirty()
 	{
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null && mMetadataContext.mNodeId.IsValid)
 		{

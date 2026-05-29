@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -18,11 +19,11 @@ static class TomlWriterImpl
 	{
 		// Emit file header comments
 		if (metadata.mRootComments != null && metadata.mRootComments.mLeading.Count > 0)
-			EmitCommentSet(metadata.mRootComments, outStr);
+			EmitCommentSet(metadata.mRootComments, outStr, metadata);
 		WriteTablePreserving(doc.RootTable, "", outStr, version, metadata);
 		// Emit footer/EOF comments after content
 		if (metadata.mFooterComments != null && metadata.mFooterComments.mLeading.Count > 0)
-			EmitCommentSet(metadata.mFooterComments, outStr);
+			EmitCommentSet(metadata.mFooterComments, outStr, metadata);
 	}
 
 	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)
@@ -133,31 +134,54 @@ static class TomlWriterImpl
 
 	private static void WriteTablePreserving(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
 	{
+		WriteTablePreserving(tbl, pathPrefix, false, outStr, version, metadata);
+	}
+
+	/// @param dottedContext When true, Phase 1 scalars get pathPrefix prepended (nested dotted context).
+	private static void WriteTablePreserving(TomlTable tbl, StringView pathPrefix, bool dottedContext, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	{
 		// Phase 1: scalar keys, inline tables, static arrays
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
 
-			if (val.IsTable)
+			if (dottedContext)
 			{
-				TomlTable sub = val.AsTable;
-				if (sub.Origin == .InlineTable)
-					WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
-			}
-			else if (val.IsArray)
-			{
-				TomlArray arr = val.AsArray;
-				if (arr.IsStatic)
-					WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+				// Emit with full dotted key prefix (for nested dotted contexts)
+				if (val.IsTable)
+				{
+					TomlTable sub = val.AsTable;
+					if (sub.Origin == .InlineTable)
+						WriteDottedKeyVal(key, val, pathPrefix, outStr, version, tbl, metadata);
+				}
+				else if (!val.IsTable || val.AsTable.Origin == .InlineTable)
+				{
+					WriteDottedKeyVal(key, val, pathPrefix, outStr, version, tbl, metadata);
+				}
 			}
 			else
 			{
-				WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+				if (val.IsTable)
+				{
+					TomlTable sub = val.AsTable;
+					if (sub.Origin == .InlineTable)
+						WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+				}
+				else if (val.IsArray)
+				{
+					TomlArray arr = val.AsArray;
+					if (arr.IsStatic)
+						WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+				}
+				else
+				{
+					WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
+				}
 			}
 		}
 
-		// Phase 2: non-inline, non-array-element sub-tables as [header]
+		// Phase 2: non-inline, non-array-element sub-tables as [header] or dotted keys
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
@@ -168,32 +192,79 @@ static class TomlWriterImpl
 				TomlTable sub = val.AsTable;
 				if (sub.Origin != .ArrayElement && sub.Origin != .InlineTable)
 				{
-					String fullPath = scope String();
-					if (!pathPrefix.IsEmpty)
+					// Check if entries prefer dotted-key emission
+					if (sub.HasDottedPreference(metadata))
 					{
-						fullPath.Append(pathPrefix);
-						fullPath.Append(".");
+						// Emit dotted keys from parent level, then recurse for non-dotted sub-tables
+						for (int j = 0; j < sub.KeyOrder.Count; j++)
+						{
+							String sk = sub.KeyOrder[j];
+							TomlValue sv = sub.Entries[sk];
+							if (!sv.IsTable || sv.AsTable.Origin == .InlineTable)
+							{
+								// Emit leading comments
+								if (sub.MetadataContext != null && sub.MetadataContext.TryGetEntryNodeId(sk, let nid) && nid.IsValid)
+									EmitLeadingComments(nid, outStr, metadata);
+								// Write dotted key = value
+								String dk = scope String();
+								if (!pathPrefix.IsEmpty)
+								{
+									dk.Append(pathPrefix);
+									dk.Append('.');
+								}
+								AppendKey(key, dk, version);
+								dk.Append('.');
+								AppendKey(sk, dk, version);
+								outStr.Append(dk);
+								outStr.Append(" = ");
+								WriteValuePreserving(sv, outStr, version, sub, sk, metadata);
+								WriteNewline(outStr, metadata);
+							}
+							else
+							{
+								// Non-inline sub-table: recurse with dotted path prefix
+								String dp = scope String();
+								if (!pathPrefix.IsEmpty)
+								{
+									dp.Append(pathPrefix);
+									dp.Append('.');
+								}
+								AppendKey(key, dp, version);
+								dp.Append('.');
+								AppendKey(sk, dp, version);
+								WriteTablePreserving(sv.AsTable, dp, true, outStr, version, metadata);
+							}
+						}
 					}
-					AppendKey(key, fullPath, version);
+					else
+					{
+						String fullPath = scope String();
+						if (!pathPrefix.IsEmpty)
+						{
+							fullPath.Append(pathPrefix);
+							fullPath.Append(".");
+						}
+						AppendKey(key, fullPath, version);
 
-					// Emit separator newline before comments (only if not at start)
-					if (outStr.Length > 0)
-						outStr.Append('\n');
+						// Emit separator newline before comments (only if not at start)
+						if (outStr.Length > 0)
+							WriteNewline(outStr, metadata);
 
-					// Emit leading comments for the table header
-					if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
-						EmitLeadingComments(sub.MetadataContext.mNodeId, outStr, metadata);
+						// Emit leading comments for the table header
+						if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+							EmitLeadingComments(sub.MetadataContext.mNodeId, outStr, metadata);
 
-					outStr.Append('[');
-					outStr.Append(fullPath);
-					outStr.Append(']');
+						outStr.Append('[');
+						outStr.Append(fullPath);
+						outStr.Append(']');
 
-					// Emit trailing comment on the header line
-					if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
-						EmitTrailingComment(sub.MetadataContext.mNodeId, outStr, metadata);
+						// Emit trailing comment on the header line
+						if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
+							EmitTrailingComment(sub.MetadataContext.mNodeId, outStr, metadata);
 
-					outStr.Append("\n");
-					WriteTablePreserving(sub, fullPath, outStr, version, metadata);
+						WriteNewline(outStr, metadata);
+						WriteTablePreserving(sub, fullPath, outStr, version, metadata);
+					}
 				}
 			}
 		}
@@ -233,7 +304,7 @@ static class TomlWriterImpl
 
 			// Emit separator newline before comments (only if not at start)
 			if (outStr.Length > 0)
-				outStr.Append('\n');
+				WriteNewline(outStr, metadata);
 
 			// Emit leading comments for the array element header
 			if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
@@ -247,7 +318,7 @@ static class TomlWriterImpl
 			if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
 				EmitTrailingComment(sub.MetadataContext.mNodeId, outStr, metadata);
 
-			outStr.Append("\n");
+			WriteNewline(outStr, metadata);
 
 			WriteTablePreserving(sub, fullPath, outStr, version, metadata);
 		}
@@ -272,31 +343,418 @@ static class TomlWriterImpl
 		if (nodeId.IsValid)
 			EmitTrailingComment(nodeId, outStr, metadata);
 
-		outStr.Append("\n");
+		WriteNewline(outStr, metadata);
 	}
 
 	/// Write a value, reusing the original token if available and clean.
 	private static void WriteValuePreserving(TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, StringView key, TomlDocumentMetadata metadata)
 	{
+		// Look up node ID for this entry
+		TomlNodeId nodeId = .Invalid;
+		if (parentTable != null && parentTable.MetadataContext != null)
+			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+
 		// Try to reuse original token for string values
-		if (val.IsString && parentTable != null && parentTable.MetadataContext != null)
+		if (val.IsString && nodeId.IsValid)
 		{
-			if (parentTable.MetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			let style = metadata.GetNodeStyle(nodeId);
+			if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
 			{
-				let style = metadata.GetNodeStyle(nodeId);
-				if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
+				let token = metadata.GetOriginalToken(style.mOriginalValueToken);
+				if (!token.IsEmpty)
 				{
-					let token = metadata.GetOriginalToken(style.mOriginalValueToken);
-					if (!token.IsEmpty)
-					{
-						outStr.Append(token);
-						return;
-					}
+					outStr.Append(token);
+					return;
 				}
 			}
 		}
 
-		// Fall back to canonical generation
+		// Fall back to style-aware generation using document defaults and node format
+		WriteValueWithDocumentStyle(val, outStr, version, metadata, nodeId);
+	}
+
+	/// Emit document-configured newline.
+	private static void WriteNewline(String outStr, TomlDocumentMetadata metadata)
+	{
+		if (metadata != null && metadata.mDocumentStyle.mNewlineStyle == .CRLF)
+			outStr.Append("\r\n");
+		else
+			outStr.Append('\n');
+	}
+
+	/// Write an integer value using format metadata for style preservation.
+	private static void WriteIntegerWithFormat(int64 val, TomlIntegerFormat fmt, String outStr)
+	{
+		if (fmt.mBase == .Decimal && !fmt.mUseUnderscores)
+		{
+			val.ToString(outStr);
+			return;
+		}
+
+		bool negative = val < 0;
+		// Negative values can't be hex/octal/binary per TOML spec.
+		if (negative && fmt.mBase != .Decimal)
+		{
+			val.ToString(outStr);
+			return;
+		}
+
+		uint64 uval = negative ? (uint64)(-(val + 1)) + 1 : (uint64)val;
+		if (fmt.mBase == .Decimal)
+		{
+			if (negative)
+				outStr.Append('-');
+			String digits = scope String();
+			uval.ToString(digits);
+			int groupSize = fmt.mGroupSize > 0 ? fmt.mGroupSize : 3;
+			EmitGroupedDigits(digits, outStr, groupSize, false);
+			return;
+		}
+
+		String rawDigits = scope String();
+		char8 prefix = '\0';
+
+		switch (fmt.mBase)
+		{
+		case .Hex:
+			prefix = 'x';
+			// Convert to hex manually
+			if (uval == 0)
+				rawDigits.Append('0');
+			else
+			{
+				while (uval > 0)
+				{
+					uint8 d = (uint8)(uval & 0xF);
+					rawDigits.Insert(0, (char8)(d < 10 ? '0' + d : (fmt.mUppercaseDigits ? 'A' : 'a') + d - 10));
+					uval >>= 4;
+				}
+			}
+		case .Octal:
+			prefix = 'o';
+			if (uval == 0)
+				rawDigits.Append('0');
+			else
+			{
+				while (uval > 0)
+				{
+					rawDigits.Insert(0, (char8)('0' + (uval & 7)));
+					uval >>= 3;
+				}
+			}
+		case .Binary:
+			prefix = 'b';
+			if (uval == 0)
+				rawDigits.Append('0');
+			else
+			{
+				while (uval > 0)
+				{
+					rawDigits.Insert(0, (char8)('0' + (uval & 1)));
+					uval >>= 1;
+				}
+			}
+		default:
+		}
+
+		while (fmt.mMinDigits > rawDigits.Length)
+			rawDigits.Insert(0, '0');
+
+		outStr.Append('0');
+		outStr.Append(prefix);
+
+		if (fmt.mUseUnderscores && fmt.mGroupSize > 0)
+			EmitGroupedDigits(rawDigits, outStr, fmt.mGroupSize, false);
+		else
+			outStr.Append(rawDigits);
+	}
+
+	/// Write a float value using format metadata for style preservation.
+	private static void WriteFloatWithFormat(double val, TomlFloatFormat fmt, String outStr)
+	{
+		// Special values
+		if (val.IsInfinity)
+		{
+			if (val > 0) outStr.Append("inf");
+			else outStr.Append("-inf");
+			return;
+		}
+		if (val.IsNaN)
+		{
+			outStr.Append("nan");
+			return;
+		}
+
+		if (fmt.mStyle == .Decimal)
+		{
+			// IEEE 754: preserve negative zero sign
+			if (val == 0.0 && (1.0 / val) < 0.0)
+			{
+				outStr.Append("-0.0");
+				return;
+			}
+			int before = outStr.Length;
+			if (fmt.mPrecision >= 0)
+			{
+				String format = scope String("F");
+				fmt.mPrecision.ToString(format);
+				val.ToString(outStr, format, null);
+			}
+			else
+			{
+				val.ToString(outStr, "R", null);
+			}
+			// Ensure unambiguously a float
+			bool hasDot = false;
+			for (int fi = before; fi < outStr.Length; fi++)
+			{
+				char8 fc = outStr[fi];
+				if (fc == '.' || fc == 'e' || fc == 'E') { hasDot = true; break; }
+			}
+			if (!hasDot) outStr.Append(".0");
+			return;
+		}
+
+		// Scientific notation
+		if (fmt.mStyle == .Scientific)
+		{
+			if (val == 0.0 && (1.0 / val) < 0.0)
+			{
+				outStr.Append("-0.0");
+				return;
+			}
+			String format = scope String();
+			format.Append(fmt.mUppercaseExponent ? 'E' : 'e');
+			if (fmt.mPrecision >= 0)
+				fmt.mPrecision.ToString(format);
+			String formatted = scope String();
+			val.ToString(formatted, format, null);
+			NormalizeExponentPlusSign(formatted, fmt.mExplicitPlusExponent);
+			outStr.Append(formatted);
+			return;
+		}
+
+		// Fallback
+		val.ToString(outStr, "R", null);
+	}
+
+	/// Normalize positive exponent sign to match the captured style.
+	private static void NormalizeExponentPlusSign(String formatted, bool explicitPlus)
+	{
+		for (int i = 0; i < formatted.Length - 1; i++)
+		{
+			if (formatted[i] == 'e' || formatted[i] == 'E')
+			{
+				if (formatted[i + 1] == '+')
+				{
+					if (!explicitPlus)
+						formatted.Remove(i + 1, 1);
+				}
+				else if (formatted[i + 1] != '-' && explicitPlus)
+				{
+					formatted.Insert(i + 1, '+');
+				}
+				return;
+			}
+		}
+	}
+
+	/// Write a date-time value using format metadata for style preservation.
+	private static void WriteDateTimeWithFormat(TomlValue val, TomlDateTimeFormat fmt, String outStr, TomlVersion version)
+	{
+		if (val.IsOffsetDateTime)
+		{
+			let dt = val.AsOffsetDateTime;
+			FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
+			outStr.Append(fmt.mUsesUppercaseT ? 'T' : ' ');
+			FormatTimeWithFormat(dt.mHour, dt.mMinute, dt.mSecond, dt.mNanosecond, fmt, version, outStr);
+			if (dt.mOffsetMinutes == 0 && fmt.mUsesZ)
+				outStr.Append('Z');
+			else
+			{
+				int32 absOff = dt.mOffsetMinutes;
+				if (absOff < 0) { outStr.Append('-'); absOff = -absOff; }
+				else outStr.Append('+');
+				Pad2(absOff / 60, outStr);
+				outStr.Append(':');
+				Pad2(absOff % 60, outStr);
+			}
+			return;
+		}
+		if (val.IsLocalDateTime)
+		{
+			let dt = val.AsLocalDateTime;
+			FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
+			outStr.Append(fmt.mUsesUppercaseT ? 'T' : ' ');
+			FormatTimeWithFormat(dt.mHour, dt.mMinute, dt.mSecond, dt.mNanosecond, fmt, version, outStr);
+			return;
+		}
+		if (val.IsLocalDate)
+		{
+			WriteLocalDate(val.AsLocalDate, outStr);
+			return;
+		}
+		if (val.IsLocalTime)
+		{
+			let t = val.AsLocalTime;
+			FormatTimeWithFormat(t.mHour, t.mMinute, t.mSecond, t.mNanosecond, fmt, version, outStr);
+			return;
+		}
+		WriteValue(val, outStr, version);
+	}
+
+	/// Write a time component using captured seconds/fraction precision where it is safe to do so.
+	private static void FormatTimeWithFormat(int32 h, int32 min, int32 s, int64 ns, TomlDateTimeFormat fmt, TomlVersion version, String outStr)
+	{
+		Pad2(h, outStr);
+		outStr.Append(':');
+		Pad2(min, outStr);
+
+		bool includeSeconds = version == .V1_0 || fmt.mHasSeconds || fmt.mFractionalDigits > 0 || s != 0 || ns != 0;
+		if (!includeSeconds)
+			return;
+
+		outStr.Append(':');
+		Pad2(s, outStr);
+
+		int digitsToEmit = fmt.mFractionalDigits;
+		if (ns > 0 || digitsToEmit > 0)
+		{
+			String nsStr = scope String();
+			ns.ToString(nsStr);
+			while (nsStr.Length < 9) nsStr.Insert(0, '0');
+
+			int significantDigits = 9;
+			while (significantDigits > 0 && nsStr[significantDigits - 1] == '0')
+				significantDigits--;
+			if (digitsToEmit < significantDigits)
+				digitsToEmit = significantDigits;
+			if (digitsToEmit > 9)
+				digitsToEmit = 9;
+
+			if (digitsToEmit > 0)
+			{
+				outStr.Append('.');
+				outStr.Append(StringView(&nsStr[0], digitsToEmit));
+			}
+		}
+	}
+
+	/// Write digits with optional underscore grouping from the right (e.g., 1_000_000 or DEAD_BEEF).
+	private static void EmitGroupedDigits(StringView digits, String outStr, int groupSize, bool leftToRight)
+	{
+		if (groupSize <= 0 || digits.Length <= groupSize)
+		{
+			outStr.Append(digits);
+			return;
+		}
+		int firstChunk = digits.Length % groupSize;
+		if (firstChunk == 0) firstChunk = groupSize;
+		outStr.Append(StringView(&digits[0], firstChunk));
+		int pos = firstChunk;
+		while (pos < digits.Length)
+		{
+			outStr.Append('_');
+			outStr.Append(StringView(&digits[pos], groupSize));
+			pos += groupSize;
+		}
+	}
+
+	/// Write key = value with a dotted path prefix (for nested dotted contexts).
+	private static void WriteDottedKeyVal(StringView key, TomlValue val, StringView pathPrefix, String outStr, TomlVersion version, TomlTable parentTable, TomlDocumentMetadata metadata)
+	{
+		// Look up node ID for leading comments
+		TomlNodeId nodeId = .Invalid;
+		if (parentTable.MetadataContext != null)
+			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+		if (nodeId.IsValid)
+			EmitLeadingComments(nodeId, outStr, metadata);
+
+		// Write dotted.key = value
+		if (!pathPrefix.IsEmpty)
+		{
+			outStr.Append(pathPrefix);
+			outStr.Append('.');
+		}
+		AppendKey(key, outStr, version);
+		outStr.Append(" = ");
+		WriteValuePreserving(val, outStr, version, parentTable, key, metadata);
+
+		// Trailing comment on same line
+		if (nodeId.IsValid)
+			EmitTrailingComment(nodeId, outStr, metadata);
+		WriteNewline(outStr, metadata);
+	}
+
+	/// Write a value using document-level style defaults when available.
+	private static void WriteValueWithDocumentStyle(TomlValue val, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlNodeId nodeId)
+	{
+		if (val.IsString && metadata != null)
+		{
+			let style = metadata.mDocumentStyle.mDefaultStringStyle;
+			switch (style)
+			{
+			case .Literal:
+				WriteLiteralString(val.AsString, outStr, version);
+				return;
+			case .MultilineBasic:
+				WriteMultiLineBasicString(val.AsString, outStr, version);
+				return;
+			case .MultilineLiteral:
+				WriteMultiLineLiteralString(val.AsString, outStr, version);
+				return;
+			default:
+				break;
+			}
+		}
+		// Try node-level numeric format metadata
+		if (nodeId.IsValid && metadata != null)
+		{
+			let style = metadata.GetNodeStyle(nodeId);
+			if (style != null && style.mValueFormatRef.IsValid)
+			{
+				let fmt = metadata.mValueFormats[style.mValueFormatRef.mIndex];
+				if (val.IsInteger && fmt case .Integer(let intFmt))
+				{
+					WriteIntegerWithFormat(val.AsInteger, intFmt, outStr);
+					return;
+				}
+				if (val.IsFloat && fmt case .Float(let floatFmt))
+				{
+					WriteFloatWithFormat(val.AsFloat, floatFmt, outStr);
+					return;
+				}
+				if (fmt case .DateTime(let dtFmt))
+				{
+					WriteDateTimeWithFormat(val, dtFmt, outStr, version);
+					return;
+				}
+			}
+		}
+		if (val.IsArray && metadata != null)
+		{
+			TomlArray arr = val.AsArray;
+			if (arr != null && arr.MetadataContext != null)
+			{
+				TomlArrayFormat arrayFmt = .();
+				bool hasArrayFmt = false;
+				if (nodeId.IsValid)
+				{
+					let style = metadata.GetNodeStyle(nodeId);
+					if (style != null && style.mValueFormatRef.IsValid)
+					{
+						let fmt = metadata.mValueFormats[style.mValueFormatRef.mIndex];
+						if (fmt case .Array(let arrFmt))
+						{
+							arrayFmt = arrFmt;
+							hasArrayFmt = true;
+						}
+					}
+				}
+				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt);
+				return;
+			}
+		}
 		WriteValue(val, outStr, version);
 	}
 
@@ -400,6 +858,84 @@ static class TomlWriterImpl
 		outStr.Append('"');
 	}
 
+	private static void WriteLiteralString(StringView s, String outStr, TomlVersion version)
+	{
+		// Pre-scan: literal strings can't contain ', newlines, or control chars (except tab)
+		for (int i = 0; i < s.Length; i++)
+		{
+			char8 c = s[i];
+			if (c == '\'' || c == '\n' || c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
+			{
+				WriteBasicString(s, outStr, version);
+				return;
+			}
+		}
+		outStr.Append('\'');
+		outStr.Append(s);
+		outStr.Append('\'');
+	}
+
+	private static void WriteMultiLineBasicString(StringView s, String outStr, TomlVersion version)
+	{
+		outStr.Append('"'); outStr.Append('"'); outStr.Append('"');
+		// Emit an extra newline to protect a leading \n from being trimmed by spec
+		outStr.Append('\n');
+		for (int i = 0; i < s.Length; i++)
+		{
+			char8 c = s[i];
+			switch (c)
+			{
+			case '"': outStr.Append("\\\""); break;
+			case '\\': outStr.Append("\\\\"); break;
+			case '\b': outStr.Append("\\b"); break;
+			case '\t': outStr.Append("\\t"); break;
+			case '\n': outStr.Append('\n'); break;
+			case '\f': outStr.Append("\\f"); break;
+			case '\r': outStr.Append("\\r"); break;
+			default:
+				if ((uint8)c < 0x20 || (uint8)c == 0x7F)
+				{
+					outStr.Append("\\u00");
+					uint8 cb = (uint8)c;
+					outStr.Append(TomlChar.HexDigitChar((cb >> 4) & 0x0F));
+					outStr.Append(TomlChar.HexDigitChar(cb & 0x0F));
+				}
+				else
+				{
+					outStr.Append(c);
+				}
+			}
+		}
+		outStr.Append('"'); outStr.Append('"'); outStr.Append('"');
+	}
+
+	private static void WriteMultiLineLiteralString(StringView s, String outStr, TomlVersion version)
+	{
+		// Pre-scan: multiline literal strings can't contain ''' or control chars (except tab/newline)
+		// Bare \r is also rejected
+		for (int i = 0; i < s.Length - 2; i++)
+		{
+			if (s[i] == '\'' && s[i + 1] == '\'' && s[i + 2] == '\'')
+			{
+				WriteMultiLineBasicString(s, outStr, version);
+				return;
+			}
+		}
+		for (int i = 0; i < s.Length; i++)
+		{
+			char8 c = s[i];
+			if (c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t' && c != '\n'))
+			{
+				WriteMultiLineBasicString(s, outStr, version);
+				return;
+			}
+		}
+		outStr.Append('\''); outStr.Append('\''); outStr.Append('\'');
+		outStr.Append('\n');
+		outStr.Append(s);
+		outStr.Append('\''); outStr.Append('\''); outStr.Append('\'');
+	}
+
 	private static void WriteOffsetDateTime(TomlOffsetDateTime dt, String outStr)
 	{
 		FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
@@ -444,6 +980,69 @@ static class TomlWriterImpl
 			WriteValue(arr[i], outStr, version);
 		}
 		outStr.Append(']');
+	}
+
+	/// Write an array preserving element tokens where possible.
+	private static void WriteArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt, bool hasFormat)
+	{
+		let ctx = arr.MetadataContext;
+		if (hasFormat && fmt.mStyle == .Multiline)
+		{
+			WriteMultilineArrayPreserving(arr, outStr, version, metadata, fmt);
+			return;
+		}
+
+		outStr.Append('[');
+		for (int i = 0; i < arr.Count; i++)
+		{
+			if (i > 0) outStr.Append(", ");
+			TomlValue elem = arr[i];
+			TomlNodeId elemNodeId = .Invalid;
+			if (ctx != null)
+				ctx.TryGetItemNodeId(i, out elemNodeId);
+
+			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
+		}
+		outStr.Append(']');
+	}
+
+	private static void WriteMultilineArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt)
+	{
+		let ctx = arr.MetadataContext;
+		int indentSize = fmt.mIndentSize > 0 ? fmt.mIndentSize : metadata.mDocumentStyle.mIndentSize;
+		outStr.Append('[');
+		WriteNewline(outStr, metadata);
+		for (int i = 0; i < arr.Count; i++)
+		{
+			AppendIndent(outStr, indentSize);
+			TomlValue elem = arr[i];
+			TomlNodeId elemNodeId = .Invalid;
+			if (ctx != null)
+				ctx.TryGetItemNodeId(i, out elemNodeId);
+			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
+			if (i < arr.Count - 1 || fmt.mTrailingComma)
+				outStr.Append(',');
+			WriteNewline(outStr, metadata);
+		}
+		outStr.Append(']');
+	}
+
+	private static void WriteArrayElementPreserving(TomlValue elem, TomlNodeId elemNodeId, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	{
+		if (elem.IsString && elemNodeId.IsValid)
+		{
+			let style = metadata.GetNodeStyle(elemNodeId);
+			if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
+			{
+				let token = metadata.GetOriginalToken(style.mOriginalValueToken);
+				if (!token.IsEmpty)
+				{
+					outStr.Append(token);
+					return;
+				}
+			}
+		}
+		WriteValueWithDocumentStyle(elem, outStr, version, metadata, elemNodeId);
 	}
 
 	private static void WriteInlineTable(TomlTable tbl, String outStr, TomlVersion version)
@@ -493,6 +1092,12 @@ static class TomlWriterImpl
 		val.ToString(outStr);
 	}
 
+	private static void AppendIndent(String outStr, int count)
+	{
+		for (int i = 0; i < count; i++)
+			outStr.Append(' ');
+	}
+
 	private static void Pad4(int32 val, String outStr)
 	{
 		if (val < 10) outStr.Append("000");
@@ -523,11 +1128,11 @@ static class TomlWriterImpl
 		if (commentSet == null || commentSet.mLeading.Count == 0)
 			return;
 
-		EmitCommentSet(commentSet, outStr);
+		EmitCommentSet(commentSet, outStr, metadata);
 	}
 
 	/// @brief Emit all leading comments from a comment set.
-	private static void EmitCommentSet(TomlCommentSet commentSet, String outStr)
+	private static void EmitCommentSet(TomlCommentSet commentSet, String outStr, TomlDocumentMetadata metadata)
 	{
 		if (commentSet == null || commentSet.mLeading.Count == 0)
 			return;
@@ -541,7 +1146,7 @@ static class TomlWriterImpl
 				outStr.Append(' ');
 				outStr.Append(text);
 			}
-			outStr.Append('\n');
+			WriteNewline(outStr, metadata);
 		}
 	}
 

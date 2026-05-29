@@ -260,15 +260,15 @@ public struct TomlFloatFormat
 public struct TomlDateTimeFormat
 {
 	/// Whether seconds were present (some times omit seconds).
-	public bool mHasSeconds = true;
+	public bool mHasSeconds = false;
 	/// Number of fractional second digits (0 = none).
 	public uint8 mFractionalDigits = 0;
 	/// Whether the date-time separator was uppercase T (vs lowercase t or space).
 	public bool mUsesUppercaseT = true;
 	/// Whether UTC offset used Z shorthand (vs +00:00).
-	public bool mUsesZ = true;
+	public bool mUsesZ = false;
 	/// Whether an offset was present at all (offset date-time vs local).
-	public bool mHasOffset = true;
+	public bool mHasOffset = false;
 }
 
 // ================================================================
@@ -351,16 +351,16 @@ public enum TomlValueFormat
 /// @brief Per-container metadata context for style-preserving mode.
 /// Provides a link between table entries / array elements and their node IDs.
 /// Null in normal mode; allocated only when PreserveStyle is enabled.
-public class TomlContainerMetadataContext
+internal class TomlContainerMetadataContext
 {
-	public TomlDocumentMetadata mMetadata; // borrowed document-owned sidecar
-	public TomlNodeId mNodeId;
+	internal TomlDocumentMetadata mMetadata; // borrowed document-owned sidecar
+	internal TomlNodeId mNodeId;
 
 	// Exactly one is populated, depending on container kind.
-	public Dictionary<String, TomlNodeId> mEntryNodeIds ~ DeleteDictionaryAndKeys!(_);
-	public List<TomlNodeId> mItemNodeIds ~ delete _;
+	internal Dictionary<String, TomlNodeId> mEntryNodeIds ~ DeleteDictionaryAndKeys!(_);
+	internal List<TomlNodeId> mItemNodeIds ~ delete _;
 
-	public this(TomlDocumentMetadata metadata, TomlNodeId nodeId, bool isArray)
+	internal this(TomlDocumentMetadata metadata, TomlNodeId nodeId, bool isArray)
 	{
 		mMetadata = metadata;
 		mNodeId = nodeId;
@@ -377,7 +377,7 @@ public class TomlContainerMetadataContext
 	}
 
 	/// @brief Look up the node ID for a table entry key.
-	public bool TryGetEntryNodeId(StringView key, out TomlNodeId nodeId)
+	internal bool TryGetEntryNodeId(StringView key, out TomlNodeId nodeId)
 	{
 		if (mEntryNodeIds != null && mEntryNodeIds.TryGetValueAlt(key, let id))
 		{
@@ -389,7 +389,7 @@ public class TomlContainerMetadataContext
 	}
 
 	/// Remove a node ID mapping for a table entry key. Deletes the owned key.
-	public void RemoveEntryNodeId(StringView key)
+	internal void RemoveEntryNodeId(StringView key)
 	{
 		if (mEntryNodeIds != null)
 		{
@@ -402,14 +402,14 @@ public class TomlContainerMetadataContext
 	}
 
 	/// @brief Register a node ID for a table entry key. Copies the key.
-	public void SetEntryNodeId(StringView key, TomlNodeId nodeId)
+	internal void SetEntryNodeId(StringView key, TomlNodeId nodeId)
 	{
 		if (mEntryNodeIds != null)
 			mEntryNodeIds[new String(key)] = nodeId;
 	}
 
 	/// @brief Get the node ID for an array element by index.
-	public bool TryGetItemNodeId(int index, out TomlNodeId nodeId)
+	internal bool TryGetItemNodeId(int index, out TomlNodeId nodeId)
 	{
 		if (mItemNodeIds != null && index >= 0 && index < mItemNodeIds.Count)
 		{
@@ -421,7 +421,7 @@ public class TomlContainerMetadataContext
 	}
 
 	/// @brief Append a node ID for a new array element.
-	public void AddItemNodeId(TomlNodeId nodeId)
+	internal void AddItemNodeId(TomlNodeId nodeId)
 	{
 		if (mItemNodeIds != null)
 			mItemNodeIds.Add(nodeId);
@@ -436,29 +436,33 @@ public class TomlContainerMetadataContext
 /// Owns all style records, comment strings, and original token copies.
 public class TomlDocumentMetadata
 {
-	public TomlMetadataMode mMode;
+	internal TomlMetadataMode mMode;
 
-	/// @brief Root/document-level comments. Allocated only when root comments exist.
-	public TomlCommentSet mRootComments ~ delete _;
-	/// @brief Footer/EOF comments that appear after all content. Allocated only when footer comments exist.
-	public TomlCommentSet mFooterComments ~ delete _;
+	/// @brief Metadata capture mode for this sidecar.
+	public TomlMetadataMode Mode => mMode;
 
-	public TomlDocumentStyle mDocumentStyle;
+	/// @brief Root/document-level comments.
+	internal TomlCommentSet mRootComments ~ delete _;
+	/// @brief Footer/EOF comments.
+	internal TomlCommentSet mFooterComments ~ delete _;
+
+	/// @brief Document-level style defaults.
+	internal TomlDocumentStyle mDocumentStyle;
 
 	/// Per-node style records, indexed by TomlNodeId.mIndex.
-	public List<TomlNodeStyle> mNodeStyles ~ delete _;
-	/// Per-node comment sets, indexed by TomlNodeId.mIndex. Null entries for nodes without comments.
-	public List<TomlCommentSet> mComments ~ DeleteContainerAndItems!(_);
+	internal List<TomlNodeStyle> mNodeStyles ~ delete _;
+	/// Per-node comment sets.
+	internal List<TomlCommentSet> mComments ~ DeleteContainerAndItems!(_);
 
-	/// Owns raw source fragments captured during parsing (string tokens, numeric tokens, etc.).
-	public List<String> mOriginalTokens ~ DeleteContainerAndItems!(_);
+	/// Owns raw source fragments captured during parsing.
+	internal List<String> mOriginalTokens ~ DeleteContainerAndItems!(_);
 
-	/// Sparse key format pool. Referenced by TomlStyleRef.
-	public List<TomlKeyFormat> mKeyFormats ~ delete _;
-	/// Sparse value format pool. Referenced by TomlStyleRef.
-	public List<TomlValueFormat> mValueFormats ~ delete _;
+	/// Sparse key format pool.
+	internal List<TomlKeyFormat> mKeyFormats ~ delete _;
+	/// Sparse value format pool.
+	internal List<TomlValueFormat> mValueFormats ~ delete _;
 
-	public this(TomlMetadataMode mode)
+	internal this(TomlMetadataMode mode)
 	{
 		mMode = mode;
 		mRootComments = null;
@@ -472,7 +476,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Allocate a new node ID and return it. The node style record is initialized to defaults.
-	public TomlNodeId AllocateNodeId()
+	internal TomlNodeId AllocateNodeId()
 	{
 		int index = mNodeStyles.Count;
 		mNodeStyles.Add(TomlNodeStyle(TomlNodeId(index)));
@@ -480,7 +484,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Get the style record for a node, or null if the ID is invalid.
-	public TomlNodeStyle* GetNodeStyle(TomlNodeId nodeId)
+	internal TomlNodeStyle* GetNodeStyle(TomlNodeId nodeId)
 	{
 		if (!nodeId.IsValid || nodeId.mIndex >= mNodeStyles.Count)
 			return null;
@@ -488,7 +492,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Add an original token copy and return a reference to it.
-	public TomlOriginalTokenRef AddOriginalToken(StringView tokenText)
+	internal TomlOriginalTokenRef AddOriginalToken(StringView tokenText)
 	{
 		int index = mOriginalTokens.Count;
 		mOriginalTokens.Add(new String(tokenText));
@@ -496,7 +500,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Get the original token text for a reference, or null if invalid.
-	public StringView GetOriginalToken(TomlOriginalTokenRef tokenRef)
+	internal StringView GetOriginalToken(TomlOriginalTokenRef tokenRef)
 	{
 		if (!tokenRef.IsValid || tokenRef.mIndex >= mOriginalTokens.Count)
 			return StringView();
@@ -504,7 +508,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Add a key format to the sparse pool and return a reference.
-	public TomlStyleRef AddKeyFormat(TomlKeyFormat format)
+	internal TomlStyleRef AddKeyFormat(TomlKeyFormat format)
 	{
 		int index = mKeyFormats.Count;
 		mKeyFormats.Add(format);
@@ -512,7 +516,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Add a value format to the sparse pool and return a reference.
-	public TomlStyleRef AddValueFormat(TomlValueFormat format)
+	internal TomlStyleRef AddValueFormat(TomlValueFormat format)
 	{
 		int index = mValueFormats.Count;
 		mValueFormats.Add(format);
@@ -520,7 +524,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Mark a node dirty with the given flags.
-	public void MarkDirty(TomlNodeId nodeId, TomlDirtyFlags flags)
+	internal void MarkDirty(TomlNodeId nodeId, TomlDirtyFlags flags)
 	{
 		let style = GetNodeStyle(nodeId);
 		if (style != null)
@@ -530,7 +534,7 @@ public class TomlDocumentMetadata
 	/// @brief Get or create the comment set for a node. Allocates the comment list entry if needed.
 	/// @param nodeId The node to get comments for.
 	/// @return The comment set, or null if nodeId is invalid.
-	public TomlCommentSet GetOrCreateCommentSet(TomlNodeId nodeId)
+	internal TomlCommentSet GetOrCreateCommentSet(TomlNodeId nodeId)
 	{
 		if (!nodeId.IsValid)
 			return null;
@@ -548,7 +552,7 @@ public class TomlDocumentMetadata
 	/// @brief Get the comment set for a node, or null if none exists.
 	/// @param nodeId The node to look up.
 	/// @return The comment set, or null if the node has no comments or the ID is invalid.
-	public TomlCommentSet GetCommentSet(TomlNodeId nodeId)
+	internal TomlCommentSet GetCommentSet(TomlNodeId nodeId)
 	{
 		if (!nodeId.IsValid || nodeId.mIndex >= mComments.Count)
 			return null;
@@ -556,7 +560,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Get or create the root/document-level comment set.
-	public TomlCommentSet GetOrCreateRootComments()
+	internal TomlCommentSet GetOrCreateRootComments()
 	{
 		if (mRootComments == null)
 			mRootComments = new TomlCommentSet();
@@ -564,7 +568,7 @@ public class TomlDocumentMetadata
 	}
 
 	/// @brief Get or create the footer/EOF comment set.
-	public TomlCommentSet GetOrCreateFooterComments()
+	internal TomlCommentSet GetOrCreateFooterComments()
 	{
 		if (mFooterComments == null)
 			mFooterComments = new TomlCommentSet();

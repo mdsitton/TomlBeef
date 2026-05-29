@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -183,7 +184,7 @@ class TomlPathResolver
 			if (mCurrentTable.IsInlineSealed)
 				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
-			TomlTable newTable = new TomlTable(implicitOrigin);
+			TomlTable newTable = new TomlTable(implicitOrigin, true);
 			TomlValue tableVal = TomlValue.Table(newTable);
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
@@ -252,7 +253,7 @@ class TomlPathResolver
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
-		TomlTable newTable = new TomlTable(origin);
+		TomlTable newTable = new TomlTable(origin, true);
 		TomlValue tableVal = TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
@@ -281,7 +282,7 @@ class TomlPathResolver
 				if (arr.IsStatic)
 					return .Err(MakeError(.AppendToStaticArray, scope $"Cannot define array-of-tables '[[{key}]]' - name already defined as a static array" , mCurrentOffset));
 
-				TomlTable newElement = new TomlTable(.ArrayElement);
+				TomlTable newElement = new TomlTable(.ArrayElement, true);
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
 
@@ -310,8 +311,8 @@ class TomlPathResolver
 			}
 		}
 
-		TomlArray newArray = new TomlArray();
-		TomlTable firstElement = new TomlTable(.ArrayElement);
+		TomlArray newArray = new TomlArray(true);
+		TomlTable firstElement = new TomlTable(.ArrayElement, true);
 		newArray.Add(.Table(firstElement));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
