@@ -360,7 +360,13 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			CaptureArrayFormat(nodeId, rawToken);
+			CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
+		}
+		else if (capturingToken && nodeId.IsValid && value.IsTable)
+		{
+			String scratch = scope String();
+			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
 		}
 
 		// Capture key format metadata
@@ -1514,7 +1520,23 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		TomlArray arr = new TomlArray(true);
 		arr.IsStatic = true;
 
-		if (SkipWsAndComments() case .Err(let e))
+		// Array-local pending comment list for PreserveStyle mode
+		List<String> arrayPendingComments = (mMetadata != null) ? new List<String>() : null;
+		// Tracks whether the preceding comma was followed by a blank line
+		bool arraySawBlankLine = false;
+		defer
+		{
+			if (arrayPendingComments != null)
+			{
+				for (var item in arrayPendingComments)
+					delete item;
+				delete arrayPendingComments;
+			}
+		}
+
+		// Capture comments after opening bracket
+		bool unusedBlank = false;
+		if (SkipWsAndCaptureComments(arrayPendingComments, out unusedBlank) case .Err(let e))
 		{
 			delete arr;
 			return .Err(e);
@@ -1523,15 +1545,53 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			mCursor.AdvanceByte();
 			CountArrayStyle(startLine, mCursor.Line);
+			// Empty array: flush comments to the array node itself
+			if (arrayPendingComments != null && arrayPendingComments.Count > 0)
+			{
+				EnsureArrayContext(arr);
+				let commentSet = mMetadata.GetOrCreateCommentSet(arr.MetadataContext.mNodeId);
+				if (commentSet != null)
+				{
+					for (int ci = 0; ci < arrayPendingComments.Count; ci++)
+						commentSet.mLeading.Add(arrayPendingComments[ci]);
+					arrayPendingComments.Clear();
+				}
+			}
 			return TomlValue.Array(arr);
 		}
 
 		while (true)
 		{
-			if (SkipWsAndComments() case .Err(let wsErr))
+			// Capture comments before element (potential leading comments)
+			bool unusedBlank2 = false;
+			if (SkipWsAndCaptureComments(arrayPendingComments, out unusedBlank2) case .Err(let wsErr))
 			{
 				delete arr;
 				return .Err(wsErr);
+			}
+
+			if (mCursor.PeekByte() == ']')
+			{
+				mCursor.AdvanceByte();
+				// Flush any pending comments to the last element (e.g., trailing comment without comma)
+				if (arrayPendingComments != null && arrayPendingComments.Count > 0 && arr.Count > 0)
+				{
+					TomlNodeId lastId = .Invalid;
+					if (arr.MetadataContext != null)
+						arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
+					if (lastId.IsValid)
+					{
+						let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+						if (commentSet != null)
+						{
+							for (int ci = 0; ci < arrayPendingComments.Count; ci++)
+								commentSet.mLeading.Add(arrayPendingComments[ci]);
+							arrayPendingComments.Clear();
+						}
+					}
+				}
+				CountArrayStyle(startLine, mCursor.Line);
+				return TomlValue.Array(arr);
 			}
 
 			// Mark value start for raw token capture
@@ -1551,32 +1611,126 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					CaptureArrayElement(arr, val, elemStart);
 			}
 
-			if (SkipWsAndComments() case .Err(let trailWsErr))
+			// Get node ID for this element for comment attachment
+			TomlNodeId elemNodeId = .Invalid;
+			if (arr.MetadataContext != null)
+				arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out elemNodeId);
+
+			// Flush pending comments as leading comments for this element
+			if (arrayPendingComments != null && arrayPendingComments.Count > 0 && elemNodeId.IsValid)
 			{
-				delete arr;
-				return .Err(trailWsErr);
+				let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+				if (commentSet != null)
+				{
+					for (int ci = 0; ci < arrayPendingComments.Count; ci++)
+						commentSet.mLeading.Add(arrayPendingComments[ci]);
+					arrayPendingComments.Clear();
+				}
+			}
+			// Set blank line flag from array-level tracking (e.g., blank line before this element)
+			if (arraySawBlankLine && elemNodeId.IsValid)
+			{
+				let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+				if (commentSet != null)
+					commentSet.mSeparatedByBlankLine = true;
+				arraySawBlankLine = false;
 			}
 
-			char8 b = mCursor.PeekByte();
-			if (b == ',')
+			// Skip whitespace/newlines after value and capture trailing content
+			bool afterValBlank = false;
+			if (SkipWsAndCaptureComments(arrayPendingComments, out afterValBlank) case .Err(let trailErr))
+			{
+				delete arr;
+				return .Err(trailErr);
+			}
+
+			char8 afterValB = mCursor.PeekByte();
+			if (afterValB == ',')
 			{
 				mCursor.AdvanceByte();
-				if (SkipWsAndComments() case .Err(let commaWsErr))
+				// After comma, capture any trailing comment on same line
+				mCursor.SkipWhitespace();
+				if (!mCursor.IsEOF && mCursor.PeekByte() == '#')
+				{
+					String trailingText = new String();
+					if (CaptureCommentText(trailingText) case .Err(let tcErr))
+					{
+						delete trailingText;
+						delete arr;
+						return .Err(tcErr);
+					}
+					if (elemNodeId.IsValid && mMetadata != null)
+					{
+						let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+						if (commentSet != null)
+						{
+							if (commentSet.mTrailing != null)
+								delete commentSet.mTrailing;
+							commentSet.mTrailing = trailingText;
+						}
+						else
+							delete trailingText;
+					}
+					else
+						delete trailingText;
+				}
+
+				// Capture ws/comments between elements (leading for next element)
+				bool afterCommaBlank = false;
+				if (SkipWsAndCaptureComments(arrayPendingComments, out afterCommaBlank) case .Err(let commaWsErr))
 				{
 					delete arr;
 					return .Err(commaWsErr);
 				}
+				// Track blank line for the next element
+				if (afterCommaBlank)
+					arraySawBlankLine = true;
 				if (mCursor.PeekByte() == ']')
 				{
+					arr.mHasTrailingComma = true;
 					mCursor.AdvanceByte();
+					// Flush pending comments to the last element
+					if (arrayPendingComments != null && arrayPendingComments.Count > 0 && arr.Count > 0)
+					{
+						TomlNodeId lastId = .Invalid;
+						if (arr.MetadataContext != null)
+							arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
+						if (lastId.IsValid)
+						{
+							let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+							if (commentSet != null)
+							{
+								for (int ci = 0; ci < arrayPendingComments.Count; ci++)
+									commentSet.mLeading.Add(arrayPendingComments[ci]);
+								arrayPendingComments.Clear();
+							}
+						}
+					}
 					CountArrayStyle(startLine, mCursor.Line);
 					return TomlValue.Array(arr);
 				}
 				continue;
 			}
-			else if (b == ']')
+			else if (afterValB == ']')
 			{
 				mCursor.AdvanceByte();
+				// Flush pending comments to the last element (e.g., trailing comment without comma)
+				if (arrayPendingComments != null && arrayPendingComments.Count > 0 && arr.Count > 0)
+				{
+					TomlNodeId lastId = .Invalid;
+					if (arr.MetadataContext != null)
+						arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
+					if (lastId.IsValid)
+					{
+						let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+						if (commentSet != null)
+						{
+							for (int ci = 0; ci < arrayPendingComments.Count; ci++)
+								commentSet.mLeading.Add(arrayPendingComments[ci]);
+							arrayPendingComments.Clear();
+						}
+					}
+				}
 				CountArrayStyle(startLine, mCursor.Line);
 				return TomlValue.Array(arr);
 			}
@@ -1585,6 +1739,16 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				delete arr;
 				return .Err(Error(.UnexpectedToken, "Expected ',' or ']' in array"));
 			}
+		}
+	}
+
+	/// Ensure the array has a metadata context allocated.
+	private void EnsureArrayContext(TomlArray arr)
+	{
+		if (mMetadata != null && arr.MetadataContext == null)
+		{
+			let ctxNodeId = mMetadata.AllocateNodeId();
+			arr.MetadataContext = new TomlContainerMetadataContext(mMetadata, ctxNodeId, true);
 		}
 	}
 
@@ -1686,6 +1850,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 				if (mCursor.PeekByte() == '}')
 				{
+					tbl.mHasTrailingComma = true;
 					mCursor.AdvanceByte();
 					tbl.IsInlineSealed = true;
 					return TomlValue.Table(tbl);
@@ -1769,6 +1934,64 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Ok;
 	}
 
+	/// Skip whitespace and newlines (for arrays), capturing comments into the provided list.
+	/// When outComments is null or mMetadata is null, behaves like SkipWsAndComments(true).
+	/// @param outComments Optional list to collect captured comment text. Ownership remains with caller.
+	/// @param outBlankLine Set to true if a blank line was encountered (consecutive newlines).
+	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<String> outComments, out bool outBlankLine)
+	{
+		outBlankLine = false;
+		while (!mCursor.IsEOF)
+		{
+			char8 b = mCursor.PeekByte();
+			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
+			if (b == '#')
+			{
+				if (outComments != null && mMetadata != null)
+				{
+					String text = new String();
+					if (CaptureCommentText(text) case .Err(let e))
+					{
+						delete text;
+						return .Err(e);
+					}
+					outComments.Add(text);
+				}
+				else
+				{
+					if (SkipCommentText() case .Err(let e))
+						return .Err(e);
+				}
+				continue;
+			}
+			if (b == '\r' || b == '\n')
+			{
+				// Track blank lines
+				CountAndSkipNewline();
+				if (outComments != null && mMetadata != null)
+				{
+					// Check for additional newlines = blank line
+					mCursor.SkipWhitespace();
+					while (!mCursor.IsEOF)
+					{
+						char8 nb = mCursor.PeekByte();
+						if (nb == '\r' || nb == '\n')
+						{
+							outBlankLine = true;
+							CountAndSkipNewline();
+							mCursor.SkipWhitespace();
+						}
+						else
+							break;
+					}
+				}
+				continue;
+			}
+			break;
+		}
+		return .Ok;
+	}
+
 	private void SyncPathResolver()
 	{
 		mPathResolver.mCurrentLine = mCursor.Line;
@@ -1828,10 +2051,19 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
-		// Skip sign
+		// Detect special float sign style
+		TomlFloatSpecialSign specialSign = .None;
 		int pos = 0;
-		if (pos < rawToken.Length && (rawToken[pos] == '+' || rawToken[pos] == '-'))
+		if (pos < rawToken.Length && rawToken[pos] == '+')
+		{
+			specialSign = .ExplicitPlus;
 			pos++;
+		}
+		else if (pos < rawToken.Length && rawToken[pos] == '-')
+		{
+			specialSign = .Minus;
+			pos++;
+		}
 
 		// Check for special floats (inf, nan) before checking for 0x/0o/0b prefix
 		if (pos < rawToken.Length)
@@ -1841,12 +2073,20 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				var fmt = TomlFloatFormat();
 				fmt.mStyle = .Special;
+				fmt.mSpecialSign = specialSign;
 				let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
 				let style = mMetadata.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
 				return;
 			}
 		}
+		// Reset pos for normal number detection. For non-special floats
+		// we need to re-parse including sign because the sign is part of the
+		// semantic value.
+		pos = 0;
+		if (pos < rawToken.Length && (rawToken[pos] == '+' || rawToken[pos] == '-'))
+			pos++;
+
 
 		if (pos + 1 < rawToken.Length && rawToken[pos] == '0')
 		{
@@ -1913,18 +2153,34 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (hasExp)
 			{
 				fmt.mStyle = .Scientific;
-				// Find the exponent marker
 				for (int i = pos; i < rawToken.Length; i++)
 				{
 					if (rawToken[i] == 'E') { fmt.mUppercaseExponent = true; break; }
 					if (rawToken[i] == 'e') { fmt.mUppercaseExponent = false; break; }
 				}
-				// Check for explicit + in exponent
+				// Check for explicit + in exponent and count exponent digits
 				for (int i = pos; i < rawToken.Length - 1; i++)
 				{
-					if ((rawToken[i] == 'e' || rawToken[i] == 'E') && rawToken[i + 1] == '+')
+					if (rawToken[i] == 'e' || rawToken[i] == 'E')
 					{
-						fmt.mExplicitPlusExponent = true;
+						int expStart = i + 1;
+						if (expStart < rawToken.Length && (rawToken[expStart] == '+' || rawToken[expStart] == '-'))
+						{
+							if (rawToken[expStart] == '+')
+								fmt.mExplicitPlusExponent = true;
+							expStart++;
+						}
+						// Count exponent digits
+						int digitCount = 0;
+						for (int j = expStart; j < rawToken.Length; j++)
+						{
+							if (TomlChar.IsDigit(rawToken[j]))
+								digitCount++;
+							else
+								break;
+						}
+						if (digitCount > 0)
+							fmt.mExponentDigits = (uint8)digitCount;
 						break;
 					}
 				}
@@ -1933,11 +2189,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				fmt.mStyle = .Decimal;
 			}
-			// Check for underscores
-			for (int i = pos; i < rawToken.Length; i++)
-			{
-				if (rawToken[i] == '_') { fmt.mUseUnderscores = true; break; }
-			}
+			// Detect underscore grouping in integer and fractional parts
+			DetectFloatUnderscoreGrouping(rawToken, pos, ref fmt);
 			let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
 			let style = mMetadata.GetNodeStyle(nodeId);
 			if (style != null) style.mValueFormatRef = fmtRef;
@@ -2011,6 +2264,73 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 		if (digitCount > 0 && digitCount <= 255)
 			fmt.mMinDigits = (uint8)digitCount;
+	}
+
+	/// Detect underscore grouping in the integer and fractional parts of a float token.
+	private void DetectFloatUnderscoreGrouping(StringView rawToken, int start, ref TomlFloatFormat fmt)
+	{
+		// Find the decimal point
+		int dotPos = -1;
+		int ePos = -1;
+		for (int i = start; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] == '.') { dotPos = i; }
+			if (rawToken[i] == 'e' || rawToken[i] == 'E') { ePos = i; break; }
+		}
+
+		// Integer part: from start to dotPos or ePos
+		int intEnd = (dotPos >= 0) ? dotPos : ((ePos >= 0) ? ePos : rawToken.Length);
+		bool foundIntUnderscore = false;
+		for (int i = start; i < intEnd; i++)
+		{
+			if (rawToken[i] == '_') { foundIntUnderscore = true; break; }
+		}
+
+		// Detect integer group size (last underscore before dot or exponent)
+		if (foundIntUnderscore)
+		{
+			fmt.mUseUnderscores = true;
+			// Find the last underscore in the integer part
+			int lastUnderscore = -1;
+			for (int i = start; i < intEnd; i++)
+			{
+				if (rawToken[i] == '_') lastUnderscore = i;
+			}
+			if (lastUnderscore >= 0)
+			{
+				int groupSize = 0;
+				for (int j = lastUnderscore + 1; j < intEnd; j++)
+					groupSize++;
+				if (groupSize > 0)
+					fmt.mIntGroupSize = (uint8)groupSize;
+			}
+		}
+
+		// Fractional part: after dot, before exponent
+		if (dotPos >= 0)
+		{
+			int fracEnd = (ePos >= 0) ? ePos : rawToken.Length;
+			bool foundFracUnderscore = false;
+			for (int i = dotPos + 1; i < fracEnd; i++)
+			{
+				if (rawToken[i] == '_') { foundFracUnderscore = true; break; }
+			}
+			if (foundFracUnderscore)
+			{
+				fmt.mUseUnderscores = true;
+				int firstUnderscore = -1;
+				for (int i = dotPos + 1; i < fracEnd; i++)
+				{
+					if (rawToken[i] == '_') { firstUnderscore = i; break; }
+				}
+				if (firstUnderscore >= 0)
+				{
+					int groupSize = firstUnderscore - (dotPos + 1);
+					if (groupSize > 0)
+						fmt.mFracGroupSize = (uint8)groupSize;
+				}
+			}
+		}
 	}
 
 	// ================================================================
@@ -2293,7 +2613,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// Detect array format metadata from a raw token.
-	private void CaptureArrayFormat(TomlNodeId nodeId, StringView rawToken)
+	/// Scan backward from a closing bracket (`]` or `}`) to determine if a trailing comma exists,
+	/// accounting for any trailing comment text between the comma and the bracket.
+	private void CaptureArrayFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
 	{
 		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
@@ -2309,18 +2631,82 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 		}
 
-		// Detect trailing comma before the closing bracket.
-		int pos = rawToken.Length - 1;
-		while (pos >= 0 && IsTokenWhitespace(rawToken[pos])) pos--;
-		if (pos >= 0 && rawToken[pos] == ']')
+		// Trailing comma state captured during forward parsing (not from raw token scanning).
+		fmt.mTrailingComma = hasTrailingComma;
+
+		// Detect indentation from the first element after opening bracket
+		fmt.mIndentSize = 0;
+		if (fmt.mStyle == .Multiline)
 		{
-			pos--;
-			while (pos >= 0 && IsTokenWhitespace(rawToken[pos])) pos--;
-			fmt.mTrailingComma = pos >= 0 && rawToken[pos] == ',';
+			int indentCount = 0;
+			bool foundNewline = false;
+			for (int i = 1; i < rawToken.Length; i++)
+			{
+				char8 c = rawToken[i];
+				if (c == '\n' || c == '\r')
+				{
+					foundNewline = true;
+					indentCount = 0;
+				}
+				else if (foundNewline && (c == ' ' || c == '\t'))
+				{
+					indentCount++;
+				}
+				else if (foundNewline && c != ' ' && c != '\t')
+				{
+					// Found first non-whitespace after newline
+					if (indentCount > 0 && indentCount <= 255)
+						fmt.mIndentSize = (uint8)indentCount;
+					break;
+				}
+			}
+		}
+		if (fmt.mIndentSize == 0)
+			fmt.mIndentSize = mMetadata.mDocumentStyle.mIndentSize;
+
+		let fmtRef = mMetadata.AddValueFormat(.Array(fmt));
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mValueFormatRef = fmtRef;
+	}
+
+	/// Detect inline table format metadata from a raw token.
+	private void CaptureTableFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
+	{
+		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+			return;
+
+		if (rawToken[0] != '{')
+			return;
+
+		var fmt = TomlTableFormat();
+		fmt.mInline = true;
+
+		// Detect multiline inline table
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			if (rawToken[i] == '\n' || rawToken[i] == '\r')
+			{
+				fmt.mMultiline = true;
+				break;
+			}
 		}
 
-		fmt.mIndentSize = mMetadata.mDocumentStyle.mIndentSize;
-		let fmtRef = mMetadata.AddValueFormat(.Array(fmt));
+		// Trailing comma state captured during forward parsing.
+		fmt.mTrailingComma = hasTrailingComma;
+
+		// Detect spacing after opening brace
+		if (rawToken.Length >= 2)
+		{
+			if (rawToken[1] == ' ') fmt.mOpenBraceSpacing = 1;
+			else if (rawToken[1] == '\n' || rawToken[1] == '\r') fmt.mOpenBraceSpacing = 1; // multiline
+		}
+
+		// Detect spacing before closing brace
+		if (rawToken.Length >= 2 && rawToken[rawToken.Length - 2] == ' ')
+			fmt.mCloseBraceSpacing = 1;
+
+		let fmtRef = mMetadata.AddValueFormat(.Table(fmt));
 		let style = mMetadata.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = fmtRef;
@@ -2384,7 +2770,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			CaptureArrayFormat(nodeId, rawToken);
+			CaptureArrayFormat(nodeId, rawToken, val.AsArray?.mHasTrailingComma ?? false);
 		}
 		else
 		{

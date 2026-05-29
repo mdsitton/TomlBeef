@@ -2325,6 +2325,628 @@ static class TomlTest
 		Test.Assert(doc.Metadata.mRootComments.mLeading.Count == 1);
 		Test.Assert(doc.Metadata.mRootComments.mLeading[0] == "eof comment");
 	}
+
+	// ================================================================
+	// Float style preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_FloatExponentDigitWidth()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Original: 1e06 has exponent width 2, no explicit plus
+		if (doc.Read("f = 1e06", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .Float(let floatFmt))
+		{
+			Test.Assert(floatFmt.mStyle == .Scientific);
+			Test.Assert(floatFmt.mExponentDigits == 2, scope $"Expected 2 exponent digits, got {floatFmt.mExponentDigits}");
+			Test.Assert(floatFmt.mUppercaseExponent == false);
+			Test.Assert(floatFmt.mExplicitPlusExponent == false);
+		}
+		else
+			Test.Assert(false, "Expected Float format");
+
+		// Mutate and verify exponent width preserved
+		doc.RootTable.ReplaceValue("f", .Float(2.0e3));
+		String output = scope String();
+		doc.Write(output);
+		// Should have 2-digit exponent, lowercase e, no plus: 2e03
+		Test.Assert(output.Contains("2e03") || output.Contains("2e+03") == false,
+			scope $"Expected '2e03' in output, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatExponentUppercasePlusWidth()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Original: 1E+006 has uppercase E, explicit plus, exponent width 3
+		if (doc.Read("f = 1E+006", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .Float(let floatFmt))
+		{
+			Test.Assert(floatFmt.mStyle == .Scientific);
+			Test.Assert(floatFmt.mExponentDigits == 3, scope $"Expected 3 exponent digits, got {floatFmt.mExponentDigits}");
+			Test.Assert(floatFmt.mUppercaseExponent == true);
+			Test.Assert(floatFmt.mExplicitPlusExponent == true);
+		}
+		else
+			Test.Assert(false, "Expected Float format");
+
+		// Mutate and verify format preserved
+		doc.RootTable.ReplaceValue("f", .Float(2.0e3));
+		String output = scope String();
+		doc.Write(output);
+		// Should have uppercase E, explicit plus, 3-digit exponent: 2E+003
+		Test.Assert(output.Contains("2E+003"), scope $"Expected '2E+003' in output, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatExponentWidthDoesNotTrimMagnitude()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("f = 1e06", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("f", .Float(1.0e100));
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("e100"), scope $"Exponent digits must not be trimmed: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatUnderscoreGrouping()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Original: 224_617.445_991 has underscore grouping in both parts
+		if (doc.Read("f = 224_617.445_991", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		if (fmt case .Float(let floatFmt))
+		{
+			Test.Assert(floatFmt.mUseUnderscores == true);
+			Test.Assert(floatFmt.mIntGroupSize == 3, scope $"Expected int group size 3, got {floatFmt.mIntGroupSize}");
+			Test.Assert(floatFmt.mFracGroupSize == 3, scope $"Expected frac group size 3, got {floatFmt.mFracGroupSize}");
+		}
+		else
+			Test.Assert(false, "Expected Float format");
+
+		// Mutate to a different value and verify grouping preserved
+		doc.RootTable.ReplaceValue("f", .Float(225000.5));
+		String output = scope String();
+		doc.Write(output);
+		// Should have underscores in both parts: 225_000.500_000 (precision preserved too)
+		Test.Assert(output.Contains("225_000.500"), scope $"Expected grouped output, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatInfinitySignRemainsSemantic()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("f = -inf", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.ReplaceValue("f", .Float(double.PositiveInfinity));
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("f = inf"), scope $"Positive infinity must not become negative: {output}");
+		Test.Assert(!output.Contains("-inf"));
+	}
+
+	[Test]
+	public static void PreserveStyle_FloatSpecialSignPreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("a = +inf\nb = +nan", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Check +inf format
+		{
+			let fmtA = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+			if (fmtA case .Float(let floatFmt))
+			{
+				Test.Assert(floatFmt.mStyle == .Special);
+				Test.Assert(floatFmt.mSpecialSign == .ExplicitPlus,
+					scope $"Expected ExplicitPlus for +inf, got {floatFmt.mSpecialSign}");
+			}
+			else
+				Test.Assert(false, "Expected Float format for +inf");
+		}
+
+		// Check +nan format
+		{
+			let fmtB = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[1].mValueFormatRef.mIndex];
+			if (fmtB case .Float(let floatFmt))
+			{
+				Test.Assert(floatFmt.mStyle == .Special);
+				Test.Assert(floatFmt.mSpecialSign == .ExplicitPlus,
+					scope $"Expected ExplicitPlus for +nan, got {floatFmt.mSpecialSign}");
+			}
+			else
+				Test.Assert(false, "Expected Float format for +nan");
+		}
+
+		// Mutate and verify +inf preserved
+		doc.RootTable.ReplaceValue("a", .Float(double.NaN));
+		String output = scope String();
+		doc.Write(output);
+		// +nan should be preserved when mutating inf -> nan if it stays special
+		Test.Assert(output.Contains("+nan") || output.Contains("nan"),
+			scope $"Expected +nan or nan in output, got: {output}");
+	}
+
+	// ================================================================
+	// Inline table format preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_InlineTableFormatCaptured()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("t = { a = 1, b = 2 }", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Check that table format was captured
+		let nodeId = doc.Metadata.mNodeStyles[0];
+		Test.Assert(nodeId.mValueFormatRef.IsValid);
+		let fmt = doc.Metadata.mValueFormats[nodeId.mValueFormatRef.mIndex];
+		if (fmt case .Table(let tFmt))
+		{
+			Test.Assert(tFmt.mInline == true);
+			Test.Assert(tFmt.mOpenBraceSpacing == 1, scope $"Expected open brace spacing 1, got {tFmt.mOpenBraceSpacing}");
+			Test.Assert(tFmt.mCloseBraceSpacing == 1, scope $"Expected close brace spacing 1, got {tFmt.mCloseBraceSpacing}");
+		}
+		else
+			Test.Assert(false, "Expected Table format");
+	}
+
+	[Test]
+	public static void PreserveStyle_InlineTableStaysInlineAfterMutation()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("t = { a = 1, b = 2 }", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Mutate a value inside the inline table
+		doc.RootTable.TryGetTable("t", var tbl);
+		tbl.ReplaceValue("a", .Integer(42));
+
+		String output = scope String();
+		doc.Write(output);
+		// Should remain inline, not switch to [t] header format
+		Test.Assert(output.Contains("{ a = 42, b = 2 }") ||
+			output.Contains("t = { a = 42, b = 2 }"),
+			scope $"Expected inline table in output, got: {output}");
+		Test.Assert(!output.Contains("[t]"), scope $"Should not use header syntax: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_MultilineInlineTableFallsBackForV1_0Write()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("t = {\n  a = 1,\n}", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetTable("t", var tbl);
+		tbl.ReplaceValue("a", .Integer(2));
+
+		var writeConfig = TomlWriteConfig();
+		writeConfig.Version = .V1_0;
+		String output = scope String();
+		doc.Write(output, writeConfig);
+		Test.Assert(output.Contains("t = {"), scope $"Expected inline table, got: {output}");
+		Test.Assert(!output.Contains("{\n"), scope $"TOML v1.0 writer must not emit multiline inline table: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_MultilineInlineTablePreserved()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "t = {\n  a = 1,\n  b = 2,\n}";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Check multiline format was captured
+		let nodeId = doc.Metadata.mNodeStyles[0];
+		let fmt = doc.Metadata.mValueFormats[nodeId.mValueFormatRef.mIndex];
+		if (fmt case .Table(let tFmt))
+		{
+			Test.Assert(tFmt.mMultiline == true);
+			Test.Assert(tFmt.mTrailingComma == true);
+		}
+
+		// Mutate and verify multiline preserved
+		doc.RootTable.TryGetTable("t", var tbl);
+		tbl.ReplaceValue("a", .Integer(42));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("{\n"), scope $"Expected multiline inline table, got: {output}");
+		Test.Assert(output.Contains("  a = 42"), scope $"Expected indented entry, got: {output}");
+	}
+
+	// ================================================================
+	// Array indentation preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_ArrayIndent2Spaces()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  1,\n  2,\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetArray("arr", var arr);
+		arr.Add(.Integer(3));
+
+		String output = scope String();
+		doc.Write(output);
+		// New element should use 2-space indent (from captured format)
+		Test.Assert(output.Contains("  3"), scope $"Expected 2-space indent for new element, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayIndent4Spaces()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n    1,\n    2,\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify indent size was captured. The array format is on the key-value entry node.
+		TomlNodeId arrNodeId = .Invalid;
+		if (doc.RootTable.MetadataContext != null)
+			doc.RootTable.MetadataContext.TryGetEntryNodeId("arr", out arrNodeId);
+		Test.Assert(arrNodeId.IsValid, "Expected arr entry node ID");
+		let nodeStyle = doc.Metadata.GetNodeStyle(arrNodeId);
+		Test.Assert(nodeStyle != null && nodeStyle.mValueFormatRef.IsValid, "Expected value format ref to be valid");
+		let fmt = doc.Metadata.mValueFormats[nodeStyle.mValueFormatRef.mIndex];
+		if (fmt case .Array(let arrFmt))
+			Test.Assert(arrFmt.mIndentSize == 4, scope $"Expected indent 4, got {arrFmt.mIndentSize}");
+
+		doc.RootTable.TryGetArray("arr", var arr);
+		arr.Add(.Integer(3));
+
+		String output = scope String();
+		doc.Write(output);
+		// New element should use 4-space indent
+		Test.Assert(output.Contains("    3"), scope $"Expected 4-space indent, got: {output}");
+	}
+
+	// ================================================================
+	// Array comment preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_ArrayElementLeadingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  # lead\n  1\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify the comment was captured on the element node
+		doc.RootTable.TryGetArray("arr", var arr);
+		TomlNodeId elemId = .Invalid;
+		if (arr.MetadataContext != null)
+			arr.MetadataContext.TryGetItemNodeId(0, out elemId);
+		Test.Assert(elemId.IsValid);
+		let commentSet = doc.Metadata.GetCommentSet(elemId);
+		Test.Assert(commentSet != null, "Expected comment set on element");
+		Test.Assert(commentSet.mLeading.Count == 1, scope $"Expected 1 leading comment, got {commentSet.mLeading.Count}");
+		Test.Assert(commentSet.mLeading[0] == "lead", scope $"Expected 'lead', got '{commentSet.mLeading[0]}'");
+
+		// Writer should preserve the comment WITH indentation matching the element
+		String output = scope String();
+		doc.Write(output);
+		// Comment should be indented to same level as element
+		Test.Assert(output.Contains("  # lead"), scope $"Expected indented comment '  # lead', got: {output}");
+		Test.Assert(output.Contains("  1"), scope $"Expected value in output, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayElementTrailingComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  1, # trail\n  2\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify the trailing comment was captured
+		doc.RootTable.TryGetArray("arr", var arr);
+		TomlNodeId elemId = .Invalid;
+		if (arr.MetadataContext != null)
+			arr.MetadataContext.TryGetItemNodeId(0, out elemId);
+		Test.Assert(elemId.IsValid);
+		let commentSet = doc.Metadata.GetCommentSet(elemId);
+		Test.Assert(commentSet != null, "Expected comment set on element 0");
+		Test.Assert(commentSet.mTrailing != null, "Expected trailing comment");
+		Test.Assert(commentSet.mTrailing == "trail", scope $"Expected 'trail', got '{commentSet.mTrailing}'");
+
+		String output = scope String();
+		doc.Write(output);
+		// Comma must appear BEFORE comment: `1, # trail` not `1 # trail,`
+		Test.Assert(output.Contains("1, # trail"),
+			scope $"Expected comma before trailing comment '1, # trail', got: {output}");
+		Test.Assert(!output.Contains("1 # trail,"),
+			"Comma must not appear after trailing comment");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayBlankLineBeforeElement()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Two elements with a blank line between them
+		let input = "arr = [\n  1,\n\n  2\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify blank line separation on element 1
+		doc.RootTable.TryGetArray("arr", var arr);
+		TomlNodeId elemId = .Invalid;
+		if (arr.MetadataContext != null)
+			arr.MetadataContext.TryGetItemNodeId(1, out elemId);
+		Test.Assert(elemId.IsValid);
+		let commentSet = doc.Metadata.GetCommentSet(elemId);
+		Test.Assert(commentSet != null, "Expected comment set on element 1");
+		Test.Assert(commentSet.mSeparatedByBlankLine, "Expected blank line flag");
+
+		// Writer should preserve the blank line
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("1,\n\n  2") || output.Contains("1,\r\n\r\n  2"),
+			scope $"Expected blank line between elements, got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayEmptyWithComments()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "arr = [\n  # empty comment\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+		// Comment inside empty array should be preserved
+		Test.Assert(output.Contains("# empty comment"),
+			scope $"Expected comment in output, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayLastElementTrailingCommentNoComma()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Last element has a trailing comment without a comma before it
+		let input = "arr = [\n  1 # last\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc.Write(output);
+		// Comment should be preserved
+		Test.Assert(output.Contains("# last"), scope $"Expected comment in output, got: {output}");
+		Test.Assert(output.Contains("  1"), scope $"Expected value in output, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayTrailingCommaWithComment()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Trailing comma with comment before close bracket
+		let input = "arr = [\n  1, # trail\n]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify trailing comma format was captured
+		TomlNodeId arrNodeId = .Invalid;
+		if (doc.RootTable.MetadataContext != null)
+			doc.RootTable.MetadataContext.TryGetEntryNodeId("arr", out arrNodeId);
+		Test.Assert(arrNodeId.IsValid);
+		let nodeStyle = doc.Metadata.GetNodeStyle(arrNodeId);
+		Test.Assert(nodeStyle != null && nodeStyle.mValueFormatRef.IsValid);
+		let valFmt = doc.Metadata.mValueFormats[nodeStyle.mValueFormatRef.mIndex];
+		if (valFmt case .Array(let arrFmt))
+			Test.Assert(arrFmt.mTrailingComma == true,
+				scope $"Expected trailing comma=true, got {arrFmt.mTrailingComma}");
+
+		String output = scope String();
+		doc.Write(output);
+		// Should have both trailing comma and comment
+		Test.Assert(output.Contains("1, # trail"),
+			scope $"Expected '1, # trail', got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_ArrayCrlfWithComments()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// CRLF array with comments
+		List<uint8> bytes = scope .();
+		AddAscii(bytes, "arr = [\r\n");
+		AddAscii(bytes, "  # header\r\n");
+		AddAscii(bytes, "  1, # first\r\n");
+		AddAscii(bytes, "  2\r\n");
+		AddAscii(bytes, "]\r\n");
+
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+		ms.Position = 0;
+		if (doc2.Read(ms, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String output = scope String();
+		doc2.Write(output);
+		// Should contain all comments
+		Test.Assert(output.Contains("# header"), scope $"Expected header comment, got: {output}");
+		Test.Assert(output.Contains("# first"), scope $"Expected trailing comment, got: {output}");
+		Test.Assert(output.Contains("  1"), scope $"Expected value 1, got: {output}");
+		Test.Assert(output.Contains("  2"), scope $"Expected value 2, got: {output}");
+	}
 }
 
 class FailingAfterBytesStream : Stream

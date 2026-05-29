@@ -472,16 +472,26 @@ static class TomlWriterImpl
 	/// Write a float value using format metadata for style preservation.
 	private static void WriteFloatWithFormat(double val, TomlFloatFormat fmt, String outStr)
 	{
-		// Special values
+		// Special values — use captured sign style
 		if (val.IsInfinity)
 		{
-			if (val > 0) outStr.Append("inf");
-			else outStr.Append("-inf");
+			// Infinity sign is semantic; only preserve explicit plus for positive infinity.
+			if (val < 0)
+				outStr.Append("-inf");
+			else if (fmt.mSpecialSign == .ExplicitPlus)
+				outStr.Append("+inf");
+			else
+				outStr.Append("inf");
 			return;
 		}
 		if (val.IsNaN)
 		{
-			outStr.Append("nan");
+			if (fmt.mSpecialSign == .ExplicitPlus)
+				outStr.Append("+nan");
+			else if (fmt.mSpecialSign == .Minus)
+				outStr.Append("-nan");
+			else
+				outStr.Append("nan");
 			return;
 		}
 
@@ -504,14 +514,24 @@ static class TomlWriterImpl
 			{
 				val.ToString(outStr, "R", null);
 			}
-			// Ensure unambiguously a float
-			bool hasDot = false;
-			for (int fi = before; fi < outStr.Length; fi++)
+			// Apply underscore grouping to decimal floats
+			if (fmt.mUseUnderscores && (fmt.mIntGroupSize > 0 || fmt.mFracGroupSize > 0))
 			{
-				char8 fc = outStr[fi];
-				if (fc == '.' || fc == 'e' || fc == 'E') { hasDot = true; break; }
+				String pre = scope String(outStr.Substring(before));
+				outStr.Remove(before, outStr.Length - before);
+				ApplyFloatUnderscoreGrouping(pre, fmt, outStr);
 			}
-			if (!hasDot) outStr.Append(".0");
+			else
+			{
+				// Ensure unambiguously a float
+				bool hasDot = false;
+				for (int fi = before; fi < outStr.Length; fi++)
+				{
+					char8 fc = outStr[fi];
+					if (fc == '.' || fc == 'e' || fc == 'E') { hasDot = true; break; }
+				}
+				if (!hasDot) outStr.Append(".0");
+			}
 			return;
 		}
 
@@ -529,8 +549,8 @@ static class TomlWriterImpl
 				fmt.mPrecision.ToString(format);
 			String formatted = scope String();
 			val.ToString(formatted, format, null);
-			NormalizeExponentPlusSign(formatted, fmt.mExplicitPlusExponent);
-			outStr.Append(formatted);
+			// Reformat exponent: handle sign, case, and digit width
+			ReformatExponent(formatted, fmt, outStr);
 			return;
 		}
 
@@ -538,24 +558,158 @@ static class TomlWriterImpl
 		val.ToString(outStr, "R", null);
 	}
 
-	/// Normalize positive exponent sign to match the captured style.
-	private static void NormalizeExponentPlusSign(String formatted, bool explicitPlus)
+	/// Reformat a scientific notation string to match captured exponent style.
+	/// Handles uppercase/lowercase E, explicit plus sign, and exponent digit width.
+	private static void ReformatExponent(StringView formatted, TomlFloatFormat fmt, String outStr)
 	{
-		for (int i = 0; i < formatted.Length - 1; i++)
+		// Find the exponent marker
+		int expPos = -1;
+		for (int i = 0; i < formatted.Length; i++)
 		{
 			if (formatted[i] == 'e' || formatted[i] == 'E')
 			{
-				if (formatted[i + 1] == '+')
-				{
-					if (!explicitPlus)
-						formatted.Remove(i + 1, 1);
-				}
-				else if (formatted[i + 1] != '-' && explicitPlus)
-				{
-					formatted.Insert(i + 1, '+');
-				}
-				return;
+				expPos = i;
+				break;
 			}
+		}
+		if (expPos < 0)
+		{
+			outStr.Append(formatted);
+			return;
+		}
+
+		// Append mantissa (everything up to and including the exponent marker)
+		outStr.Append(StringView(&formatted[0], expPos + 1));
+
+		// Parse exponent sign and digits
+		int expStart = expPos + 1;
+		char8 signChar = '\0';
+		if (expStart < formatted.Length && (formatted[expStart] == '+' || formatted[expStart] == '-'))
+		{
+			signChar = formatted[expStart];
+			expStart++;
+		}
+
+		// Collect exponent digits
+		String expDigits = scope String();
+		while (expStart < formatted.Length && TomlChar.IsDigit(formatted[expStart]))
+		{
+			expDigits.Append(formatted[expStart]);
+			expStart++;
+		}
+
+		// Emit sign
+		if (signChar == '-')
+		{
+			outStr.Append('-');
+		}
+		else if (fmt.mExplicitPlusExponent)
+		{
+			outStr.Append('+');
+		}
+
+		// Pad exponent digits to match captured minimum width. Never trim: that would change the value.
+		if (fmt.mExponentDigits > 0)
+		{
+			while (expDigits.Length < fmt.mExponentDigits)
+				expDigits.Insert(0, '0');
+		}
+
+		outStr.Append(expDigits);
+	}
+
+	/// Reinsert underscores into a decimal float string according to captured grouping.
+	private static void ApplyFloatUnderscoreGrouping(StringView number, TomlFloatFormat fmt, String outStr)
+	{
+		if (!fmt.mUseUnderscores)
+		{
+			outStr.Append(number);
+			return;
+		}
+
+		// Detect sign prefix
+		int start = 0;
+		if (start < number.Length && (number[start] == '-' || number[start] == '+'))
+		{
+			outStr.Append(number[start]);
+			start++;
+		}
+
+		// Find dot and exponent positions
+		int dotPos = -1;
+		int ePos = -1;
+		for (int i = start; i < number.Length; i++)
+		{
+			if (number[i] == '.') dotPos = i;
+			if (number[i] == 'e' || number[i] == 'E') { ePos = i; break; }
+		}
+
+		// Integer part: from start to dot (or end)
+		int intEnd = (dotPos >= 0) ? dotPos : ((ePos >= 0) ? ePos : number.Length);
+		StringView intPart = StringView(&number[start], intEnd - start);
+
+		if (fmt.mIntGroupSize > 0 && fmt.mIntGroupSize < intPart.Length)
+			EmitGroupedDigitsFromRight(intPart, outStr, fmt.mIntGroupSize);
+		else
+			outStr.Append(intPart);
+
+		// Fractional part and optional exponent
+		if (dotPos >= 0 || ePos >= 0)
+		{
+			if (dotPos >= 0)
+			{
+				outStr.Append('.');
+				int fracEnd = (ePos >= 0) ? ePos : number.Length;
+				StringView fracPart = StringView(&number[dotPos + 1], fracEnd - (dotPos + 1));
+				if (fmt.mFracGroupSize > 0 && fmt.mFracGroupSize < fracPart.Length)
+					EmitGroupedDigitsFromLeft(fracPart, outStr, fmt.mFracGroupSize);
+				else
+					outStr.Append(fracPart);
+			}
+			if (ePos >= 0)
+			{
+				// Append exponent as-is (already handled by scientific path)
+				outStr.Append(StringView(&number[ePos], number.Length - ePos));
+			}
+		}
+	}
+
+	/// Emit digits grouped with underscores from the right (for integer parts, e.g., 224_617).
+	private static void EmitGroupedDigitsFromRight(StringView digits, String outStr, int groupSize)
+	{
+		if (groupSize <= 0 || digits.Length <= groupSize)
+		{
+			outStr.Append(digits);
+			return;
+		}
+		int firstChunk = digits.Length % groupSize;
+		if (firstChunk == 0) firstChunk = groupSize;
+		outStr.Append(StringView(&digits[0], firstChunk));
+		int pos = firstChunk;
+		while (pos < digits.Length)
+		{
+			outStr.Append('_');
+			outStr.Append(StringView(&digits[pos], groupSize));
+			pos += groupSize;
+		}
+	}
+
+	/// Emit digits grouped with underscores from the left (for fractional parts, e.g., 445_991).
+	private static void EmitGroupedDigitsFromLeft(StringView digits, String outStr, int groupSize)
+	{
+		if (groupSize <= 0 || digits.Length <= groupSize)
+		{
+			outStr.Append(digits);
+			return;
+		}
+		int pos = 0;
+		while (pos < digits.Length)
+		{
+			if (pos > 0) outStr.Append('_');
+			int remaining = digits.Length - pos;
+			int chunk = (remaining > groupSize) ? groupSize : remaining;
+			outStr.Append(StringView(&digits[pos], chunk));
+			pos += chunk;
 		}
 	}
 
@@ -752,6 +906,31 @@ static class TomlWriterImpl
 					}
 				}
 				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt);
+				return;
+			}
+		}
+		// Inline table format preservation
+		if (val.IsTable && metadata != null)
+		{
+			TomlTable tbl = val.AsTable;
+			if (tbl != null && tbl.Origin == .InlineTable)
+			{
+				TomlTableFormat tableFmt = .();
+				bool hasTableFmt = false;
+				if (nodeId.IsValid)
+				{
+					let style = metadata.GetNodeStyle(nodeId);
+					if (style != null && style.mValueFormatRef.IsValid)
+					{
+						let fmt = metadata.mValueFormats[style.mValueFormatRef.mIndex];
+						if (fmt case .Table(let tFmt))
+						{
+							tableFmt = tFmt;
+							hasTableFmt = true;
+						}
+					}
+				}
+				WriteInlineTablePreserving(tbl, outStr, version, metadata, tableFmt, hasTableFmt);
 				return;
 			}
 		}
@@ -1012,16 +1191,46 @@ static class TomlWriterImpl
 		int indentSize = fmt.mIndentSize > 0 ? fmt.mIndentSize : metadata.mDocumentStyle.mIndentSize;
 		outStr.Append('[');
 		WriteNewline(outStr, metadata);
+
+		// Emit leading comments on the array node itself (for empty arrays with comments)
+		TomlNodeId arrayNodeId = (ctx != null) ? ctx.mNodeId : .Invalid;
+		if (arrayNodeId.IsValid)
+		{
+			let commentSet = metadata.GetCommentSet(arrayNodeId);
+			if (commentSet != null && commentSet.mLeading.Count > 0)
+				EmitIndentedCommentSet(commentSet, indentSize, outStr, metadata);
+		}
+
 		for (int i = 0; i < arr.Count; i++)
 		{
-			AppendIndent(outStr, indentSize);
-			TomlValue elem = arr[i];
 			TomlNodeId elemNodeId = .Invalid;
 			if (ctx != null)
 				ctx.TryGetItemNodeId(i, out elemNodeId);
+
+			// Emit leading comments before the element — indented to match element indent
+			if (elemNodeId.IsValid)
+			{
+				let commentSet = metadata.GetCommentSet(elemNodeId);
+				if (commentSet != null)
+				{
+					if (commentSet.mSeparatedByBlankLine)
+						WriteNewline(outStr, metadata);
+					EmitIndentedCommentSet(commentSet, indentSize, outStr, metadata);
+				}
+			}
+
+			AppendIndent(outStr, indentSize);
+			TomlValue elem = arr[i];
 			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
+
+			// Emit comma BEFORE trailing comment (correct TOML: `1, # trail`)
 			if (i < arr.Count - 1 || fmt.mTrailingComma)
 				outStr.Append(',');
+
+			// Emit trailing comment after the comma (attached to the element node)
+			if (elemNodeId.IsValid)
+				EmitTrailingComment(elemNodeId, outStr, metadata);
+
 			WriteNewline(outStr, metadata);
 		}
 		outStr.Append(']');
@@ -1056,6 +1265,62 @@ static class TomlWriterImpl
 			outStr.Append(" = ");
 			WriteValue(tbl.Entries[key], outStr, version);
 		}
+		outStr.Append('}');
+	}
+
+	/// Write an inline table using captured format metadata.
+	private static void WriteInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
+		TomlDocumentMetadata metadata, TomlTableFormat fmt, bool hasFormat)
+	{
+		if (hasFormat && fmt.mMultiline && fmt.mInline && version != .V1_0)
+		{
+			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, fmt);
+			return;
+		}
+
+		// Single-line inline table
+		outStr.Append('{');
+		if (hasFormat && fmt.mOpenBraceSpacing > 0)
+			outStr.Append(' ');
+
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			if (i > 0)
+			{
+				outStr.Append(", ");
+			}
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key];
+			WriteKey(key, outStr, version);
+			outStr.Append(" = ");
+			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
+		}
+
+		if (hasFormat && fmt.mCloseBraceSpacing > 0)
+			outStr.Append(' ');
+		outStr.Append('}');
+	}
+
+	/// Write a multiline inline table (v1.1).
+	private static void WriteMultilineInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
+		TomlDocumentMetadata metadata, TomlTableFormat fmt)
+	{
+		outStr.Append('{');
+		WriteNewline(outStr, metadata);
+
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			AppendIndent(outStr, metadata.mDocumentStyle.mIndentSize);
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key];
+			WriteKey(key, outStr, version);
+			outStr.Append(" = ");
+			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
+			if (i < tbl.KeyOrder.Count - 1 || fmt.mTrailingComma)
+				outStr.Append(',');
+			WriteNewline(outStr, metadata);
+		}
+
 		outStr.Append('}');
 	}
 
@@ -1139,6 +1404,27 @@ static class TomlWriterImpl
 
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
+			outStr.Append('#');
+			let text = commentSet.mLeading[i];
+			if (!text.IsEmpty)
+			{
+				outStr.Append(' ');
+				outStr.Append(text);
+			}
+			WriteNewline(outStr, metadata);
+		}
+	}
+
+	/// @brief Emit all leading comments from a comment set, indented to the given level.
+	/// Used for array element comments that should match the element indent.
+	private static void EmitIndentedCommentSet(TomlCommentSet commentSet, int indentSize, String outStr, TomlDocumentMetadata metadata)
+	{
+		if (commentSet == null || commentSet.mLeading.Count == 0)
+			return;
+
+		for (int i = 0; i < commentSet.mLeading.Count; i++)
+		{
+			AppendIndent(outStr, indentSize);
 			outStr.Append('#');
 			let text = commentSet.mLeading[i];
 			if (!text.IsEmpty)

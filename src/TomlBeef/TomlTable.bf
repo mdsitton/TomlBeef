@@ -9,6 +9,8 @@ public class TomlTable
 {
 	private TomlTableOrigin mOrigin;
 	private bool mIsInlineSealed;
+	/// @brief Set by parser after detecting a trailing comma before the closing brace.
+	internal bool mHasTrailingComma;
 	private Dictionary<String, TomlValue> mEntries ~ DeleteDictionaryAndKeysAndDisposeValues!(_);
 	private List<String> mKeyOrder ~ delete _;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;

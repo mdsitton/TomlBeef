@@ -11,6 +11,8 @@ public class TomlArray
 	private bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
+	/// @brief Set by parser after detecting a trailing comma before the closing bracket.
+	internal bool mHasTrailingComma;
 
 	/// @brief Whether this array is a static inline array (true) or a dynamic array-of-tables (false).
 	public bool IsStatic

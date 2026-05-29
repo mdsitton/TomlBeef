@@ -144,6 +144,8 @@ public class TomlCommentSet
 	public List<String> mLeading ~ DeleteContainerAndItems!(_);
 	/// Comment text on the same line as the node (after the value). Null if none.
 	public String mTrailing ~ delete _;
+	/// Whether there was a blank line separating this node's leading comments from the preceding content.
+	public bool mSeparatedByBlankLine = false;
 
 	public this()
 	{
@@ -238,6 +240,17 @@ public enum TomlFloatStyle : uint8
 	Special
 }
 
+/// @brief Sign style for special float values (inf, nan).
+public enum TomlFloatSpecialSign : uint8
+{
+	/// No sign prefix (inf, nan).
+	None,
+	/// Explicit plus sign prefix (+inf, +nan).
+	ExplicitPlus,
+	/// Explicit minus sign prefix (-inf, -nan).
+	Minus
+}
+
 /// @brief Format metadata for a float value.
 public struct TomlFloatFormat
 {
@@ -250,6 +263,14 @@ public struct TomlFloatFormat
 	public int16 mPrecision = -1;
 	/// Whether underscore grouping was present.
 	public bool mUseUnderscores = false;
+	/// Digit width of the exponent value (e.g., 2 for 1e06, 3 for 1E+006). 0 = use default width.
+	public uint8 mExponentDigits = 0;
+	/// Sign style for special float values. Only meaningful when mStyle == Special.
+	public TomlFloatSpecialSign mSpecialSign = .None;
+	/// Group size for integer part underscores (e.g., 3 for 224_617.445). 0 = no grouping.
+	public uint8 mIntGroupSize = 0;
+	/// Group size for fractional part underscores (e.g., 3 for 445_991). 0 = no grouping.
+	public uint8 mFracGroupSize = 0;
 }
 
 // ================================================================
@@ -326,6 +347,14 @@ public struct TomlTableFormat
 	public bool mInline = false;
 	/// Whether to prefer dotted key syntax for child entries.
 	public bool mPreferDottedKeys = false;
+	/// Whether the inline table used multiline layout (v1.1).
+	public bool mMultiline = false;
+	/// Whether a trailing comma was present after the last entry (v1.1).
+	public bool mTrailingComma = false;
+	/// Number of spaces after opening brace (0 = none, 1 = "{ ", etc.).
+	public uint8 mOpenBraceSpacing = 0;
+	/// Number of spaces before closing brace (0 = none, 1 = " }", etc.).
+	public uint8 mCloseBraceSpacing = 0;
 }
 
 // ================================================================
