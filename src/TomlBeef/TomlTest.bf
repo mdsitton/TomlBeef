@@ -3168,6 +3168,174 @@ static class TomlTest
 		Test.Assert(output.Contains("  1"), scope $"Expected value 1, got: {output}");
 		Test.Assert(output.Contains("  2"), scope $"Expected value 2, got: {output}");
 	}
+
+	// ================================================================
+	// Dirty propagation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_NestedMutationDoesNotDirtyParent()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Nested table: [tbl] with entry x = 1
+		let input = "[tbl]\nx = 1";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify all nodes start clean
+		for (int i = 0; i < doc.Metadata.mNodeStyles.Count; i++)
+			Test.Assert(doc.Metadata.mNodeStyles[i].mDirtyFlags == .None,
+				scope $"Node {i} should start clean");
+
+		// Mutate x inside [tbl]
+		doc.RootTable.TryGetTable("tbl", var tbl);
+		tbl.ReplaceValue("x", .Integer(42));
+
+		// Find node IDs
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("tbl", let tblNodeId);
+		Test.Assert(tblNodeId.IsValid);
+		tbl.MetadataContext.TryGetEntryNodeId("x", let xNodeId);
+		Test.Assert(xNodeId.IsValid);
+
+		// The x entry should be dirty
+		let xStyle = doc.Metadata.GetNodeStyle(xNodeId);
+		Test.Assert(xStyle != null && xStyle.mDirtyFlags == .Value,
+			"x entry should have Value dirty flag");
+
+		// The tbl entry and the root table should NOT be dirty
+		let tblStyle = doc.Metadata.GetNodeStyle(tblNodeId);
+		Test.Assert(tblStyle != null && tblStyle.mDirtyFlags == .None,
+			"Parent tbl entry should remain clean after child mutation");
+
+		// Mutate tbl itself — should mark tbl dirty
+		// Re-fetch style after Insert since it may reallocate mNodeStyles
+		tbl.Insert("y", .Integer(99));
+		let tblStyle2 = doc.Metadata.GetNodeStyle(tblNodeId);
+		Test.Assert(tblStyle2 != null && (tblStyle2.mDirtyFlags & .Children) != 0,
+			"Parent tbl should get Children dirty after direct insertion");
+	}
+
+	[Test]
+	public static void PreserveStyle_CleanSiblingTokensReused()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Two sibling values in a table — one will be mutated
+		let input = "a = 'hello'\nb = 'world'";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Get original tokens
+		let meta = doc.Metadata;
+		TomlNodeId aNodeId = .Invalid, bNodeId = .Invalid;
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("a", out aNodeId);
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("b", out bNodeId);
+		Test.Assert(aNodeId.IsValid && bNodeId.IsValid);
+
+		let aStyle = meta.GetNodeStyle(aNodeId);
+		let bStyle = meta.GetNodeStyle(bNodeId);
+		Test.Assert(aStyle.mDirtyFlags == .None);
+		Test.Assert(bStyle.mDirtyFlags == .None);
+		let bOrigToken = meta.GetOriginalToken(bStyle.mOriginalValueToken);
+
+		// Mutate only 'a' — 'b' should stay clean
+		// ReplaceValue does not allocate metadata, so pointers remain valid.
+		doc.RootTable.ReplaceValue("a", .String(new String("changed")));
+
+		Test.Assert(aStyle.mDirtyFlags == .Value, "Mutated entry should be dirty");
+		Test.Assert(bStyle.mDirtyFlags == .None, "Sibling should remain clean");
+
+		// Writer should reuse b's original token and regenerate a
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("changed"), scope $"Output should contain mutated value, got: {output}");
+		Test.Assert(output.Contains(bOrigToken), scope $"Output should contain b's original token '{bOrigToken}', got: {output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_InlineTableMutationDoesNotDirtyParentEntry()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "t = { a = 1, b = 2 }";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Get node IDs
+		TomlNodeId tNodeId = .Invalid;
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out tNodeId);
+		Test.Assert(tNodeId.IsValid);
+
+		doc.RootTable.TryGetTable("t", var tbl);
+
+		// The inline table container has its own node ID from BindContainerMetadata
+		let inlineNodeId = tbl.MetadataContext?.mNodeId ?? .Invalid;
+		Test.Assert(inlineNodeId.IsValid, "Inline table should have a container node");
+		let inlineStyle = doc.Metadata.GetNodeStyle(inlineNodeId);
+		Test.Assert(inlineStyle != null && inlineStyle.mDirtyFlags == .None,
+			"Inline table container should start clean");
+
+		// The parent 't' entry should also start clean
+		let tStyle = doc.Metadata.GetNodeStyle(tNodeId);
+		Test.Assert(tStyle != null && tStyle.mDirtyFlags == .None,
+			"Parent 't' entry should start clean");
+
+		// Mutate a value inside the inline table (replacing existing key)
+		tbl.ReplaceValue("a", .Integer(42));
+
+		// No upward propagation: parent 't' entry stays clean
+		Test.Assert(tStyle != null && tStyle.mDirtyFlags == .None,
+			"Parent 't' entry should remain clean after inline table child mutation");
+
+		// Inline table container also stays clean (replacing existing key, not structural)
+		Test.Assert(inlineStyle != null && inlineStyle.mDirtyFlags == .None,
+			"Inline table container should stay clean after value replacement");
+
+		// Mutate the inline table's structure (insert a new key).
+		// This may reallocate mNodeStyles, so re-fetch pointers after.
+		tbl.Insert("c", .Integer(3));
+
+		// The inline table container gets Children dirty
+		let inlineStyle2 = doc.Metadata.GetNodeStyle(inlineNodeId);
+		Test.Assert(inlineStyle2 != null && (inlineStyle2.mDirtyFlags & .Children) != 0,
+			"Inline table container should get Children dirty after structural change");
+
+		// Still no upward propagation to parent 't' entry
+		let tStyle2 = doc.Metadata.GetNodeStyle(tNodeId);
+		Test.Assert(tStyle2 != null && tStyle2.mDirtyFlags == .None,
+			"Parent 't' entry should still be clean after inline table structural change");
+
+		// Writer should still produce valid output
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("a = 42") && output.Contains("c = 3"),
+			scope $"Expected mutated inline table in output, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
 }
 
 class FailingAfterBytesStream : Stream
