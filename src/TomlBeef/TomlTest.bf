@@ -2913,6 +2913,227 @@ static class TomlTest
 		}
 	}
 
+	// ================================================================
+	// Inline table spacing preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_InlineTableCompactSpacing()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "t = {a=1,b=2}";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify compact spacing was captured
+		TomlNodeId nodeId = .Invalid;
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out nodeId);
+		let style = doc.Metadata.GetNodeStyle(nodeId);
+		let fmt = doc.Metadata.mValueFormats[style.mValueFormatRef.mIndex];
+		if (fmt case .Table(let tFmt))
+		{
+			Test.Assert(tFmt.mEqualsSpacing == 0, scope $"Expected equals spacing 0, got {tFmt.mEqualsSpacing}");
+			Test.Assert(tFmt.mCommaSpacing == 0, scope $"Expected comma spacing 0, got {tFmt.mCommaSpacing}");
+			Test.Assert(tFmt.mOpenBraceSpacing == 0, scope $"Expected open brace spacing 0, got {tFmt.mOpenBraceSpacing}");
+			Test.Assert(tFmt.mCloseBraceSpacing == 0, scope $"Expected close brace spacing 0, got {tFmt.mCloseBraceSpacing}");
+		}
+		else
+			Test.Assert(false, "Expected Table format");
+
+		// Mutate and verify compact style preserved
+		doc.RootTable.TryGetTable("t", var tbl);
+		tbl.ReplaceValue("a", .Integer(42));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("{a=42,b=2}"), scope $"Expected compact inline table, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_InlineTableSpacedEqualsAndComma()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "t = { a = 1 , b = 2 }";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		TomlNodeId nodeId = .Invalid;
+		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out nodeId);
+		let style = doc.Metadata.GetNodeStyle(nodeId);
+		let fmt = doc.Metadata.mValueFormats[style.mValueFormatRef.mIndex];
+		if (fmt case .Table(let tFmt))
+		{
+			Test.Assert(tFmt.mEqualsSpacing == 1, scope $"Expected equals spacing 1, got {tFmt.mEqualsSpacing}");
+			Test.Assert(tFmt.mCommaSpacing == 1, scope $"Expected comma spacing 1, got {tFmt.mCommaSpacing}");
+			Test.Assert(tFmt.mOpenBraceSpacing == 1, scope $"Expected open brace spacing 1, got {tFmt.mOpenBraceSpacing}");
+			Test.Assert(tFmt.mCloseBraceSpacing == 1, scope $"Expected close brace spacing 1, got {tFmt.mCloseBraceSpacing}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_InlineTableV10ForcesSingleLine()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Parse a multiline inline table
+		let input = "t = {\n  a = 1,\n  b = 2,\n}";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Mutate
+		doc.RootTable.TryGetTable("t", var tbl);
+		tbl.ReplaceValue("a", .Integer(42));
+
+		// Write with v1.0 should force single-line
+		var writeConfig = TomlWriteConfig();
+		writeConfig.Version = .V1_0;
+		String output = scope String();
+		doc.Write(output, writeConfig);
+		// Should be single-line, no newlines inside braces
+		Test.Assert(!output.Contains("{\n") && !output.Contains("{\r"),
+			scope $"Expected single-line inline table in v1.0, got: {output}");
+		// Should contain proper spacing
+		Test.Assert(output.Contains(" = ") && output.Contains(", "),
+			scope $"Expected spaced inline table in v1.0, got: {output}");
+
+		// Write with v1.1 should preserve multiline
+		writeConfig.Version = .V1_1;
+		String output2 = scope String();
+		doc.Write(output2, writeConfig);
+		Test.Assert(output2.Contains("{\n"), scope $"Expected multiline inline table in v1.1, got: {output2}");
+	}
+
+	// ================================================================
+	// Table header blank line preservation tests
+	// ================================================================
+
+	[Test]
+	public static void PreserveStyle_BlankLineBeforeTableHeader()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Two tables with a blank line between
+		let input = "[a]\nx = 1\n\n[b]\ny = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Verify blank line metadata was captured on the [b] table node
+		doc.RootTable.TryGetTable("b", var tblB);
+		Test.Assert(tblB.MetadataContext != null);
+		let commentSet = doc.Metadata.GetCommentSet(tblB.MetadataContext.mNodeId);
+		Test.Assert(commentSet != null, "Expected comment set on table b");
+		Test.Assert(commentSet.mSeparatedByBlankLine, "Expected blank line flag on table b");
+
+		// Verify table [a] does NOT have the blank line flag
+		doc.RootTable.TryGetTable("a", var tblA);
+		let commentSetA = doc.Metadata.GetCommentSet(tblA.MetadataContext.mNodeId);
+		Test.Assert(commentSetA == null || !commentSetA.mSeparatedByBlankLine,
+			"Table a should not have blank line flag");
+
+		String output = scope String();
+		doc.Write(output);
+		// Writer always emits blank line separator before headers
+		Test.Assert(output.Contains("x = 1\n\n[b]") || output.Contains("x = 1\r\n\r\n[b]"),
+			scope $"Expected blank line between sections, got: {output}");
+
+		// Re-parse should be valid
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let reErr))
+		{
+			defer reErr.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void PreserveStyle_BlankLineMetadataCaptured()
+	{
+		// Verify blank line metadata is correctly distinguished between
+		// separated and non-separated cases
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "[a]\nx = 1\n\n[b]\ny = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetTable("a", var tblA);
+		let csA = doc.Metadata.GetCommentSet(tblA.MetadataContext.mNodeId);
+		Test.Assert(csA == null || !csA.mSeparatedByBlankLine,
+			"First table should not have blank line flag");
+
+		doc.RootTable.TryGetTable("b", var tblB);
+		let csB = doc.Metadata.GetCommentSet(tblB.MetadataContext.mNodeId);
+		Test.Assert(csB != null && csB.mSeparatedByBlankLine,
+			"Second table should have blank line flag");
+	}
+
+	[Test]
+	public static void PreserveStyle_NoBlankLineForDirectAdjacentSections()
+	{
+		// Direct-adjacent sections (no blank line between) should NOT get blank line flag
+		var doc = new TomlDocument();
+		defer delete doc;
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "[a]\nx = 1\n[b]\ny = 2";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		doc.RootTable.TryGetTable("a", var tblA);
+		let csA = doc.Metadata.GetCommentSet(tblA.MetadataContext.mNodeId);
+		Test.Assert(csA == null || !csA.mSeparatedByBlankLine,
+			"Table a should not have blank line flag");
+
+		doc.RootTable.TryGetTable("b", var tblB);
+		let csB = doc.Metadata.GetCommentSet(tblB.MetadataContext.mNodeId);
+		// When sections are directly adjacent, [b]'s header follows immediately
+		// after the preceding content's newline with no extra blank line.
+		// mBlankLineCount catches the single newline between sections but only
+		// flags it as separatedByBlankLine when there's at least one extra.
+		Test.Assert(csB == null || !csB.mSeparatedByBlankLine,
+			"Table b should not have blank line flag when directly adjacent");
+	}
+
 	[Test]
 	public static void PreserveStyle_ArrayCrlfWithComments()
 	{

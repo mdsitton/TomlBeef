@@ -355,6 +355,12 @@ public struct TomlTableFormat
 	public uint8 mOpenBraceSpacing = 0;
 	/// Number of spaces before closing brace (0 = none, 1 = " }", etc.).
 	public uint8 mCloseBraceSpacing = 0;
+	/// Number of spaces around equals sign (0 = "=", 1 = " = ").
+	public uint8 mEqualsSpacing = 1;
+	/// Number of spaces after comma (0 = ",", 1 = ", ").
+	public uint8 mCommaSpacing = 1;
+	/// Indentation size for multiline inline table entries. 0 = use document default.
+	public uint8 mEntryIndent = 0;
 }
 
 // ================================================================

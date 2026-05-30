@@ -246,7 +246,7 @@ static class TomlWriterImpl
 						}
 						AppendKey(key, fullPath, version);
 
-						// Emit separator newline before comments (only if not at start)
+						// Emit separator newline before header (only if not at start)
 						if (outStr.Length > 0)
 							WriteNewline(outStr, metadata);
 
@@ -1287,12 +1287,19 @@ static class TomlWriterImpl
 		{
 			if (i > 0)
 			{
-				outStr.Append(", ");
+				outStr.Append(',');
+				// In single-line, default to space after comma unless explicitly captured as no-space
+				bool noCommaSpace = hasFormat && fmt.mCommaSpacing == 0 && !fmt.mMultiline;
+				if (!noCommaSpace)
+					outStr.Append(' ');
 			}
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
 			WriteKey(key, outStr, version);
-			outStr.Append(" = ");
+			if (hasFormat && fmt.mEqualsSpacing > 0)
+				outStr.Append(" = ");
+			else
+				outStr.Append('=');
 			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
 		}
 
@@ -1308,13 +1315,20 @@ static class TomlWriterImpl
 		outStr.Append('{');
 		WriteNewline(outStr, metadata);
 
+		int entryIndent = fmt.mEntryIndent > 0
+			? fmt.mEntryIndent
+			: metadata.mDocumentStyle.mIndentSize;
+
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
-			AppendIndent(outStr, metadata.mDocumentStyle.mIndentSize);
+			AppendIndent(outStr, entryIndent);
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
 			WriteKey(key, outStr, version);
-			outStr.Append(" = ");
+			if (fmt.mEqualsSpacing > 0)
+				outStr.Append(" = ");
+			else
+				outStr.Append('=');
 			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
 			if (i < tbl.KeyOrder.Count - 1 || fmt.mTrailingComma)
 				outStr.Append(',');

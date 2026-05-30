@@ -24,6 +24,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TomlNodeId mLastNodeId;
 	// Whether a blank line was seen since the last comment. Used to classify detached vs leading.
 	private bool mBlankLineSinceComment;
+	// Count of consecutive blank lines (comment-free) before the next content node. Used for section spacing.
+	private int mBlankLineCount;
+	// Saved blank line count for the next header or key/val, consumed by AttachPendingComments.
+	private int mSavedBlankLineCount;
 	// Whether we've inferred the indentation style from the first key/header.
 	private bool mInferredIndent;
 	// String style usage counts for detecting the dominant style.
@@ -45,6 +49,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mSeenContent = false;
 		mLastNodeId = .Invalid;
 		mBlankLineSinceComment = false;
+		mBlankLineCount = 0;
+		mSavedBlankLineCount = 0;
 		mInferredIndent = false;
 		mStringStyleCount_Basic = 0;
 		mStringStyleCount_Literal = 0;
@@ -112,9 +118,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			if (b == '\r' || b == '\n')
 			{
-				// Track blank lines for comment classification
+				// Track blank lines for comment classification and section spacing
 				if (mMetadata != null && mPendingComments.Count > 0)
 					mBlankLineSinceComment = true;
+				if (mMetadata != null)
+					mBlankLineCount++;
 				CountAndSkipNewline();
 				continue;
 			}
@@ -126,6 +134,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
 					AttachPendingCommentsToRoot();
 				mBlankLineSinceComment = false;
+
+				// Save blank line count for header comment attachment, then reset
+				if (mMetadata != null)
+					mSavedBlankLineCount = mBlankLineCount;
+				mBlankLineCount = 0;
 
 				// Detect indentation from whitespace before first content
 				if (!mInferredIndent && mMetadata != null)
@@ -147,6 +160,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
 				AttachPendingCommentsToRoot();
 			mBlankLineSinceComment = false;
+			if (mMetadata != null)
+				mSavedBlankLineCount = mBlankLineCount;
+			mBlankLineCount = 0;
 
 			// Detect indentation from whitespace before first content
 			if (!mInferredIndent && mMetadata != null)
@@ -2451,15 +2467,26 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach pending leading comments to a node.
 	private void AttachPendingComments(TomlNodeId nodeId)
 	{
-		if (mMetadata == null || mPendingComments.Count == 0)
+		if (mMetadata == null)
+			return;
+
+		// If there are comments or a blank line preceded this node, create a comment set
+		if (mPendingComments.Count == 0 && mSavedBlankLineCount == 0)
 			return;
 
 		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
 		if (commentSet != null)
 		{
-			for (int i = 0; i < mPendingComments.Count; i++)
-				commentSet.mLeading.Add(mPendingComments[i]);
-			mPendingComments.Clear(); // Ownership transferred
+			if (mPendingComments.Count > 0)
+			{
+				for (int i = 0; i < mPendingComments.Count; i++)
+					commentSet.mLeading.Add(mPendingComments[i]);
+				mPendingComments.Clear();
+			}
+			// If a blank line preceded this content, mark it on the comment set
+			if (mSavedBlankLineCount > 0)
+				commentSet.mSeparatedByBlankLine = true;
+			mSavedBlankLineCount = 0;
 		}
 	}
 
@@ -2699,12 +2726,62 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (rawToken.Length >= 2)
 		{
 			if (rawToken[1] == ' ') fmt.mOpenBraceSpacing = 1;
-			else if (rawToken[1] == '\n' || rawToken[1] == '\r') fmt.mOpenBraceSpacing = 1; // multiline
+			else if (rawToken[1] == '\n' || rawToken[1] == '\r') fmt.mOpenBraceSpacing = 1;
 		}
 
 		// Detect spacing before closing brace
 		if (rawToken.Length >= 2 && rawToken[rawToken.Length - 2] == ' ')
 			fmt.mCloseBraceSpacing = 1;
+
+		// Detect equals spacing and comma spacing by scanning forward
+		// through the raw token. Track entry indentation for multiline.
+		fmt.mEqualsSpacing = 0; // default to no-space style
+		fmt.mCommaSpacing = 0;
+		int maxIndent = 0;
+		bool inValue = false;
+		int lastEqualsEnd = -1;
+		int lastCommaEnd = -1;
+		for (int i = 0; i < rawToken.Length; i++)
+		{
+			char8 c = rawToken[i];
+			if (c == '=' && !inValue)
+			{
+				// Check for spaces before =
+				int beforeEquals = 0;
+				if (i > 0 && rawToken[i - 1] == ' ') beforeEquals = 1;
+				// Check for spaces after =
+				int afterEquals = 0;
+				if (i + 1 < rawToken.Length && rawToken[i + 1] == ' ') afterEquals = 1;
+				// Use min of before/after to determine style
+				if (beforeEquals > 0 || afterEquals > 0)
+					fmt.mEqualsSpacing = 1;
+				lastEqualsEnd = i + afterEquals;
+				inValue = true;
+			}
+			else if (c == ',')
+			{
+				inValue = false;
+				// Check for space after comma
+				if (i + 1 < rawToken.Length && rawToken[i + 1] == ' ')
+					fmt.mCommaSpacing = 1;
+				lastCommaEnd = i;
+			}
+			else if (c == '\n' || c == '\r')
+			{
+				// Count indent on next line for multiline detection
+				int indentCount = 0;
+				for (int j = i + 1; j < rawToken.Length; j++)
+				{
+					char8 nc = rawToken[j];
+					if (nc == ' ' || nc == '\t') indentCount++;
+					else if (nc == '#' || nc == '}' || TomlChar.IsBareKeyChar(nc)) break;
+					else break;
+				}
+				if (indentCount > maxIndent) maxIndent = indentCount;
+			}
+		}
+		if (maxIndent > 0 && maxIndent <= 255)
+			fmt.mEntryIndent = (uint8)maxIndent;
 
 		let fmtRef = mMetadata.AddValueFormat(.Table(fmt));
 		let style = mMetadata.GetNodeStyle(nodeId);
