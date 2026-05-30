@@ -342,32 +342,123 @@ public class TomlDocument
 		return mRootTable.Remove(key);
 	}
 
+	/// @brief Navigate a bracket-aware dotted path and return the value at that path.
+	/// Supports `[segment]` syntax for path segments that contain literal dots:
+	///   "a.b.c"      → ["a", "b", "c"]
+	///   "a.[b.c]"    → ["a", "b.c"]
+	///   "[a.b]"      → ["a.b"]
+	/// @param dottedPath The path to traverse. Supports bracket-delimited segments.
+	/// @return The value on success, or .Err if any segment is not found or the path is malformed.
 	public Result<TomlValue> Get(StringView dottedPath)
 	{
+		var segments = scope List<StringView>();
+		if (!ParseDottedPath(dottedPath, segments))
+			return .Err;
+		return GetPath(segments);
+	}
+
+	/// @brief Navigate exact path segments and return the value. Accepts individual
+	/// segment strings for ergonomic multi-segment lookups.
+	/// @param segments The path segments to traverse, in order.
+	/// @return The value on success, or .Err if any segment is not found.
+	public Result<TomlValue> GetPath(params StringView[] segments)
+	{
+		var list = scope List<StringView>();
+		for (int i = 0; i < segments.Count; i++)
+			list.Add(segments[i]);
+		return GetPath(list);
+	}
+
+	/// @brief Navigate exact path segments from a list. Useful when segments are
+	/// already in a list (e.g., from ParseDottedPath).
+	/// @param segments The path segments to traverse, in order.
+	/// @return The value on success, or .Err if any segment is not found.
+	public Result<TomlValue> GetPath(List<StringView> segments)
+	{
 		TomlTable current = mRootTable;
-		int start = 0;
-		for (int i = 0; i <= dottedPath.Length; i++)
+		for (int i = 0; i < segments.Count; i++)
 		{
-			if (i == dottedPath.Length || dottedPath[i] == '.')
+			StringView segment = segments[i];
+			if (segment.IsEmpty)
+				return .Err;
+			if (i == segments.Count - 1)
 			{
-				StringView segment = dottedPath.Substring(start, i - start);
-				if (segment.IsEmpty)
-					return .Err;
-				if (i == dottedPath.Length)
-				{
-					// Final segment — return the value
-					if (current.TryGetValue(segment, let val))
-						return val;
-					return .Err;
-				}
-				// Intermediate segment — must be a table
-				if (!current.TryGetValue(segment, let val) || !val.IsTable)
-					return .Err;
-				current = val.AsTable;
-				start = i + 1;
+				// Final segment — return the value
+				if (current.TryGetValue(segment, let val))
+					return val;
+				return .Err;
 			}
+			// Intermediate segment — must be a table
+			if (!current.TryGetValue(segment, let val) || !val.IsTable)
+				return .Err;
+			current = val.AsTable;
 		}
 		return .Err;
+	}
+
+	/// Parse a bracket-aware dotted path into StringView segments.
+	/// Segments borrow from the input path.
+	/// @param path The path string to parse.
+	/// @param segments Output list of segment views.
+	/// @return False if the path is malformed (empty segments, unmatched brackets).
+	internal static bool ParseDottedPath(StringView path, List<StringView> segments)
+	{
+		if (path.IsEmpty)
+			return false;
+
+		int i = 0;
+		while (i < path.Length)
+		{
+			// Skip the leading dot between segments (not on first iteration)
+			if (i > 0 && path[i] == '.')
+			{
+				i++;
+				// Consecutive dots mean empty segment
+				if (i >= path.Length || path[i] == '.')
+					return false;
+			}
+
+			if (path[i] == '[')
+			{
+				i++; // skip '['
+				int segStart = i;
+				// Scan for matching ']'
+				while (i < path.Length && path[i] != ']')
+					i++;
+				if (i >= path.Length)
+					return false; // unmatched '['
+				int segLen = i - segStart;
+				i++; // skip ']'
+				if (segLen == 0)
+					return false; // empty bracketed segment
+				segments.Add(path.Substring(segStart, segLen));
+
+				// After a bracketed segment, next char must be '.' or end
+				if (i < path.Length && path[i] != '.')
+					return false;
+			}
+			else if (path[i] == ']')
+			{
+				return false; // unmatched ']'
+			}
+			else
+			{
+				// Bare (unbracketed) segment — scan until '.' or end
+				int segStart = i;
+				while (i < path.Length && path[i] != '.' && path[i] != '[' && path[i] != ']')
+					i++;
+				int segLen = i - segStart;
+				if (segLen == 0)
+					return false; // empty segment
+				segments.Add(path.Substring(segStart, segLen));
+
+				// After a bare segment, next char must be '.' or end
+				if (i < path.Length && path[i] != '.')
+					return false;
+			}
+		}
+
+		return segments.Count > 0;
 	}
 
 	/// @brief Navigate a dotted path and extract a String value in a single call.

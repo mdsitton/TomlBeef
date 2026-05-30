@@ -59,11 +59,26 @@ doc.Read(overrideFile, .() { Mode = .Merge });   // Merge on top
 
 ### Reading Values
 
-**Path-based lookup** — bare dotted keys only (no quoted segments):
+**Path-based lookup** — dotted keys with bracket support for segments containing dots:
 
 ```bf
 // Generic lookup — returns Result<TomlValue>
 if (doc.Get("fruit.apple.color") case .Ok(let val))
+    ...
+
+// Access a key whose name contains a dot: use [brackets]
+if (doc.TryGetInteger("servers.[192.168.1.1].port", var port))
+    ...
+
+// Exact-segment API — ergonomic multi-segment lookup
+if (doc.GetPath("a", "b", "c") case .Ok(let val))
+    ...
+
+// List overload for programmatic callers
+var segs = scope List<StringView>();
+segs.Add("a");
+segs.Add("b");
+if (doc.GetPath(segs) case .Ok(let val))
     ...
 
 // Typed one-call accessors — convenient for one-off lookups
