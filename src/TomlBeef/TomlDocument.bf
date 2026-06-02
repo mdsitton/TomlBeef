@@ -52,10 +52,12 @@ public class TomlDocument
 	/// Not thread-safe — changing this while other threads are writing produces undefined behavior.
 	public static TomlWriteConfig DefaultWriteConfig = .();
 
-	private TomlTable mRootTable ~ delete _;
+	private TomlDocumentStore mStore ~ delete _;
+	private TomlTable mRootTable; // borrowed from mStore.RootTable
 	private TomlDocumentMetadata mMetadata ~ delete _;
 
-	/// @brief The document's root table (read-only). Modify via Insert/Remove, or use Read() to replace.
+	/// @brief The document's root table (read-only). Use typed setters (SetString, SetInteger, etc.)
+	/// or document-level methods (AddTable, AddArray) to modify content.
 	public TomlTable RootTable => mRootTable;
 
 	/// @brief Style metadata sidecar, or null if MetadataMode is None.
@@ -64,8 +66,9 @@ public class TomlDocument
 	/// @brief Remove all content from this document.
 	public void Clear()
 	{
-		mRootTable.Clear();
 		ClearMetadata();
+		mStore.Reset();
+		mRootTable = mStore.RootTable;
 	}
 
 	private void ClearMetadata()
@@ -81,7 +84,8 @@ public class TomlDocument
 
 	public this()
 	{
-		mRootTable = new TomlTable(.Root);
+		mStore = new TomlDocumentStore();
+		mRootTable = mStore.RootTable;
 	}
 
 	/// @brief Parse a TOML string into this document using the current DefaultReadConfig.
@@ -209,8 +213,10 @@ public class TomlDocument
 	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
 	{
 		let parser = scope TomlParserImpl<TCursor>(config.Version);
-		var incoming = new TomlTable(.Root);
-		defer delete incoming;
+		var tempStore = new TomlDocumentStore();
+		defer delete tempStore;
+		var incoming = tempStore.RootTable;
+		incoming.mSuppressAutoDirty = true;
 
 		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
 		TomlDocumentMetadata incomingMetadata = null;
@@ -221,7 +227,8 @@ public class TomlDocument
 		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 
-		let resolver = scope TomlPathResolver(incoming, incomingMetadata);
+		parser.SetStore(tempStore);
+		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore);
 		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
 			if (state.mError)
@@ -258,8 +265,7 @@ public class TomlDocument
 	{
 		if (ShouldParseDirectly(config))
 		{
-			mRootTable.Clear();
-			ClearMetadata();
+			Clear();
 		}
 		return .Err(error);
 	}
@@ -273,21 +279,18 @@ public class TomlDocument
 		if (ShouldParseDirectly(config))
 		{
 			if (config.Mode == .Replace)
-			{
-				mRootTable.Clear();
-				ClearMetadata();
-			}
+				Clear();
 			if (wantsMetadata)
 			{
 				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
 				parser.SetMetadata(mMetadata);
 			}
+			parser.SetStore(mStore);
 			mRootTable.mSuppressAutoDirty = true;
-			let resolver = scope TomlPathResolver(mRootTable, mMetadata);
+			let resolver = scope TomlPathResolver(mRootTable, mMetadata, mStore);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
 			{
-				mRootTable.Clear();
-				ClearMetadata();
+				Clear();
 				return .Err(parseErr);
 			}
 			if (wantsMetadata && mRootTable.MetadataContext == null)
@@ -296,9 +299,11 @@ public class TomlDocument
 			return .Ok;
 		}
 
-		// Merge with existing content — transactional via temp table
-		var incoming = new TomlTable(.Root, true);
-		defer delete incoming;
+		// Merge with existing content — transactional via temp store
+		var tempStore = new TomlDocumentStore();
+		defer delete tempStore;
+		var incoming = tempStore.RootTable;
+		incoming.mSuppressAutoDirty = true;
 		TomlDocumentMetadata incomingMetadata = null;
 		if (wantsMetadata)
 		{
@@ -307,7 +312,8 @@ public class TomlDocument
 		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 		{
-			let resolver = scope TomlPathResolver(incoming, incomingMetadata);
+			parser.SetStore(tempStore);
+			let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore);
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}
@@ -340,6 +346,169 @@ public class TomlDocument
 	public bool Remove(StringView key)
 	{
 		return mRootTable.Remove(key);
+	}
+
+	/// @brief Create a new store-backed table at the root level and return it.
+	/// @param key The key for the new table.
+	/// @return The new table, or null if the key already exists.
+	public TomlTable AddTable(StringView key)
+	{
+		return mRootTable.AddTable(key);
+	}
+
+	/// @brief Create a new store-backed array at the root level and return it.
+	/// @param key The key for the new array.
+	/// @return The new array, or null if the key already exists.
+	public TomlArray AddArray(StringView key)
+	{
+		return mRootTable.AddArray(key);
+	}
+
+	/// @brief Set a string value at the given dotted path.
+	/// The value is copied into the document's store.
+	/// @param dottedPath The path to traverse. Supports bracket-delimited segments.
+	/// @param value The string value to set.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetString(StringView dottedPath, StringView value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetString(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set an integer value at the given dotted path.
+	/// @param dottedPath The dotted path.
+	/// @param value The integer value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetInteger(StringView dottedPath, int64 value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetInteger(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set a float value at the given dotted path.
+	/// @param dottedPath The dotted path.
+	/// @param value The float value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetFloat(StringView dottedPath, double value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetFloat(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set a boolean value at the given dotted path.
+	/// @param dottedPath The dotted path.
+	/// @param value The boolean value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetBool(StringView dottedPath, bool value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetBool(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set an offset date-time value at the given dotted path.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value The offset date-time value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetOffsetDateTime(StringView dottedPath, TomlOffsetDateTime value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetOffsetDateTime(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set a local date-time value at the given dotted path.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value The local date-time value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetLocalDateTime(StringView dottedPath, TomlLocalDateTime value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetLocalDateTime(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set a local date value at the given dotted path.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value The local date value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetLocalDate(StringView dottedPath, TomlLocalDate value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetLocalDate(finalKey, value);
+		return .Ok;
+	}
+
+	/// @brief Set a local time value at the given dotted path.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param value The local time value.
+	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
+	public Result<void, TomlParseError> SetLocalTime(StringView dottedPath, TomlLocalTime value)
+	{
+		TomlTable parent = ?;
+		StringView finalKey = ?;
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+			return .Err(e);
+		parent.SetLocalTime(finalKey, value);
+		return .Ok;
+	}
+
+	/// Parse a dotted path, navigate all but the last segment, and return the parent table and final key.
+	/// All intermediate segments must resolve to existing tables.
+	private Result<void, TomlParseError> ResolvePath(StringView dottedPath, out TomlTable parent, out StringView finalKey)
+	{
+		var segments = scope List<StringView>();
+		if (!ParseDottedPath(dottedPath, segments))
+		{
+			parent = null;
+			finalKey = default;
+			return .Err(TomlParseError(.UnexpectedToken, "Malformed path", 0, 0, 0));
+		}
+		if (segments.Count == 0)
+		{
+			parent = null;
+			finalKey = default;
+			return .Err(TomlParseError(.TypeConflict, "Empty path", 0, 0, 0));
+		}
+
+		TomlTable current = mRootTable;
+		for (int i = 0; i < segments.Count - 1; i++)
+		{
+			if (!current.TryGetValue(segments[i], let val) || !val.IsTable)
+			{
+				parent = null;
+				finalKey = default;
+				return .Err(TomlParseError(.TypeConflict, scope $"Segment '{segments[i]}' is not a table", 0, 0, 0));
+			}
+			current = val.AsTable;
+		}
+		parent = current;
+		finalKey = segments[segments.Count - 1];
+		return .Ok;
 	}
 
 	/// @brief Navigate a bracket-aware dotted path and return the value at that path.
@@ -395,6 +564,10 @@ public class TomlDocument
 		}
 		return .Err;
 	}
+
+	/// @brief Navigate exact path segments and return the value.
+	/// @param segments The path segments to traverse, in order.
+	/// @return A view on success, or .Err if any segment is not found.
 
 	/// Parse a bracket-aware dotted path into StringView segments.
 	/// Segments borrow from the input path.

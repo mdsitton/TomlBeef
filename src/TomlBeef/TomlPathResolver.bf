@@ -11,19 +11,14 @@ class TomlPathResolver
 	private TomlTable mRootTable;
 	private TomlTable mCurrentTable;
 	private TomlDocumentMetadata mMetadata;
+	private TomlDocumentStore mStore;
 
-	public this(TomlTable rootTable)
-	{
-		mRootTable = rootTable;
-		mCurrentTable = rootTable;
-		mMetadata = null;
-	}
-
-	public this(TomlTable rootTable, TomlDocumentMetadata metadata)
+	internal this(TomlTable rootTable, TomlDocumentMetadata metadata, TomlDocumentStore store)
 	{
 		mRootTable = rootTable;
 		mCurrentTable = rootTable;
 		mMetadata = metadata;
+		mStore = store;
 	}
 
 	public int mCurrentLine = 1;
@@ -163,7 +158,7 @@ class TomlPathResolver
 				if (arr.Count == 0)
 					return .Err(MakeError(.ArrayElementOrdering,
 						"Cannot access child of empty array-of-tables; define an [[array]] element first", mCurrentOffset));
-				TomlValue lastVal = arr[arr.Count - 1];
+				TomlValue lastVal = arr.GetValue(arr.Count - 1);
 				TomlTable lastTable = null; if (lastVal case .Table(ref lastTable))
 					mCurrentTable = lastTable;
 				else
@@ -184,7 +179,8 @@ class TomlPathResolver
 			if (mCurrentTable.IsInlineSealed)
 				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
-			TomlTable newTable = new TomlTable(implicitOrigin, true);
+			TomlTable newTable = 
+				mStore.NewTable(implicitOrigin, true);
 			TomlValue tableVal = TomlValue.Table(newTable);
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
@@ -253,7 +249,8 @@ class TomlPathResolver
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
-		TomlTable newTable = new TomlTable(origin, true);
+		TomlTable newTable = 
+			mStore.NewTable(origin, true);
 		TomlValue tableVal = TomlValue.Table(newTable);
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
@@ -282,7 +279,8 @@ class TomlPathResolver
 				if (arr.IsStatic)
 					return .Err(MakeError(.AppendToStaticArray, scope $"Cannot define array-of-tables '[[{key}]]' - name already defined as a static array" , mCurrentOffset));
 
-				TomlTable newElement = new TomlTable(.ArrayElement, true);
+				TomlTable newElement = 
+				mStore.NewTable(.ArrayElement, true);
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
 
@@ -311,8 +309,10 @@ class TomlPathResolver
 			}
 		}
 
-		TomlArray newArray = new TomlArray(true);
-		TomlTable firstElement = new TomlTable(.ArrayElement, true);
+		TomlArray newArray = 
+			mStore.NewArray(true);
+		TomlTable firstElement = 
+			mStore.NewTable(.ArrayElement, true);
 		newArray.Add(.Table(firstElement));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;

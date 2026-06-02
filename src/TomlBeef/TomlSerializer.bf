@@ -144,7 +144,7 @@ public class TomlSerializer
 			for (int i = 0; i < arr.Count; i++)
 			{
 				if (i > 0) outStr.Append(',');
-				SerializeValue(arr[i], outStr);
+				SerializeValue(arr.GetValue(i), outStr);
 			}
 		}
 		outStr.Append(']');

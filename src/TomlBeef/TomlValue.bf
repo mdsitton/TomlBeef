@@ -1,4 +1,5 @@
 using System;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -37,25 +38,6 @@ public enum TomlValue
 	public bool IsLocalTime      => this case .LocalTime;
 	public bool IsArray          => this case .Array;
 	public bool IsTable          => this case .Table;
-
-	/// @brief Disposes any heap-allocated payload. Only call this on values you created yourself
-	/// (e.g., programmatic construction). Never call on values returned by Get(), TryGetValue(),
-	/// indexers, or array accessors — those are borrowed from document-owned memory.
-	public void Dispose()
-	{
-		switch (this)
-		{
-		case .String(let s):
-			if (s != null) delete s;
-		case .Array(let arr):
-			if (arr != null) delete arr;
-		case .Table(let tbl):
-			if (tbl != null) delete tbl;
-		case .Integer,.Float,.Bool,
-			.OffsetDateTime,.LocalDateTime,
-			.LocalDate,.LocalTime:
-		}
-	}
 
 	public StringView AsString
 	{
@@ -367,11 +349,12 @@ public enum TomlValue
 		return false;
 	}
 
-	public TomlValue Clone()
+	/// @brief Deep-copy this value into the given store.
+	internal TomlValue CloneInto(TomlDocumentStore store)
 	{
 		switch (this)
 		{
-		case .String(let s):      return .String(new String(s));
+		case .String(let s):      return .String(store.NewString(s));
 		case .Integer(let v):     return .Integer(v);
 		case .Float(let v):       return .Float(v);
 		case .Bool(let v):        return .Bool(v);
@@ -379,8 +362,8 @@ public enum TomlValue
 		case .LocalDateTime(let v):  return .LocalDateTime(v);
 		case .LocalDate(let v):      return .LocalDate(v);
 		case .LocalTime(let v):      return .LocalTime(v);
-		case .Array(let arr):     return .Array(arr.Clone());
-		case .Table(let tbl):     return .Table(tbl.Clone());
+		case .Array(let arr):     return .Array(arr.CloneInto(store));
+		case .Table(let tbl):     return .Table(tbl.CloneInto(store));
 		}
 	}
 

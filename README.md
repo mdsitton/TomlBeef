@@ -104,13 +104,36 @@ Full set of document-level typed accessors: `TryGetString`, `TryGetInteger`, `Tr
 
 ```bf
 doc.RootTable           // The root table (read-only property)
-table["key"]             // Indexer → Result<TomlValue> (.Err if missing)
+table.Count              // Number of entries
 table.ContainsKey("key")
-table.TryGetValue("key", out value)
 
-// Low-level access — modifying these directly can corrupt table state:
-table.Entries            // Dictionary<String, TomlValue> (owned by table)
-table.KeyOrder           // List<String> (owned by table)
+// Advanced: raw TomlValue access (borrowed, internal). Prefer typed entry proxy.
+table.TryGetValue("key", out value)  // advanced borrowed access
+
+// Entry proxy iteration — typed access without raw TomlValue:
+for (int i = 0; i < table.Count; i++)
+{
+    var entry = table[i];
+
+    Console.WriteLine(entry.Key);
+
+    if (entry.TryGetString(out var s))
+        Console.WriteLine(s);
+    else if (entry.TryGetInteger(out var n))
+        Console.WriteLine($"{}", n);
+}
+
+// Safe assignment through entry proxy — no new String / new TomlValue:
+table[0].Value = "new value";
+table[0].Value = 42;
+
+// Container replacement:
+TomlTable child = table[0].SetTable();
+child.SetString("name", "replacement");
+
+// Key rename and removal:
+table[0].Rename("new_key");
+table[1].Remove();
 ```
 
 **Inspecting a TomlValue** — pattern matching is the idiomatic approach:
@@ -171,22 +194,27 @@ value.AsLocalDate       value.AsLocalTime
 ### Iterating Tables
 
 ```bf
-for (int i = 0; i < table.KeyOrder.Count; i++)
+// Entry proxy — typed access without raw TomlValue
+for (int i = 0; i < table.Count; i++)
 {
-    String key = table.KeyOrder[i];
-    TomlValue value = table.Entries[key];
-    // ...
+    var entry = table[i];
+    Console.WriteLine(entry.Key);
+
+    StringView s = ?;
+    if (entry.TryGetString(out s))
+        Console.WriteLine(s);
 }
 ```
 
 ### Iterating Arrays
 
 ```bf
-for (int i = 0; i < arr.Count; i++)
-{
-    TomlValue item = arr[i];
-    // ...
-}
+// Typed readers — no raw TomlValue needed:
+StringView s = ?;
+if (arr.TryGetString(0, out s)) { }
+
+int64 n = ?;
+if (arr.TryGetInteger(1, out n)) { }
 ```
 
 ### Writing TOML
@@ -206,36 +234,49 @@ The writer produces valid TOML v1.1 output. Sub-tables are emitted as `[header]`
 var doc = new TomlDocument();
 var root = doc.RootTable;
 
-// Scalars
-root.Insert("name", .String(new String("TomlBeef")));
-root.Insert("version", .Integer(1));
-root.Insert("released", .Bool(true));
+// Scalar setters — no new String / new TomlValue needed
+root.SetString("name", "TomlBeef");
+root.SetInteger("version", 1);
+root.SetBool("released", true);
 
-// Arrays
-var arr = new TomlArray();
-arr.Add(.Integer(1));
-arr.Add(.Integer(2));
-arr.Add(.Integer(3));
-root.Insert("numbers", .Array(arr));
+// Arrays — created through the document store
+var arr = doc.AddArray("numbers");
+arr.Add(1);       // implicit conversion
+arr.Add(2);
+arr.Add(3);
 
-// Sub-tables
-var sub = new TomlTable(.ExplicitHeader);
-sub.Insert("key", .String(new String("value")));
-root.Insert("section", .Table(sub));
+// Indexer assignment — no raw TomlValue
+arr[0] = 10;
+arr[1] = 20;
 
-// Dates
-root.Insert("created", .LocalDate(TomlLocalDate(2024, 7, 15)));
-root.Insert("timestamp", .OffsetDateTime(
-    TomlOffsetDateTime(2024, 7, 15, 14, 30, 0, 0, 0)));
+// Typed readers — safe without exposing Dispose/ownership
+StringView s = ?;
+if (arr.TryGetString(0, out s)) { ... }
+
+// Container replacement
+var tbl = arr.SetTable(1);
+tbl.SetString("name", "replacement");
+
+var nested = arr.SetArray(2);
+nested.AddString("x");
+
+// Deletion
+arr.RemoveAt(0);
+arr.Clear();
+
+// Sub-tables — created through the document store
+var sub = doc.AddTable("section");
+sub.SetString("key", "value");
+
+// Dates — typed setters
+root.SetLocalDate("created", TomlLocalDate(2024, 7, 15));
+root.SetOffsetDateTime("timestamp",
+    TomlOffsetDateTime(2024, 7, 15, 14, 30, 0, 0, 0));
 ```
 
-### Cloning
-
-```bf
-TomlValue copy = original.Clone();      // Deep copy of a value
-TomlTable clonedTable = table.Clone();  // Deep copy of a table
-TomlArray clonedArr = arr.Clone();      // Deep copy of an array
-```
+> **Note:** Document setters (`SetString`, `SetInteger`, etc.) require intermediate path segments to already exist as tables.
+> Use `doc.AddTable(...)` to create intermediate tables first.
+> For deeply nested values, build the tree top-down: create tables via `AddTable`, then populate them.
 
 ### Date/Time Types
 
@@ -274,14 +315,11 @@ case .Err(let err):
 
 ### Memory Management
 
-- `TomlDocument` owns the entire parsed tree. `delete doc` frees everything.
-- **Ownership hazard**: `TomlValue` returned by `Get()`, `TryGetValue()`, indexers, and array accessors are **borrowed views** into document-owned memory. Do NOT call `Dispose()` on them — that will double-free or corrupt the document's data. Only `Dispose()` a `TomlValue` you created yourself (e.g., programmatic construction).
-- `TomlValue` is a value type (enum). It may contain heap references (`String`, `TomlArray*`, `TomlTable*`). Call `Dispose()` when discarding an **owned** value.
-- Tables and arrays own their contents. Deleting a table or array disposes all children.
-- `StringView` returned by `TryGetString()` and `AsString` is borrowed — it points into the owning `TomlValue`. Do not use after the value is disposed.
-- The caller owns the document and must `delete` it when done (`defer delete doc`).
-- Use `Clone()` for deep copies when you need independent ownership of a subtree.
-- `table.Entries` and `table.KeyOrder` expose the table's internal containers. Modifying them directly (e.g., adding/removing keys) will desync ordering and can cause leaks or crashes. Use `Insert()`, `ReplaceValue()`, and `Clear()` instead.
+- `TomlDocument` owns the entire parsed tree via an internal arena (`TomlDocumentStore`). `delete doc` frees everything.
+- `TomlValue` is a non-owning tagged union — it holds borrowed references to document-owned `String`, `TomlArray`, and `TomlTable` objects.
+- Tables and arrays created via `AddTable`/`AddArray` are store-backed and freed when the document is cleared or destroyed.
+- `StringView` returned by `TryGetString()` is borrowed from document-owned strings. Do not use after the document is cleared.
+- Prefer typed setters (`SetString`, `SetInteger`, etc.) over low-level `Insert`/`Add` APIs.
 
 ## Supported TOML Features
 

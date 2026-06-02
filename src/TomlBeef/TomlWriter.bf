@@ -98,7 +98,7 @@ static class TomlWriterImpl
 	{
 		for (int i = 0; i < arr.Count; i++)
 		{
-			TomlValue elem = arr[i];
+			TomlValue elem = arr.GetValue(i);
 			if (!elem.IsTable)
 				continue;
 
@@ -288,7 +288,7 @@ static class TomlWriterImpl
 	{
 		for (int i = 0; i < arr.Count; i++)
 		{
-			TomlValue elem = arr[i];
+			TomlValue elem = arr.GetValue(i);
 			if (!elem.IsTable)
 				continue;
 
@@ -1156,7 +1156,7 @@ static class TomlWriterImpl
 		for (int i = 0; i < arr.Count; i++)
 		{
 			if (i > 0) outStr.Append(", ");
-			WriteValue(arr[i], outStr, version);
+			WriteValue(arr.GetValue(i), outStr, version);
 		}
 		outStr.Append(']');
 	}
@@ -1175,7 +1175,7 @@ static class TomlWriterImpl
 		for (int i = 0; i < arr.Count; i++)
 		{
 			if (i > 0) outStr.Append(", ");
-			TomlValue elem = arr[i];
+			TomlValue elem = arr.GetValue(i);
 			TomlNodeId elemNodeId = .Invalid;
 			if (ctx != null)
 				ctx.TryGetItemNodeId(i, out elemNodeId);
@@ -1220,7 +1220,7 @@ static class TomlWriterImpl
 			}
 
 			AppendIndent(outStr, indentSize);
-			TomlValue elem = arr[i];
+			TomlValue elem = arr.GetValue(i);
 			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
 
 			// Emit comma BEFORE trailing comment (correct TOML: `1, # trail`)

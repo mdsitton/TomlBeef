@@ -11,12 +11,20 @@ public class TomlTable
 	private bool mIsInlineSealed;
 	/// @brief Set by parser after detecting a trailing comma before the closing brace.
 	internal bool mHasTrailingComma;
-	private Dictionary<String, TomlValue> mEntries ~ DeleteDictionaryAndKeysAndDisposeValues!(_);
-	private List<String> mKeyOrder ~ delete _;
+	private Dictionary<String, TomlValue> mEntries;
+	private List<String> mKeyOrder;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
+	/// @brief The owning document store.
+	internal TomlDocumentStore mStore;
 
-	public this(TomlTableOrigin origin)
+	public ~this()
+	{
+		delete mEntries;
+		delete mKeyOrder;
+	}
+
+	internal this(TomlTableOrigin origin)
 	{
 		Init(origin, false);
 	}
@@ -75,6 +83,12 @@ public class TomlTable
 		return mEntries[mKeyOrder[index]];
 	}
 
+	/// @brief Get an entry proxy at the given index for typed access, safe assignment, and mutations.
+	public TomlTableEntry this[int index]
+	{
+		get => TomlTableEntry(this, index);
+	}
+
 	public bool ContainsKey(StringView key)
 	{
 		if (mEntries != null)
@@ -93,18 +107,17 @@ public class TomlTable
 		return false;
 	}
 
-	public void Insert(StringView key, TomlValue value)
+	internal void Insert(StringView key, TomlValue value)
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
-			existingVal.Dispose();
 			mEntries[existingKey] = value;
 			MarkEntryDirty(key);
 			BindContainerMetadata(value);
 			return;
 		}
 
-		String ownedKey = new String(key);
+		String ownedKey = mStore.NewString(key);
 		mEntries[ownedKey] = value;
 		mKeyOrder.Add(ownedKey);
 
@@ -151,24 +164,124 @@ public class TomlTable
 	/// @param key The key to replace.
 	/// @param value The new value. Consumed (disposed) if the key is not found.
 	/// @return True if the key was found and replaced.
-	public bool ReplaceValue(StringView key, TomlValue value)
+	internal bool ReplaceValue(StringView key, TomlValue value)
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
-			// If the new value is semantically equal, keep clean and discard new value
+			// If semantically equal, keep clean and discard the incoming value
 			if (existingVal.IsSemanticallyEqualTo(value))
-			{
-				value.Dispose();
 				return true;
-			}
-			existingVal.Dispose();
 			mEntries[existingKey] = value;
 			MarkEntryDirty(key);
 			BindContainerMetadata(value);
 			return true;
 		}
-		value.Dispose();
 		return false;
+	}
+
+	/// @brief Set a string value for the given key. Uses the store if store-backed.
+	/// @param key The key.
+	/// @param value The string value.
+	public void SetString(StringView key, StringView value)
+	{
+		TomlValue owned = .String(mStore.NewString(value));
+		if (!ReplaceValue(key, owned))
+			Insert(key, owned);
+	}
+
+	/// @brief Set an integer value for the given key.
+	/// @param key The key.
+	/// @param value The integer value.
+	public void SetInteger(StringView key, int64 value)
+	{
+		TomlValue v = .Integer(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set a float value for the given key.
+	/// @param key The key.
+	/// @param value The float value.
+	public void SetFloat(StringView key, double value)
+	{
+		TomlValue v = .Float(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set a boolean value for the given key.
+	/// @param key The key.
+	/// @param value The boolean value.
+	public void SetBool(StringView key, bool value)
+	{
+		TomlValue v = .Bool(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set an offset date-time value for the given key.
+	/// @param key The key.
+	/// @param value The offset date-time value.
+	public void SetOffsetDateTime(StringView key, TomlOffsetDateTime value)
+	{
+		TomlValue v = .OffsetDateTime(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set a local date-time value for the given key.
+	/// @param key The key.
+	/// @param value The local date-time value.
+	public void SetLocalDateTime(StringView key, TomlLocalDateTime value)
+	{
+		TomlValue v = .LocalDateTime(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set a local date value for the given key.
+	/// @param key The key.
+	/// @param value The local date value.
+	public void SetLocalDate(StringView key, TomlLocalDate value)
+	{
+		TomlValue v = .LocalDate(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Set a local time value for the given key.
+	/// @param key The key.
+	/// @param value The local time value.
+	public void SetLocalTime(StringView key, TomlLocalTime value)
+	{
+		TomlValue v = .LocalTime(value);
+		if (!ReplaceValue(key, v))
+			Insert(key, v);
+	}
+
+	/// @brief Create a new store-backed sub-table for the given key and return it.
+	/// @param key The key.
+	/// @return The new sub-table, or null if the key already exists.
+	public TomlTable AddTable(StringView key)
+	{
+		if (ContainsKey(key))
+			return null;
+		TomlTable tbl = mStore.NewTable(.ExplicitHeader);
+		Insert(key, .Table(tbl));
+		return tbl;
+	}
+
+	/// @brief Create a new store-backed sub-array for the given key and return it.
+	/// @param key The key.
+	/// @return The new array, or null if the key already exists.
+	public TomlArray AddArray(StringView key)
+	{
+		if (ContainsKey(key))
+			return null;
+		TomlArray arr = mStore.NewArray();
+		arr.IsStatic = true;
+		Insert(key, .Array(arr));
+		return arr;
 	}
 
 	/// @brief Check if entries in this table prefer dotted-key emission.
@@ -200,18 +313,16 @@ public class TomlTable
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
-			// Remove node-ID mapping before disposing the value
+			// Remove node-ID mapping
 			if (mMetadataContext != null)
 				mMetadataContext.RemoveEntryNodeId(key);
 
-			existingVal.Dispose();
 			mEntries.Remove(existingKey);
 			for (int i = 0; i < mKeyOrder.Count; i++)
 			{
 				if (mKeyOrder[i] == existingKey)
 				{
 					mKeyOrder.RemoveAt(i);
-					delete existingKey;
 					MarkChildrenDirty();
 					return true;
 				}
@@ -358,19 +469,13 @@ public class TomlTable
 		return false;
 	}
 
-	/// @brief Remove all entries from this table, freeing owned values.
+	/// @brief Remove all entries from this table. The storage is cleared; the arena handle payload lifetime.
 	public void Clear()
 	{
 		if (mEntries != null)
-		{
-			DeleteDictionaryAndKeysAndDisposeValues!(mEntries);
-			mEntries = new Dictionary<String, TomlValue>();
-		}
+			mEntries.Clear();
 		if (mKeyOrder != null)
-		{
-			delete mKeyOrder;
-			mKeyOrder = new List<String>();
-		}
+			mKeyOrder.Clear();
 		if (mMetadataContext != null)
 		{
 			delete mMetadataContext;
@@ -397,35 +502,73 @@ public class TomlTable
 			}
 		}
 
-		// Pass 2: insert or replace
+		// Pass 2: insert or replace — copy values into the destination store if store-backed
 		for (int i = 0; i < source.mKeyOrder.Count; i++)
 		{
-			String key = source.mKeyOrder[i];
-			TomlValue val = source.mEntries[key];
+			StringView key = source.mKeyOrder[i];
+			if (!source.TryGetValue(key, let val))
+				continue;
 
 			if (ContainsKey(key))
 			{
 				if (onConflict == .Overwrite)
-					ReplaceValue(key, val.Clone());
-				// .Skip: do nothing, keep existing
+				{
+					TomlValue copy = val.CloneInto(mStore);
+					ReplaceValue(key, copy);
+				}
+				// .Skip: do nothing, keep existing value
 			}
 			else
 			{
-				Insert(key, val.Clone());
+				TomlValue copy = val.CloneInto(mStore);
+				Insert(key, copy);
 			}
 		}
 		return .Ok;
 	}
 
-	public TomlTable Clone()
+	/// Recursively seal this inline table and all inline-table descendants created inside it.
+	/// Needed because dotted keys inside inline tables create sub-tables (with .InlineTable origin)
+	/// that are not automatically sealed when the outer inline table closes.
+	internal void SealInlineRecursively()
 	{
-		TomlTable result = new TomlTable(mOrigin);
-		result.mIsInlineSealed = mIsInlineSealed;
+		if (!mIsInlineSealed)
+			mIsInlineSealed = true;
+
 		for (int i = 0; i < mKeyOrder.Count; i++)
 		{
 			String key = mKeyOrder[i];
-			TomlValue val = mEntries[key];
-			result.Insert(key, val.Clone());
+			switch (mEntries[key])
+			{
+			case .Table(let tbl):
+				if (tbl != null && tbl.mOrigin == .InlineTable)
+					tbl.SealInlineRecursively();
+			case .Array(let arr):
+				if (arr != null)
+				{
+					for (int j = 0; j < arr.Count; j++)
+					{
+						if (arr.GetValue(j) case .Table(let elemTbl) && elemTbl != null && elemTbl.mOrigin == .InlineTable)
+							elemTbl.SealInlineRecursively();
+					}
+				}
+			default:
+			}
+		}
+	}
+
+	/// @brief Deep-copy this table and its contents into the given store.
+	/// @param store The store to allocate into.
+	/// @return A store-owned copy.
+	internal TomlTable CloneInto(TomlDocumentStore store)
+	{
+		TomlTable result = store.NewTable(mOrigin);
+		result.mIsInlineSealed = mIsInlineSealed;
+		for (int i = 0; i < mKeyOrder.Count; i++)
+		{
+			StringView key = mKeyOrder[i];
+			if (TryGetValue(key, let val))
+				result.Insert(key, val.CloneInto(store));
 		}
 		return result;
 	}
@@ -503,5 +646,233 @@ public class TomlTable
 			if (style != null)
 				style.mDirtyFlags |= .Children;
 		}
+	}
+
+	// ================================================================
+	// Entry proxy helpers
+	// ================================================================
+
+	/// @brief Remove the entry at the given insertion index.
+	internal void RemoveAt(int index)
+	{
+		StringView key = mKeyOrder[index];
+		if (mMetadataContext != null)
+			mMetadataContext.RemoveEntryNodeId(key);
+		mEntries.Remove(mKeyOrder[index]);
+		mKeyOrder.RemoveAt(index);
+		MarkChildrenDirty();
+	}
+
+	/// @brief Set a scalar value at the given index via safe input wrapper.
+	internal void SetValueAt(int index, TomlInputValue value)
+	{
+		var slot = value;
+		if (!slot.IsValid)
+			Runtime.FatalError("Invalid TomlInputValue");
+		TomlValue stored = slot.Materialize(mStore);
+		StringView key = mKeyOrder[index];
+		MarkEntryDirty(key);
+		mEntries[mKeyOrder[index]] = stored;
+		BindContainerMetadata(stored);
+	}
+
+	/// @brief Replace the entry at the given index with a new store-backed table.
+	internal TomlTable SetTableAt(int index)
+	{
+		TomlTable tbl = mStore.NewTable(.InlineTable);
+		TomlValue val = .Table(tbl);
+		mEntries[mKeyOrder[index]] = val;
+		MarkEntryDirty(mKeyOrder[index]);
+		BindContainerMetadata(val);
+		return tbl;
+	}
+
+	/// @brief Replace the entry at the given index with a new store-backed array.
+	internal TomlArray SetArrayAt(int index)
+	{
+		TomlArray arr = mStore.NewArray();
+		arr.IsStatic = true;
+		TomlValue val = .Array(arr);
+		mEntries[mKeyOrder[index]] = val;
+		MarkEntryDirty(mKeyOrder[index]);
+		BindContainerMetadata(val);
+		return arr;
+	}
+
+	/// @brief Rename the entry at the given index.
+	/// @return .Ok on success, or .Err if the new key already exists.
+	internal Result<void, TomlParseError> RenameAt(int index, StringView newKey)
+	{
+		if (ContainsKey(newKey))
+			return .Err(TomlParseError(.DuplicateKey, scope $"Key '{newKey}' already exists", 0, 0, 0));
+		StringView oldKey = mKeyOrder[index];
+		TomlValue val = mEntries[mKeyOrder[index]];
+		if (mEntries.TryGetAlt(oldKey, let existingKey, let _))
+		{
+			// Preserve metadata node ID: move it from oldKey to newKey
+			TomlNodeId nodeId = .Invalid;
+			if (mMetadataContext != null)
+				mMetadataContext.TryGetEntryNodeId(oldKey, out nodeId);
+
+			mEntries.Remove(existingKey);
+
+			// Re-register node ID under new key
+			if (mMetadataContext != null)
+			{
+				mMetadataContext.RemoveEntryNodeId(oldKey);
+				if (nodeId.IsValid)
+					mMetadataContext.SetEntryNodeId(newKey, nodeId);
+			}
+		}
+		// Insert the value with the new key, preserving position
+		String ownedKey = mStore.NewString(newKey);
+		mEntries[ownedKey] = val;
+		mKeyOrder[index] = ownedKey;
+		MarkEntryDirty(ownedKey);
+		return .Ok;
+	}
+}
+
+/// @brief A key/value entry proxy returned by the table indexer.
+/// Provides typed read access, safe scalar assignment, table/array replacement,
+/// key rename, and removal without exposing raw `TomlValue`.
+public struct TomlTableEntry
+{
+	private TomlTable mTable;
+	private int mIndex;
+
+	internal this(TomlTable table, int index)
+	{
+		mTable = table;
+		mIndex = index;
+	}
+
+	/// @brief The entry's key.
+	public StringView Key => mTable.GetKeyAt(mIndex);
+
+	// ---- Typed readers ----
+
+	/// @brief Read the entry value as a string.
+	/// @param value On success, the string value.
+	/// @return True if the entry holds a String.
+	public bool TryGetString(out StringView value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetString(out value);
+	}
+
+	/// @brief Read the entry value as an integer.
+	/// @param value On success, the integer value.
+	/// @return True if the entry holds an Integer.
+	public bool TryGetInteger(out int64 value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetInteger(out value);
+	}
+
+	/// @brief Read the entry value as a float.
+	/// @param value On success, the float value.
+	/// @return True if the entry holds a Float.
+	public bool TryGetFloat(out double value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetFloat(out value);
+	}
+
+	/// @brief Read the entry value as a boolean.
+	/// @param value On success, the boolean value.
+	/// @return True if the entry holds a Bool.
+	public bool TryGetBool(out bool value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetBool(out value);
+	}
+
+	/// @brief Read the entry value as an offset date-time.
+	/// @param value On success, the offset date-time value.
+	/// @return True if the entry holds an OffsetDateTime.
+	public bool TryGetOffsetDateTime(out TomlOffsetDateTime value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetOffsetDateTime(out value);
+	}
+
+	/// @brief Read the entry value as a local date-time.
+	/// @param value On success, the local date-time value.
+	/// @return True if the entry holds a LocalDateTime.
+	public bool TryGetLocalDateTime(out TomlLocalDateTime value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetLocalDateTime(out value);
+	}
+
+	/// @brief Read the entry value as a local date.
+	/// @param value On success, the local date value.
+	/// @return True if the entry holds a LocalDate.
+	public bool TryGetLocalDate(out TomlLocalDate value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetLocalDate(out value);
+	}
+
+	/// @brief Read the entry value as a local time.
+	/// @param value On success, the local time value.
+	/// @return True if the entry holds a LocalTime.
+	public bool TryGetLocalTime(out TomlLocalTime value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetLocalTime(out value);
+	}
+
+	/// @brief Read the entry value as a table reference.
+	/// @param value On success, the table reference.
+	/// @return True if the entry holds a Table.
+	public bool TryGetTable(out TomlTable value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetTable(out value);
+	}
+
+	/// @brief Read the entry value as an array reference.
+	/// @param value On success, the array reference.
+	/// @return True if the entry holds an Array.
+	public bool TryGetArray(out TomlArray value)
+	{
+		return mTable.GetValueAt(mIndex).TryGetArray(out value);
+	}
+
+	// ---- Safe scalar assignment ----
+
+	/// @brief Assign a scalar value to this entry via implicit conversion.
+	public TomlInputValue Value
+	{
+		set
+		{
+			mTable.SetValueAt(mIndex, value);
+		}
+	}
+
+	// ---- Container replacement ----
+
+	/// @brief Replace this entry with a new store-backed table and return it.
+	/// @return The new table.
+	public TomlTable SetTable()
+	{
+		return mTable.SetTableAt(mIndex);
+	}
+
+	/// @brief Replace this entry with a new store-backed array and return it.
+	/// @return The new array.
+	public TomlArray SetArray()
+	{
+		return mTable.SetArrayAt(mIndex);
+	}
+
+	// ---- Key rename ----
+
+	/// @brief Rename this entry's key.
+	/// @return .Ok on success, or .Err if the new key already exists.
+	public Result<void, TomlParseError> Rename(StringView newKey)
+	{
+		return mTable.RenameAt(mIndex, newKey);
+	}
+
+	// ---- Deletion ----
+
+	/// @brief Remove this entry from the table.
+	public void Remove()
+	{
+		mTable.RemoveAt(mIndex);
 	}
 }

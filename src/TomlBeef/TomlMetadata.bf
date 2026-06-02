@@ -461,6 +461,21 @@ internal class TomlContainerMetadataContext
 		if (mItemNodeIds != null)
 			mItemNodeIds.Add(nodeId);
 	}
+
+	/// @brief Remove the node ID at the given index, shifting later IDs down.
+	/// Called after array element deletion at that index.
+	internal void RemoveItemNodeId(int index)
+	{
+		if (mItemNodeIds != null && index >= 0 && index < mItemNodeIds.Count)
+			mItemNodeIds.RemoveAt(index);
+	}
+
+	/// @brief Clear all array element node IDs.
+	internal void ClearItemNodeIds()
+	{
+		if (mItemNodeIds != null)
+			mItemNodeIds.Clear();
+	}
 }
 
 // ================================================================

@@ -228,7 +228,7 @@ static class TomlTest
 	{
 		if (a.Count != b.Count) return false;
 		for (int i = 0; i < a.Count; i++)
-			if (!TomlValueEquals(a[i], b[i])) return false;
+			if (!TomlValueEquals(a.GetValue(i), b.GetValue(i))) return false;
 		return true;
 	}
 
@@ -739,7 +739,7 @@ static class TomlTest
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
 
 		// Mutate a value
-		doc.RootTable.ReplaceValue("a", .String(new String("changed")));
+		doc.RootTable.SetString("a", "changed");
 
 		// Write - changed string should use document's literal style
 		String output = scope String();
@@ -1145,7 +1145,7 @@ static class TomlTest
 
 		// Remove and reinsert with a new value
 		doc.RootTable.Remove("a");
-		doc.RootTable.Insert("a", .String(new String("new")));
+		doc.RootTable.SetString("a", "new");
 
 		// Writer should emit 'new', not 'old'
 		String output = scope String();
@@ -1648,7 +1648,7 @@ static class TomlTest
 		}
 
 		doc.RootTable.TryGetArray("arr", var arr);
-		arr[1] = .Integer(3);
+		arr[1] = 3;
 
 		String output = scope String();
 		doc.Write(output);
@@ -1694,7 +1694,7 @@ static class TomlTest
 		Test.Assert(style.mDirtyFlags == .None);
 
 		// Replace with same value
-		doc.RootTable.ReplaceValue("s", .String(new String("original")));
+		doc.RootTable.SetString("s", "original");
 		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .None); // still clean
 	}
 
@@ -1808,7 +1808,7 @@ static class TomlTest
 		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .None);
 
 		// Mutate the value
-		doc.RootTable.ReplaceValue("s", .String(new String("changed")));
+		doc.RootTable.SetString("s", "changed");
 
 		// Node should now be marked dirty
 		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .Value);
@@ -3251,7 +3251,7 @@ static class TomlTest
 
 		// Mutate only 'a' — 'b' should stay clean
 		// ReplaceValue does not allocate metadata, so pointers remain valid.
-		doc.RootTable.ReplaceValue("a", .String(new String("changed")));
+		doc.RootTable.SetString("a", "changed");
 
 		Test.Assert(aStyle.mDirtyFlags == .Value, "Mutated entry should be dirty");
 		Test.Assert(bStyle.mDirtyFlags == .None, "Sibling should remain clean");
@@ -3501,6 +3501,394 @@ static class TomlTest
 			Test.Assert(false, scope $"Parse failed: {e3.mMessage}");
 		}
 		Test.Assert(doc.GetPath(segs) case .Ok(let v4) && v4.IsInteger && v4.AsInteger == 99);
+	}
+
+	// ================================================================
+	// Inline table recursive sealing tests
+	// ================================================================
+
+	[Test]
+	public static void InlineTableSeal_DottedKeyChildNotExtendable()
+	{
+		// Dotted key creates sub-table inside inline table — must not be extendable later
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "type = { name.first = \"Nail\" }\ntype.name.last = \"bad\"";
+		switch (doc.Read(input))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected error — inline table dotted-key child extended after close");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .InlineTableSealed,
+				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void InlineTableSeal_DottedKeyChildNotExtendable2()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "a = { b.c = 1 }\na.b.d = 2";
+		switch (doc.Read(input))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected error — inline table child extended");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .InlineTableSealed,
+				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void InlineTableSeal_NestedInlineTableChildNotExtendable()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "a = { b = { c = 1 } }\na.b.d = 2";
+		switch (doc.Read(input))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected error — nested inline table child extended");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .InlineTableSealed,
+				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void InlineTableSeal_DottedKeyWithinInlineTableStillValid()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "a = { b.c = 1, b.d = 2 }";
+		if (doc.Read(input) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Valid inline table with dotted keys should parse: {e.mMessage}");
+		}
+		// Verify values are accessible
+		Test.Assert(doc.TryGetInteger("a.b.c", var c) && c == 1);
+		Test.Assert(doc.TryGetInteger("a.b.d", var d) && d == 2);
+	}
+
+	// ================================================================
+	[Test]
+	public static void InlineTableSeal_NestedInlineTablesStillValid()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "a = { b = { c = 1, d = 2 } }";
+		if (doc.Read(input) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Valid nested inline table should parse: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetInteger("a.b.c", var c) && c == 1);
+		Test.Assert(doc.TryGetInteger("a.b.d", var d) && d == 2);
+	}
+
+	[Test]
+	public static void InlineTableSeal_HeaderExtensionOfDottedChildRejected()
+	{
+		// Using [header] syntax to extend an inline-table child must also be rejected
+		var doc = new TomlDocument();
+		defer delete doc;
+		let input = "type = { name.first = \"Nail\" }\n\n[type.name]\nlast = \"bad\"";
+		switch (doc.Read(input))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected error — inline table child extended via [header]");
+		case .Err(let e):
+			defer e.Dispose();
+			// [header] redefines the inline table, caught as DuplicateTable before sealing check.
+			// Either error is acceptable — both prevent extending inline-table children.
+			Test.Assert(e.mKind == .DuplicateTable,
+				scope $"Expected DuplicateTable, got {e.mKind}: {e.mMessage}");
+		}
+	}
+
+	// ================================================================
+	// Typed setter and construction tests
+	// ================================================================
+
+	[Test]
+	public static void TypedSetters_DocumentLevel()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+
+		// Build a document without new String, new TomlTable, etc.
+		doc.SetString("title", "Hello");
+		doc.SetInteger("count", 42);
+		doc.SetFloat("pi", 3.14);
+		doc.SetBool("enabled", true);
+
+		// Verify via typed getters
+		Test.Assert(doc.TryGetString("title", var title) && title == "Hello");
+		Test.Assert(doc.TryGetInteger("count", var count) && count == 42);
+		Test.Assert(doc.TryGetFloat("pi", var pi) && pi > 3.1 && pi < 3.2);
+		Test.Assert(doc.TryGetBool("enabled", var enabled) && enabled == true);
+
+		// Write and re-parse
+		String output = scope String();
+		doc.Write(output);
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc2.TryGetString("title", var title2) && title2 == "Hello");
+	}
+
+	[Test]
+	public static void TypedSetters_TableAndArrayLevel()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+
+		doc.RootTable.SetString("name", "test");
+		doc.RootTable.SetInteger("value", 99);
+
+		Test.Assert(doc.TryGetString("name", var n) && n == "test");
+		Test.Assert(doc.TryGetInteger("value", var v) && v == 99);
+
+		// Container creation through the store
+		let arr = doc.RootTable.AddArray("items");
+		Test.Assert(arr != null);
+		arr.AddString("a");
+		arr.AddInteger(1);
+		arr.AddBool(true);
+
+		Test.Assert(doc.TryGetArray("items", var a1) && a1.Count == 3);
+
+		// Nested container: table inside table
+		let sub = doc.RootTable.AddTable("cfg");
+		Test.Assert(sub != null);
+		sub.SetString("host", "localhost");
+		sub.SetInteger("port", 8080);
+		Test.Assert(doc.TryGetString("cfg.host", var h) && h == "localhost");
+	}
+
+	// ================================================================
+	// Phase 10 — Safe array mutation tests
+	// ================================================================
+
+	[Test]
+	public static void Phase10_ArrayAssignmentAndAdd()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+
+		// Create array via AddArray
+		var arr = doc.AddArray("items");
+
+		// Add via implicit conversion
+		arr.Add("hello");
+		arr.Add(42);
+		arr.Add(3.14);
+		arr.Add(true);
+		arr.Add(TomlLocalDate(2025, 1, 1));
+
+		Test.Assert(arr.Count == 5);
+
+		// Indexer assignment
+		arr[0] = "changed";
+		arr[1] = 99;
+		arr[3] = false;
+
+		// Typed reads — declare out variables first
+		StringView s = ?;
+		Test.Assert(arr.TryGetString(0, out s) && s == "changed");
+		int64 i = ?;
+		Test.Assert(arr.TryGetInteger(1, out i) && i == 99);
+		double f = ?;
+		Test.Assert(arr.TryGetFloat(2, out f) && f > 3.1 && f < 3.2);
+		bool b = ?;
+		Test.Assert(arr.TryGetBool(3, out b) && b == false);
+		StringView s4 = ?;
+		Test.Assert(arr.TryGetString(4, out s4) == false); // index 4 is a date, not string
+
+		// Write and re-parse
+		String output = scope String();
+		doc.Write(output);
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc2.TryGetArray("items", var a2) && a2.Count == 5);
+	}
+
+	[Test]
+	public static void Phase10_SetTableAndSetArray()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var arr = doc.AddArray("data");
+
+		// Placeholder elements
+		arr.Add(0);
+		arr.Add(0);
+
+		// Replace with table at index 0
+		var tbl = arr.SetTable(0);
+		tbl.SetString("name", "replacement");
+		StringView n = ?;
+		Test.Assert(arr.TryGetTable(0, var t) && t.TryGetString("name", out n) && n == "replacement");
+
+		// Replace with array at index 1
+		var nested = arr.SetArray(1);
+		nested.AddString("x");
+		nested.AddInteger(1);
+		Test.Assert(arr.TryGetArray(1, var a) && a.Count == 2);
+
+		// Write and re-parse
+		String output = scope String();
+		doc.Write(output);
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc2.TryGetArray("data", var a2) && a2.Count == 2);
+	}
+
+	[Test]
+	public static void Phase10_RemoveAtAndClear()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var arr = doc.AddArray("items");
+		arr.Add(1);
+		arr.Add(2);
+		arr.Add(3);
+		arr.Add(4);
+
+		Test.Assert(arr.Count == 4);
+
+		arr.RemoveAt(1); // removes 2
+		Test.Assert(arr.Count == 3);
+		int64 v = ?;
+		Test.Assert(arr.TryGetInteger(1, out v) && v == 3);
+
+		arr.Clear();
+		Test.Assert(arr.Count == 0);
+
+		// Write should not crash
+		String output = scope String();
+		doc.Write(output);
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc2.TryGetArray("items", var a2) == false || a2.Count == 0);
+	}
+
+	// ================================================================
+	// Phase 11 — Table entry proxy tests
+	// ================================================================
+
+	[Test]
+	public static void Phase11_TableEntryReadAndAssign()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var root = doc.RootTable;
+
+		root.SetString("name", "test");
+		root.SetInteger("count", 42);
+		root.SetBool("flag", true);
+
+		// Read via entry proxy
+		var e0 = root[0];
+		Test.Assert(e0.Key == "name");
+		StringView s = ?;
+		Test.Assert(e0.TryGetString(out s) && s == "test");
+
+		// Assign via entry proxy
+		var e1 = root[1];
+		Test.Assert(e1.Key == "count");
+		e1.Value = 99;
+		int64 v = ?;
+		Test.Assert(root[1].TryGetInteger(out v) && v == 99);
+
+		// Remove via entry proxy
+		int countBefore = root.Count;
+		root[2].Remove();
+		Test.Assert(root.Count == countBefore - 1);
+
+		// Rename
+		switch (root[0].Rename("title"))
+		{
+		case .Err(let re):
+			defer re.Dispose();
+			Test.Assert(false, "Rename failed");
+		case .Ok:
+		}
+		Test.Assert(root[0].Key == "title");
+		Test.Assert(root.TryGetString("title", var t) && t == "test");
+		Test.Assert(!root.ContainsKey("name"));
+	}
+
+	[Test]
+	public static void Phase11_TableEntrySetTableAndArray()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var root = doc.RootTable;
+
+		root.SetInteger("a", 0);
+		root.SetInteger("b", 0);
+
+		// Replace with table
+		var tbl = root[0].SetTable();
+		tbl.SetString("inner", "value");
+		StringView s = ?;
+		Test.Assert(root.TryGetTable("a", var t) && t.TryGetString("inner", out s) && s == "value");
+
+		// Replace with array
+		var arr = root[1].SetArray();
+		arr.Add(1);
+		arr.Add(2);
+		Test.Assert(root.TryGetArray("b", var a) && a.Count == 2);
+
+		// Write and re-parse
+		String output = scope String();
+		doc.Write(output);
+		var doc2 = new TomlDocument();
+		defer delete doc2;
+		if (doc2.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc2.TryGetTable("a", var t2) && t2.Count == 1);
+		Test.Assert(doc2.TryGetArray("b", var a2) && a2.Count == 2);
+	}
+
+	[Test]
+	public static void Phase11_DuplicateRenameRejected()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		var root = doc.RootTable;
+		root.SetString("a", "x");
+		root.SetString("b", "y");
+
+		Test.Assert(root[0].Rename("b") case .Err);
 	}
 }
 

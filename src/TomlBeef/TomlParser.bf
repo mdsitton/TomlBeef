@@ -11,6 +11,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TomlPathResolver mPathResolver;
 	private TomlVersion mVersion;
 	private TomlDocumentMetadata mMetadata;
+	private TomlDocumentStore mStore;
 	private int mDepth = 0;
 	private const int mMaxDepth = 256;
 
@@ -78,6 +79,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	public void SetMetadata(TomlDocumentMetadata metadata)
 	{
 		mMetadata = metadata;
+	}
+
+	public void SetStore(TomlDocumentStore store)
+	{
+		mStore = store;
 	}
 
 	// ================================================================
@@ -351,7 +357,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		TomlNodeId nodeId = .Invalid;
 		if (mPathResolver.SetKeyValue(keyPath, value, &nodeId) case .Err(let insertErr))
 		{
-			value.Dispose();
+
 			return .Err(insertErr);
 		}
 
@@ -606,7 +612,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '"')
 			{
 				mCursor.AdvanceByte();
-				return TomlValue.String(result);
+				return FinishStringValue(result);
 			}
 			if (b == '\\')
 			{
@@ -663,7 +669,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else if (quoteCount == 4)
 				{
@@ -673,7 +679,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte(); // consuming closing
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else if (quoteCount == 5)
 				{
@@ -685,7 +691,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte(); // consuming closing
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else
 				{
@@ -832,7 +838,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '\'')
 			{
 				mCursor.AdvanceByte();
-				return TomlValue.String(result);
+				return FinishStringValue(result);
 			}
 			if (b == '\r' || b == '\n')
 			{
@@ -875,7 +881,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else if (quoteCount == 4)
 				{
@@ -884,7 +890,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else if (quoteCount == 5)
 				{
@@ -895,7 +901,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return TomlValue.String(result);
+					return FinishStringValue(result);
 				}
 				else
 				{
@@ -1533,7 +1539,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		int startLine = mCursor.Line;
-		TomlArray arr = new TomlArray(true);
+		TomlArray arr = mStore.NewArray(true);
 		arr.IsStatic = true;
 
 		// Array-local pending comment list for PreserveStyle mode
@@ -1554,7 +1560,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		bool unusedBlank = false;
 		if (SkipWsAndCaptureComments(arrayPendingComments, out unusedBlank) case .Err(let e))
 		{
-			delete arr;
+			
 			return .Err(e);
 		}
 		if (mCursor.PeekByte() == ']')
@@ -1582,7 +1588,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			bool unusedBlank2 = false;
 			if (SkipWsAndCaptureComments(arrayPendingComments, out unusedBlank2) case .Err(let wsErr))
 			{
-				delete arr;
+				
 				return .Err(wsErr);
 			}
 
@@ -1618,7 +1624,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
-				delete arr;
+				
 				return .Err(valErr);
 			case .Ok(let val):
 				arr.Add(val);
@@ -1656,7 +1662,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			bool afterValBlank = false;
 			if (SkipWsAndCaptureComments(arrayPendingComments, out afterValBlank) case .Err(let trailErr))
 			{
-				delete arr;
+				
 				return .Err(trailErr);
 			}
 
@@ -1672,7 +1678,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					if (CaptureCommentText(trailingText) case .Err(let tcErr))
 					{
 						delete trailingText;
-						delete arr;
+						
 						return .Err(tcErr);
 					}
 					if (elemNodeId.IsValid && mMetadata != null)
@@ -1695,7 +1701,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				bool afterCommaBlank = false;
 				if (SkipWsAndCaptureComments(arrayPendingComments, out afterCommaBlank) case .Err(let commaWsErr))
 				{
-					delete arr;
+					
 					return .Err(commaWsErr);
 				}
 				// Track blank line for the next element
@@ -1752,7 +1758,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
-				delete arr;
+				
 				return .Err(Error(.UnexpectedToken, "Expected ',' or ']' in array"));
 			}
 		}
@@ -1775,17 +1781,17 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseInlineTable()
 	{
 		mCursor.AdvanceByte();
-		TomlTable tbl = new TomlTable(.InlineTable, true);
+		TomlTable tbl = mStore.NewTable(.InlineTable, true);
 
 		if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 		{
-			delete tbl;
+			
 			return .Err(e);
 		}
 		if (mCursor.PeekByte() == '}')
 		{
 			mCursor.AdvanceByte();
-			tbl.IsInlineSealed = true;
+			tbl.SealInlineRecursively();
 			return TomlValue.Table(tbl);
 		}
 
@@ -1793,7 +1799,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let wsErr))
 			{
-				delete tbl;
+				
 				return .Err(wsErr);
 			}
 
@@ -1801,14 +1807,14 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			defer { ClearAndDeleteItems!(keyPath); }
 			if (ParseKeyPath(keyPath) case .Err(let keyErr))
 			{
-				delete tbl;
+				
 				return .Err(keyErr);
 			}
 
 			mCursor.SkipWhitespace();
 			if (mCursor.PeekByte() != '=')
 			{
-				delete tbl;
+				
 				return .Err(Error(.UnexpectedToken, "Expected '=' in inline table"));
 			}
 			mCursor.AdvanceByte();
@@ -1817,15 +1823,15 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
-				delete tbl;
+				
 				return .Err(valErr);
 			case .Ok(let val):
 				if (keyPath.Count == 1)
 				{
 					if (tbl.ContainsKey(keyPath[0]))
 					{
-						val.Dispose();
-						delete tbl;
+
+						
 						return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
 					}
 					tbl.Insert(keyPath[0], val);
@@ -1834,8 +1840,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				{
 					if (InsertDottedKeyIntoTable(tbl, keyPath, val) case .Err(let insertErr))
 					{
-						val.Dispose();
-						delete tbl;
+
+						
 						return .Err(insertErr);
 					}
 				}
@@ -1843,7 +1849,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let trailWsErr))
 			{
-				delete tbl;
+				
 				return .Err(trailWsErr);
 			}
 
@@ -1855,20 +1861,20 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				// Trailing comma: reject in v1.0
 				if (mVersion == .V1_0 && mCursor.PeekByte() == '}')
 				{
-					delete tbl;
+					
 					return .Err(Error(.UnexpectedToken,
 						"Trailing comma in inline table requires TOML v1.1"));
 				}
 				if (SkipWsAndComments(mVersion != .V1_0) case .Err(let commaWsErr))
 				{
-					delete tbl;
+					
 					return .Err(commaWsErr);
 				}
 				if (mCursor.PeekByte() == '}')
 				{
 					tbl.mHasTrailingComma = true;
 					mCursor.AdvanceByte();
-					tbl.IsInlineSealed = true;
+					tbl.SealInlineRecursively();
 					return TomlValue.Table(tbl);
 				}
 				continue;
@@ -1880,12 +1886,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
-				delete tbl;
+				
 				return .Err(Error(.UnexpectedToken, "Expected ',' or '}' in inline table"));
 			}
 		}
 
-		tbl.IsInlineSealed = true;
+		tbl.SealInlineRecursively();
 		return TomlValue.Table(tbl);
 	}
 
@@ -1914,7 +1920,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
-				TomlTable newTbl = new TomlTable(.InlineTable, true);
+				TomlTable newTbl = mStore.NewTable(.InlineTable, true);
 				current.Insert(key, TomlValue.Table(newTbl));
 				current = newTbl;
 			}
@@ -2881,6 +2887,15 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mArrayStyleCount_Multiline++;
 		else
 			mArrayStyleCount_Inline++;
+	}
+
+	/// @brief Adopt a heap-allocated string into the document store.
+	/// Frees the original string after copying into the arena.
+	private TomlValue FinishStringValue(String result)
+	{
+		String owned = mStore.NewString(result);
+		delete result;
+		return .String(owned);
 	}
 
 	private TomlParseError Error(TomlErrorKind kind, StringView message)
