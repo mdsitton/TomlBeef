@@ -535,7 +535,11 @@ static class TomlWriterImpl
 			return;
 		}
 
-		// Scientific notation
+		// Scientific notation.
+		// Do NOT use fmt.mPrecision for the format string — it controls significant digits
+		// and would round the value to match the original source's precision instead of
+		// preserving the actual numeric value. Use a roundtrip format and let
+		// ReformatExponent handle only the exponent style (case, sign, digit width).
 		if (fmt.mStyle == .Scientific)
 		{
 			if (val == 0.0 && (1.0 / val) < 0.0)
@@ -543,13 +547,11 @@ static class TomlWriterImpl
 				outStr.Append("-0.0");
 				return;
 			}
+			// Choose the exponent character for case preservation; roundtrip precision for value fidelity.
 			String format = scope String();
 			format.Append(fmt.mUppercaseExponent ? 'E' : 'e');
-			if (fmt.mPrecision >= 0)
-				fmt.mPrecision.ToString(format);
 			String formatted = scope String();
 			val.ToString(formatted, format, null);
-			// Reformat exponent: handle sign, case, and digit width
 			ReformatExponent(formatted, fmt, outStr);
 			return;
 		}
@@ -559,7 +561,8 @@ static class TomlWriterImpl
 	}
 
 	/// Reformat a scientific notation string to match captured exponent style.
-	/// Handles uppercase/lowercase E, explicit plus sign, and exponent digit width.
+	/// Handles uppercase/lowercase E, explicit plus sign, exponent digit width,
+	/// and strips unnecessary trailing zeros from the mantissa.
 	private static void ReformatExponent(StringView formatted, TomlFloatFormat fmt, String outStr)
 	{
 		// Find the exponent marker
@@ -578,8 +581,16 @@ static class TomlWriterImpl
 			return;
 		}
 
-		// Append mantissa (everything up to and including the exponent marker)
-		outStr.Append(StringView(&formatted[0], expPos + 1));
+		// Strip trailing zeros from mantissa (e.g. 2.000000 → 2, 2.500000 → 2.5)
+		int mantissaEnd = expPos - 1;
+		while (mantissaEnd > 0 && formatted[mantissaEnd] == '0')
+			mantissaEnd--;
+		if (mantissaEnd > 0 && formatted[mantissaEnd] == '.')
+			mantissaEnd--; // remove trailing dot too
+		outStr.Append(StringView(&formatted[0], mantissaEnd + 1));
+
+		// Emit exponent marker with captured case
+		outStr.Append(fmt.mUppercaseExponent ? 'E' : 'e');
 
 		// Parse exponent sign and digits
 		int expStart = expPos + 1;
@@ -608,11 +619,14 @@ static class TomlWriterImpl
 			outStr.Append('+');
 		}
 
-		// Pad exponent digits to match captured minimum width. Never trim: that would change the value.
+		// Pad or trim exponent digits to match captured width.
 		if (fmt.mExponentDigits > 0)
 		{
 			while (expDigits.Length < fmt.mExponentDigits)
 				expDigits.Insert(0, '0');
+			// Trim excess leading zeros (safe: they don't change the value)
+			while (expDigits.Length > fmt.mExponentDigits && expDigits[0] == '0')
+				expDigits.Remove(0, 1);
 		}
 
 		outStr.Append(expDigits);
