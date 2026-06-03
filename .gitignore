@@ -9,3 +9,17 @@ recovery/
 *.dylib
 *.dll
 *.exe
+
+test-toml-mismatches.log
+
+test-roundtrip.log
+
+test-roundtrip-baseline.txt
+
+test-official-toml-1.0.log
+
+test-official-toml-1.1.log
+
+BeefSpace_User.toml
+
+BeefSpace_Lock.toml
