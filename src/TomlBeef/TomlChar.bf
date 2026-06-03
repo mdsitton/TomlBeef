@@ -157,37 +157,61 @@ public static class TomlChar
 		start = 0;
 
 		int i = 0;
+		int line = 1;
+		int column = 1;
+
 		while (i < input.Length)
 		{
 			uint8 b = (uint8)input[i];
-			if (b < 0x80) { i++; continue; }
+			if (b < 0x80)
+			{
+				if (b == (uint8)'\n')
+				{
+					line++;
+					column = 1;
+				}
+				else if (b == (uint8)'\r')
+				{
+					line++;
+					column = 1;
+					// Treat \r\n as a single newline
+					if (i + 1 < input.Length && (uint8)input[i + 1] == (uint8)'\n')
+						i++;
+				}
+				else
+				{
+					column++;
+				}
+				i++;
+				continue;
+			}
 			int seqLen = Utf8SequenceLength((char8)b);
 			if (seqLen == 0)
-				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", 1, 1, i));
+				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", line, column, i));
 
 			if (i + seqLen > input.Length)
-				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", 1, 1, i));
+				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", line, column, i));
 
 			// Validate continuation bytes
 			for (int j = 1; j < seqLen; j++)
 			{
 				if (((uint8)input[i + j] & 0xC0) != 0x80)
-					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", 1, 1, i + j));
+					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", line, column + j, i + j));
 			}
 
 			char32 cp = DecodeAt(input, i, seqLen);
 			uint32 ucp = (uint32)cp;
 
 			// Validate overlong sequences and surrogate range
-			uint32 minCp = seqLen == 2 ? 0x80 : seqLen == 3 ? 0x800 : 0x10000;
-			if (ucp < minCp)
-				return .Err(TomlParseError(.InvalidUtf8, "Overlong UTF-8 sequence", 1, 1, i));
+			if (seqLen == 2 ? ucp < 0x80 : seqLen == 3 ? ucp < 0x800 : ucp < 0x10000)
+				return .Err(TomlParseError(.InvalidUtf8, "Overlong UTF-8 sequence", line, column, i));
 			if (ucp >= 0xD800 && ucp <= 0xDFFF)
-				return .Err(TomlParseError(.InvalidUtf8, "UTF-8 surrogate pair not allowed", 1, 1, i));
+				return .Err(TomlParseError(.InvalidUtf8, "UTF-8 surrogate pair not allowed", line, column, i));
 			if (ucp > 0x10FFFF)
-				return .Err(TomlParseError(.InvalidUtf8, "Codepoint beyond U+10FFFF", 1, 1, i));
+				return .Err(TomlParseError(.InvalidUtf8, "Codepoint beyond U+10FFFF", line, column, i));
 
 			i += seqLen;
+			column++;
 		}
 
 		// Skip UTF-8 BOM if present

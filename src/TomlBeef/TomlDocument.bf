@@ -32,6 +32,28 @@ public struct TomlReadConfig
 	public MergeConflict OnConflict = .Error;
 	public TomlVersion Version = .V1_1;
 	public TomlMetadataMode MetadataMode = .None;
+
+	/// @brief Maximum nesting depth (tables / arrays). 0 = unlimited.
+	/// Default of 256 matches historical behavior.
+	public int MaxDepth = 256;
+
+	/// @brief Maximum input size in bytes. 0 = unlimited.
+	public int MaxInputBytes = 0;
+
+	/// @brief Maximum string length in bytes. 0 = unlimited.
+	public int MaxStringBytes = 0;
+
+	/// @brief Maximum array items. 0 = unlimited.
+	public int MaxArrayItems = 0;
+
+	/// @brief Maximum table entries. 0 = unlimited.
+	public int MaxTableEntries = 0;
+
+	/// @brief Maximum dotted/bracketed key path segments. 0 = unlimited.
+	public int MaxPathSegments = 0;
+
+	/// @brief Maximum total value nodes (scalars + tables + arrays). 0 = unlimited.
+	public int MaxNodes = 0;
 }
 
 /// Configuration for writing a document to a TOML string.
@@ -102,6 +124,9 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(StringView input, TomlReadConfig config)
 	{
+		if (config.MaxInputBytes > 0 && input.Length > config.MaxInputBytes)
+			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {input.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
+
 		int start = 0;
 		if (TomlChar.ValidateUtf8(input, out start) case .Err(let utf8Err))
 			return ReadFailure(utf8Err, config);
@@ -124,6 +149,9 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadBytes(Span<uint8> data, TomlReadConfig config)
 	{
+		if (config.MaxInputBytes > 0 && data.Length > config.MaxInputBytes)
+			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {data.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
+
 		StringView sv = StringView((char8*)data.Ptr, data.Length);
 		int start = 0;
 		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let utf8Err))
@@ -154,6 +182,7 @@ public class TomlDocument
 		defer delete spill;
 
 		var state = new TomlStreamState();
+		state.mMaxInputBytes = config.MaxInputBytes;
 		defer delete state;
 		var cursor = TomlBufferedStreamCursor(stream, buffer, spill, state);
 
@@ -189,6 +218,11 @@ public class TomlDocument
 
 		if (ReadWithCursor(cursor, config) case .Err(let e))
 		{
+			if (state.mBytesExceeded)
+			{
+				e.Dispose();
+				return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0), config);
+			}
 			if (state.mError)
 			{
 				e.Dispose();
@@ -202,6 +236,8 @@ public class TomlDocument
 			}
 			return .Err(e);
 		}
+		if (state.mBytesExceeded)
+			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0), config);
 		if (state.mError)
 			return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
 		if (state.mUtf8Error)
@@ -212,7 +248,8 @@ public class TomlDocument
 
 	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
 	{
-		let parser = scope TomlParserImpl<TCursor>(config.Version);
+		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
+		let parser = scope TomlParserImpl<TCursor>(config, limits);
 		var tempStore = new TomlDocumentStore();
 		defer delete tempStore;
 		var incoming = tempStore.RootTable;
@@ -228,9 +265,14 @@ public class TomlDocument
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 
 		parser.SetStore(tempStore);
-		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore);
+		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
 		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
+			if (state.mBytesExceeded)
+			{
+				e.Dispose();
+				return .Err(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0));
+			}
 			if (state.mError)
 			{
 				e.Dispose();
@@ -244,6 +286,8 @@ public class TomlDocument
 			}
 			return .Err(e);
 		}
+		if (state.mBytesExceeded)
+			return .Err(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0));
 		if (state.mError)
 			return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
 		if (state.mUtf8Error)
@@ -272,7 +316,8 @@ public class TomlDocument
 
 	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
 	{
-		let parser = scope TomlParserImpl<TCursor>(config.Version);
+		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
+		let parser = scope TomlParserImpl<TCursor>(config, limits);
 		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
 
 		// Fast path: nothing to preserve — parse directly into root
@@ -287,7 +332,7 @@ public class TomlDocument
 			}
 			parser.SetStore(mStore);
 			mRootTable.mSuppressAutoDirty = true;
-			let resolver = scope TomlPathResolver(mRootTable, mMetadata, mStore);
+			let resolver = scope TomlPathResolver(mRootTable, mMetadata, mStore, limits);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
 			{
 				Clear();
@@ -313,7 +358,7 @@ public class TomlDocument
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 		{
 			parser.SetStore(tempStore);
-			let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore);
+			let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}

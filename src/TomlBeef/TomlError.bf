@@ -36,6 +36,7 @@ public enum TomlErrorKind : uint8
 	AppendToStaticArray,
 	ArrayElementOrdering,
 	MaxDepthExceeded,
+	ResourceLimitExceeded,
 
 	// Document
 	MissingNewlineAfterKeyVal,

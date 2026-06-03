@@ -13,12 +13,36 @@ class TomlPathResolver
 	private TomlDocumentMetadata mMetadata;
 	private TomlDocumentStore mStore;
 
-	internal this(TomlTable rootTable, TomlDocumentMetadata metadata, TomlDocumentStore store)
+	internal this(TomlTable rootTable, TomlDocumentMetadata metadata, TomlDocumentStore store, TomlResourceLimitState limits = null)
 	{
 		mRootTable = rootTable;
 		mCurrentTable = rootTable;
 		mMetadata = metadata;
 		mStore = store;
+		mLimits = limits;
+	}
+
+	private TomlResourceLimitState mLimits;
+
+	private Result<void, TomlParseError> CheckTableEntry(TomlTable table, int offset)
+	{
+		if (mLimits != null)
+			return mLimits.CheckTableEntry(table, mCurrentLine, mCurrentColumn, offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckNodeCount()
+	{
+		if (mLimits != null)
+			return mLimits.CheckNodeCount(mCurrentLine, mCurrentColumn, 0);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckArrayItem(TomlArray array, int offset)
+	{
+		if (mLimits != null)
+			return mLimits.CheckArrayItem(array, mCurrentLine, mCurrentColumn, offset);
+		return .Ok;
 	}
 
 	public int mCurrentLine = 1;
@@ -179,9 +203,11 @@ class TomlPathResolver
 			if (mCurrentTable.IsInlineSealed)
 				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
+			Try!(CheckNodeCount());
 			TomlTable newTable = 
 				mStore.NewTable(implicitOrigin, true);
 			TomlValue tableVal = TomlValue.Table(newTable);
+			Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
 			return .Ok;
@@ -249,9 +275,11 @@ class TomlPathResolver
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
+		Try!(CheckNodeCount());
 		TomlTable newTable = 
 			mStore.NewTable(origin, true);
 		TomlValue tableVal = TomlValue.Table(newTable);
+		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 		mCurrentTable.Insert(key, tableVal);
 		mCurrentTable = newTable;
 
@@ -279,8 +307,10 @@ class TomlPathResolver
 				if (arr.IsStatic)
 					return .Err(MakeError(.AppendToStaticArray, scope $"Cannot define array-of-tables '[[{key}]]' - name already defined as a static array" , mCurrentOffset));
 
+				Try!(CheckNodeCount());
 				TomlTable newElement = 
 				mStore.NewTable(.ArrayElement, true);
+				Try!(CheckArrayItem(arr, mCurrentOffset));
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
 
@@ -309,11 +339,14 @@ class TomlPathResolver
 			}
 		}
 
+		Try!(CheckNodeCount()); // the array itself
 		TomlArray newArray = 
 			mStore.NewArray(true);
+		Try!(CheckNodeCount()); // first element
 		TomlTable firstElement = 
 			mStore.NewTable(.ArrayElement, true);
 		newArray.Add(.Table(firstElement));
+		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
 
@@ -349,6 +382,7 @@ class TomlPathResolver
 				ctx.SetEntryNodeId(key, nodeId);
 		}
 
+		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 		mCurrentTable.Insert(key, value);
 		return .Ok;
 	}

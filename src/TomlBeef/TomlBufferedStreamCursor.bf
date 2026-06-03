@@ -23,6 +23,11 @@ class TomlStreamState
 	public int mUtf8StartOffset;
 	public int mUtf8StartLine;
 	public int mUtf8StartColumn;
+
+	// Resource limit tracking
+	public int mMaxInputBytes = 0;
+	public int mBytesRead = 0;
+	public bool mBytesExceeded = false;
 }
 
 struct TomlBufferedStreamCursor : ITomlCursor
@@ -322,6 +327,17 @@ struct TomlBufferedStreamCursor : ITomlCursor
 			else
 			{
 				mEnd += read;
+				if (mState != null)
+				{
+					mState.mBytesRead += read;
+					if (mState.mMaxInputBytes > 0 && mState.mBytesRead > mState.mMaxInputBytes)
+					{
+						mState.mBytesExceeded = true;
+						mState.mError = true;
+						mStream = null;
+						return;
+					}
+				}
 				ValidateUtf8Bytes(oldEnd, mEnd);
 			}
 		case .Err:

@@ -47,13 +47,13 @@ public class TomlTable
 	public TomlTableOrigin Origin
 	{
 		get => mOrigin;
-		set => mOrigin = value;
+		internal set => mOrigin = value;
 	}
 
 	public bool IsInlineSealed
 	{
 		get => mIsInlineSealed;
-		set => mIsInlineSealed = value;
+		internal set => mIsInlineSealed = value;
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.
@@ -184,6 +184,11 @@ public class TomlTable
 	/// @param value The string value.
 	public void SetString(StringView key, StringView value)
 	{
+		// Avoid arena churn: if the existing value is already an equal string, do nothing.
+		StringView existingStr = ?;
+		if (TryGetValue(key, let existing) && existing.TryGetString(out existingStr) && existingStr == value)
+			return;
+
 		TomlValue owned = .String(mStore.NewString(value));
 		if (!ReplaceValue(key, owned))
 			Insert(key, owned);

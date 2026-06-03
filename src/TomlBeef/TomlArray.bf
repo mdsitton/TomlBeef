@@ -116,7 +116,7 @@ public class TomlArray
 	public bool IsStatic
 	{
 		get => mIsStatic;
-		set => mIsStatic = value;
+		internal set => mIsStatic = value;
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.

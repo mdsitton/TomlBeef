@@ -13,7 +13,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TomlDocumentMetadata mMetadata;
 	private TomlDocumentStore mStore;
 	private int mDepth = 0;
-	private const int mMaxDepth = 256;
+	private TomlResourceLimitState mLimits;
 
 	// Pending leading comments waiting to be attached to the next node.
 	private List<String> mPendingComments ~ { if (_ != null) { for (var item in _) delete item; delete _; } };
@@ -41,9 +41,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mCrlfCount;
 	private int mLfOnlyCount;
 
-	public this(TomlVersion version = .V1_1)
+	public this(TomlReadConfig config, TomlResourceLimitState externalLimits = null)
 	{
-		mVersion = version;
+		mVersion = config.Version;
+		mLimits = externalLimits;
 		mMetadata = null;
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
@@ -442,6 +443,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 		}
 
+		Try!(CheckPathSegments(parts.Count));
 		return .Ok;
 	}
 
@@ -551,8 +553,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<TomlValue, TomlParseError> ParseValue()
 	{
-		if (mDepth >= mMaxDepth)
-			return .Err(Error(.MaxDepthExceeded, "Maximum nesting depth exceeded"));
+		Try!(CheckDepth());
+		Try!(CheckNodeCount());
 		mDepth++;
 		defer { mDepth--; }
 
@@ -612,7 +614,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '"')
 			{
 				mCursor.AdvanceByte();
-				return FinishStringValue(result);
+				return Try!(FinishStringValue(result));
 			}
 			if (b == '\\')
 			{
@@ -669,7 +671,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else if (quoteCount == 4)
 				{
@@ -679,7 +681,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte(); // consuming closing
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else if (quoteCount == 5)
 				{
@@ -691,7 +693,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte(); // consuming closing
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else
 				{
@@ -838,7 +840,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '\'')
 			{
 				mCursor.AdvanceByte();
-				return FinishStringValue(result);
+				return Try!(FinishStringValue(result));
 			}
 			if (b == '\r' || b == '\n')
 			{
@@ -881,7 +883,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else if (quoteCount == 4)
 				{
@@ -890,7 +892,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else if (quoteCount == 5)
 				{
@@ -901,7 +903,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
 					mCursor.AdvanceByte();
-					return FinishStringValue(result);
+					return Try!(FinishStringValue(result));
 				}
 				else
 				{
@@ -1627,6 +1629,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				
 				return .Err(valErr);
 			case .Ok(let val):
+				Try!(CheckArrayItem(arr));
 				arr.Add(val);
 				// Capture metadata for this element
 				if (mMetadata != null)
@@ -1834,6 +1837,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						
 						return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
 					}
+					Try!(CheckTableEntry(tbl));
 					tbl.Insert(keyPath[0], val);
 				}
 				else
@@ -1920,7 +1924,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
+				Try!(CheckNodeCount());
 				TomlTable newTbl = mStore.NewTable(.InlineTable, true);
+				Try!(CheckTableEntry(current));
 				current.Insert(key, TomlValue.Table(newTbl));
 				current = newTbl;
 			}
@@ -1929,6 +1935,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		StringView finalKey = keyPath[keyPath.Count - 1];
 		if (current.ContainsKey(finalKey))
 			return .Err(Error(.DuplicateKey, scope $"Duplicate key '{finalKey}' in inline table"));
+		Try!(CheckTableEntry(current));
 		current.Insert(finalKey, value);
 		return .Ok;
 	}
@@ -2891,16 +2898,59 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// @brief Adopt a heap-allocated string into the document store.
 	/// Frees the original string after copying into the arena.
-	private TomlValue FinishStringValue(String result)
+	private Result<TomlValue, TomlParseError> FinishStringValue(String result)
 	{
+		Try!(CheckStringLength(result.Length));
 		String owned = mStore.NewString(result);
 		delete result;
-		return .String(owned);
+		return .Ok(TomlValue.String(owned));
 	}
 
 	private TomlParseError Error(TomlErrorKind kind, StringView message)
 	{
 		return TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset);
+	}
+
+	private Result<void, TomlParseError> CheckDepth()
+	{
+		if (mLimits != null)
+			return mLimits.CheckDepth(mDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckStringLength(int byteLength)
+	{
+		if (mLimits != null)
+			return mLimits.CheckStringBytes(byteLength, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckNodeCount()
+	{
+		if (mLimits != null)
+			return mLimits.CheckNodeCount(mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckArrayItem(TomlArray arr)
+	{
+		if (mLimits != null)
+			return mLimits.CheckArrayItem(arr, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckTableEntry(TomlTable tbl)
+	{
+		if (mLimits != null)
+			return mLimits.CheckTableEntry(tbl, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> CheckPathSegments(int count)
+	{
+		if (mLimits != null)
+			return mLimits.CheckPathSegments(count, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return .Ok;
 	}
 
 	// ================================================================
