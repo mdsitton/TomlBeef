@@ -160,6 +160,16 @@ public static class TomlChar
 		int line = 1;
 		int column = 1;
 
+		// Skip a UTF-8 BOM so it does not count as a column
+		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
+		{
+			start = 3;
+			// Reject a second BOM immediately following the first
+			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
+			i = 3;
+		}
+
 		while (i < input.Length)
 		{
 			uint8 b = (uint8)input[i];
@@ -212,15 +222,6 @@ public static class TomlChar
 
 			i += seqLen;
 			column++;
-		}
-
-		// Skip UTF-8 BOM if present
-		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
-		{
-			start = 3;
-			// Reject a second BOM immediately following the first
-			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
-				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
 		}
 		return .Ok;
 	}

@@ -74,6 +74,9 @@ public class TomlDocument
 	/// Not thread-safe — changing this while other threads are writing produces undefined behavior.
 	public static TomlWriteConfig DefaultWriteConfig = .();
 
+	/// @brief Stream read buffer size in bytes. Internal so tests can force frequent refills.
+	internal static int sStreamBufferBytes = 8192;
+
 	private TomlDocumentStore mStore ~ delete _;
 	private TomlTable mRootTable; // borrowed from mStore.RootTable
 	private TomlDocumentMetadata mMetadata ~ delete _;
@@ -176,7 +179,7 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream, TomlReadConfig config)
 	{
-		uint8[] buffer = new uint8[8192];
+		uint8[] buffer = new uint8[sStreamBufferBytes];
 		defer delete buffer;
 		String spill = new String();
 		defer delete spill;
@@ -609,10 +612,6 @@ public class TomlDocument
 		}
 		return .Err;
 	}
-
-	/// @brief Navigate exact path segments and return the value.
-	/// @param segments The path segments to traverse, in order.
-	/// @return A view on success, or .Err if any segment is not found.
 
 	/// Parse a bracket-aware dotted path into StringView segments.
 	/// Segments borrow from the input path.

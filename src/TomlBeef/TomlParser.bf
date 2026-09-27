@@ -269,7 +269,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(Error(.UnexpectedToken, "Expected newline or comment after header"));
 		}
 
-		SyncPathResolver();
+		// The resolver reports errors at the header start, synced above
 		TomlNodeId nodeId = .Invalid;
 		if (isArray)
 		{
@@ -354,7 +354,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		case .Ok(let val): value = val;
 		}
 
-		SyncPathResolver();
+		// The resolver reports errors at the key start, synced at the top of this method
 		TomlNodeId nodeId = .Invalid;
 		if (mPathResolver.SetKeyValue(keyPath, value, &nodeId) case .Err(let insertErr))
 		{
@@ -362,46 +362,32 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return .Err(insertErr);
 		}
 
-		// Capture raw value token if metadata is enabled and value is a string
-		if (capturingToken && nodeId.IsValid && value.IsString)
+		// Capture raw value token and format metadata. Slicing always releases the value mark.
+		if (capturingToken)
 		{
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			let tokenRef = mMetadata.AddOriginalToken(rawToken);
-			let style = mMetadata.GetNodeStyle(nodeId);
-			if (style != null)
-				style.mOriginalValueToken = tokenRef;
-			CaptureStringFormat(nodeId, rawToken);
-		}
-		else if (capturingToken && nodeId.IsValid && (value.IsInteger || value.IsFloat))
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			CaptureNumericFormat(nodeId, rawToken);
-		}
-		else if (capturingToken && nodeId.IsValid && value.IsArray)
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
-		}
-		else if (capturingToken && nodeId.IsValid && value.IsTable)
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
-		}
+			if (nodeId.IsValid)
+			{
+				if (value.IsString)
+				{
+					let tokenRef = mMetadata.AddOriginalToken(rawToken);
+					let style = mMetadata.GetNodeStyle(nodeId);
+					if (style != null)
+						style.mOriginalValueToken = tokenRef;
+					CaptureStringFormat(nodeId, rawToken);
+				}
+				else if (value.IsInteger || value.IsFloat)
+					CaptureNumericFormat(nodeId, rawToken);
+				else if (value.IsArray)
+					CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
+				else if (value.IsTable)
+					CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
+				else if (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime)
+					CaptureDateTimeFormat(nodeId, rawToken);
 
-		// Capture key format metadata
-		if (capturingToken && nodeId.IsValid)
-			CaptureKeyFormat(nodeId, keyStyle, keyPath.Count > 1);
-
-		// Capture date-time format metadata
-		if (capturingToken && nodeId.IsValid && (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime))
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			CaptureDateTimeFormat(nodeId, rawToken);
+				CaptureKeyFormat(nodeId, keyStyle, keyPath.Count > 1);
+			}
 		}
 
 		// Attach pending leading comments and track this node for trailing comments
@@ -2865,8 +2851,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		else
 		{
 			// Bool and table: no token to capture, but must release the mark
-			String scratch = scope String();
-			mCursor.Slice(elemStart, scratch);
+			mCursor.ReleaseMark(elemStart);
 		}
 	}
 
@@ -2896,11 +2881,15 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mArrayStyleCount_Inline++;
 	}
 
-	/// @brief Adopt a heap-allocated string into the document store.
-	/// Frees the original string after copying into the arena.
+	/// @brief Copy a scratch string into the document store.
+	/// Always frees the scratch string, including when the string length limit is exceeded.
 	private Result<TomlValue, TomlParseError> FinishStringValue(String result)
 	{
-		Try!(CheckStringLength(result.Length));
+		if (CheckStringLength(result.Length) case .Err(let limitErr))
+		{
+			delete result;
+			return .Err(limitErr);
+		}
 		String owned = mStore.NewString(result);
 		delete result;
 		return .Ok(TomlValue.String(owned));

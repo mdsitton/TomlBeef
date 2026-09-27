@@ -162,7 +162,7 @@ public class TomlTable
 
 	/// @brief Replace the value for an existing key. Does nothing if the key is not found.
 	/// @param key The key to replace.
-	/// @param value The new value. Consumed (disposed) if the key is not found.
+	/// @param value The new value. Its payload must already be owned by this table's document store.
 	/// @return True if the key was found and replaced.
 	internal bool ReplaceValue(StringView key, TomlValue value)
 	{
@@ -179,7 +179,7 @@ public class TomlTable
 		return false;
 	}
 
-	/// @brief Set a string value for the given key. Uses the store if store-backed.
+	/// @brief Set a string value for the given key. The string is copied into the document store.
 	/// @param key The key.
 	/// @param value The string value.
 	public void SetString(StringView key, StringView value)
@@ -474,7 +474,7 @@ public class TomlTable
 		return false;
 	}
 
-	/// @brief Remove all entries from this table. The storage is cleared; the arena handle payload lifetime.
+	/// @brief Remove all entries from this table. Removed payloads stay allocated in the document store until the document is cleared or destroyed.
 	public void Clear()
 	{
 		if (mEntries != null)
@@ -507,7 +507,7 @@ public class TomlTable
 			}
 		}
 
-		// Pass 2: insert or replace — copy values into the destination store if store-backed
+		// Pass 2: insert or replace — copy values into the destination store
 		for (int i = 0; i < source.mKeyOrder.Count; i++)
 		{
 			StringView key = source.mKeyOrder[i];

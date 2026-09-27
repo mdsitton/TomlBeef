@@ -18,8 +18,14 @@ interface ITomlCursor
 	void SkipWhitespace() mut;
 	void SkipNewline() mut;
 
+	/// Marks nest: every Mark() must be released by exactly one Slice() or ReleaseMark(), innermost first.
+	/// Streaming cursors retain input from the outermost active mark until it is released.
 	TomlCursorMark Mark() mut;
+	/// Returns the text from the mark to the current position and releases the mark.
+	/// The view is only valid until the cursor next advances or peeks.
 	StringView Slice(TomlCursorMark mark, String scratch) mut;
+	/// Releases a mark without reading its text.
+	void ReleaseMark(TomlCursorMark mark) mut;
 }
 
 struct TomlCursorMark
@@ -169,5 +175,9 @@ struct TomlByteCursor : ITomlCursor
 		int length = mOffset - mark.mOffset;
 		if (length < 0 || mark.mOffset + length > mData.Length) return StringView();
 		return StringView((char8*)mData.Ptr + mark.mOffset, length);
+	}
+
+	public void ReleaseMark(TomlCursorMark mark)
+	{
 	}
 }

@@ -40,11 +40,14 @@ struct TomlBufferedStreamCursor : ITomlCursor
 	private int mLine;
 	private int mColumn;
 
-	private bool mHasMark;
-	private int mMarkLocal;
+	// Number of active (unreleased) marks. Marks nest, so the outermost mark has the lowest offset.
+	private int mMarkDepth;
+	// Absolute offset of the outermost active mark; bytes from here on are retained while mMarkDepth > 0.
+	private int64 mRetainStart;
 
+	// Retained bytes evicted from the buffer to make room for refills.
+	// When non-empty it holds [mRetainStart, mBaseOffset), contiguous with the buffer.
 	private String mSpill;
-	private bool mUsingSpill;
 	private TomlStreamState mState;
 
 	public this(Stream stream, uint8[] buffer, String spill, TomlStreamState state = null)
@@ -56,10 +59,9 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		mBaseOffset = 0;
 		mLine = 1;
 		mColumn = 1;
-		mHasMark = false;
-		mMarkLocal = 0;
+		mMarkDepth = 0;
+		mRetainStart = 0;
 		mSpill = spill;
-		mUsingSpill = false;
 		mState = state;
 	}
 
@@ -129,19 +131,12 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		if (mPos >= mEnd) return 0;
 
 		char8 b = (char8)mBuffer[mPos];
-		if (mUsingSpill)
-			mSpill.Append(b);
-
 		mPos++;
 		if (b == '\r')
 		{
 			EnsureAvailable(1);
 			if (mPos < mEnd && mBuffer[mPos] == '\n')
-			{
-				if (mUsingSpill)
-					mSpill.Append('\n');
 				mPos++;
-			}
 			mLine++;
 			mColumn = 1;
 		}
@@ -165,8 +160,6 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		char8 b0 = (char8)mBuffer[mPos];
 		if ((uint8)b0 < 0x80)
 		{
-			if (mUsingSpill)
-				mSpill.Append(b0);
 			mPos++;
 			if (b0 == '\n') { mLine++; mColumn = 1; }
 			else mColumn++;
@@ -177,8 +170,6 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		int cpLen = TomlChar.Utf8SequenceLength(b0);
 		if (cpLen == 0 || cpLen > remaining)
 		{
-			if (mUsingSpill)
-				mSpill.Append(b0);
 			mPos++;
 			mColumn++;
 			return (char32)0xFFFD;
@@ -186,11 +177,6 @@ struct TomlBufferedStreamCursor : ITomlCursor
 
 		StringView sv = StringView((char8*)&mBuffer[mPos], remaining);
 		char32 cp = TomlChar.DecodeAt(sv, 0, cpLen);
-		if (mUsingSpill)
-		{
-			for (int i = 0; i < cpLen; i++)
-				mSpill.Append((char8)mBuffer[mPos + i]);
-		}
 		mPos += cpLen;
 		mColumn++;
 		return cp;
@@ -220,37 +206,49 @@ struct TomlBufferedStreamCursor : ITomlCursor
 	[Inline]
 	public TomlCursorMark Mark() mut
 	{
-		if (mHasMark && mUsingSpill)
+		int64 offset = mBaseOffset + mPos;
+		if (mMarkDepth == 0)
 		{
+			mRetainStart = offset;
 			mSpill.Clear();
-			mUsingSpill = false;
 		}
-		mHasMark = true;
-		mMarkLocal = mPos;
-		return TomlCursorMark() { mOffset = (int)(mBaseOffset + mPos) };
+		mMarkDepth++;
+		return TomlCursorMark() { mOffset = (int)offset };
 	}
 
 	public StringView Slice(TomlCursorMark mark, String scratch) mut
 	{
-		mHasMark = false;
-
-		if (mUsingSpill)
+		StringView result = StringView();
+		int64 start = mark.mOffset;
+		if (start < mBaseOffset)
 		{
-			mUsingSpill = false;
-			scratch.Clear();
-			scratch.Append(mSpill);
-			mSpill.Clear();
-			return StringView(scratch);
+			// The start was evicted from the buffer: join the spilled prefix with the buffered tail.
+			int spillIndex = (int)(start - mRetainStart);
+			if (mMarkDepth > 0 && spillIndex >= 0 && spillIndex <= mSpill.Length)
+			{
+				scratch.Clear();
+				scratch.Append(StringView(mSpill, spillIndex));
+				scratch.Append((char8*)mBuffer.Ptr, mPos);
+				result = scratch;
+			}
+		}
+		else if (start - mBaseOffset <= mPos)
+		{
+			int local = (int)(start - mBaseOffset);
+			result = StringView((char8*)mBuffer.Ptr + local, mPos - local);
 		}
 
-		int startOffset = (int)(mark.mOffset - mBaseOffset);
-		int length = mPos - startOffset;
-		if (length < 0) return StringView();
+		ReleaseMark(mark);
+		return result;
+	}
 
-		if (startOffset >= 0 && startOffset + length <= mEnd)
-			return StringView((char8*)&mBuffer[startOffset], length);
-
-		return StringView();
+	public void ReleaseMark(TomlCursorMark mark) mut
+	{
+		if (mMarkDepth == 0)
+			return;
+		mMarkDepth--;
+		if (mMarkDepth == 0)
+			mSpill.Clear();
 	}
 
 	public void Dispose() mut
@@ -263,50 +261,35 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		if (mEnd - mPos >= needed) return;
 		if (mStream == null) return;
 
-		if (mHasMark)
-		{
-			int markLen = mPos - mMarkLocal;
-			if (markLen + needed > mBuffer.Count)
-			{
-				if (!mUsingSpill)
-				{
-					mSpill.Clear();
-					mUsingSpill = true;
-					for (int i = mMarkLocal; i < mPos; i++)
-						mSpill.Append((char8)mBuffer[i]);
-				}
-				mHasMark = false;
-			}
-		}
-
-		CompactForRefill();
+		CompactForRefill(needed);
 		while (mEnd - mPos < needed && mStream != null && mEnd < mBuffer.Count)
 			Refill();
 	}
 
-	private void CompactForRefill() mut
+	/// Shifts retained bytes to the front of the buffer. While a mark is active, bytes from the
+	/// outermost mark are kept; if they no longer fit, the consumed part moves to the spill.
+	private void CompactForRefill(int needed) mut
 	{
-		int keepStart = mHasMark ? mMarkLocal : mPos;
-		int keepLen = mEnd - keepStart;
-		if (keepLen <= 0)
+		int keepStart = mPos;
+		if (mMarkDepth > 0)
 		{
-			mBaseOffset += mPos;
-			mPos = 0;
-			mEnd = 0;
-			if (mHasMark) mMarkLocal = 0;
-			return;
+			keepStart = (int)Math.Max(mRetainStart - mBaseOffset, 0);
+			if (mEnd - keepStart + needed > mBuffer.Count)
+			{
+				mSpill.Append((char8*)mBuffer.Ptr + keepStart, mPos - keepStart);
+				keepStart = mPos;
+			}
 		}
 
-		if (keepStart > 0)
-		{
-			for (int i = 0; i < keepLen; i++)
-				mBuffer[i] = mBuffer[keepStart + i];
-			mBaseOffset += keepStart;
-			mPos -= keepStart;
-			mEnd = keepLen;
-			if (mHasMark)
-				mMarkLocal = 0;
-		}
+		if (keepStart == 0)
+			return;
+
+		int keepLen = mEnd - keepStart;
+		for (int i = 0; i < keepLen; i++)
+			mBuffer[i] = mBuffer[keepStart + i];
+		mBaseOffset += keepStart;
+		mPos -= keepStart;
+		mEnd = keepLen;
 	}
 
 	private void Refill() mut

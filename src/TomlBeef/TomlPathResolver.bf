@@ -34,7 +34,7 @@ class TomlPathResolver
 	private Result<void, TomlParseError> CheckNodeCount()
 	{
 		if (mLimits != null)
-			return mLimits.CheckNodeCount(mCurrentLine, mCurrentColumn, 0);
+			return mLimits.CheckNodeCount(mCurrentLine, mCurrentColumn, mCurrentOffset);
 		return .Ok;
 	}
 

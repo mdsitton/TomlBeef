@@ -57,6 +57,27 @@ doc.Read(overrideFile, .() { Mode = .Merge });   // Merge on top
 
 `TomlDocument` owns the entire parsed tree. Dispose it when done (`defer delete doc`).
 
+#### Resource Limits
+
+When parsing untrusted input, cap resource usage through `TomlReadConfig`. Exceeding a limit fails the read with `TomlErrorKind.ResourceLimitExceeded` (`MaxDepthExceeded` for `MaxDepth`), and the usual transactional guarantees apply (`Replace` leaves the document empty, `Merge` leaves it unchanged).
+
+```bf
+var config = TomlReadConfig() { MaxInputBytes = 1024 * 1024, MaxNodes = 100000, MaxDepth = 64 };
+if (doc.Read(input, config) case .Err(let err)) { defer err.Dispose(); /* ... */ }
+```
+
+| Field | Default | What it limits |
+|-------|---------|----------------|
+| `MaxDepth` | `256` | Nesting depth of arrays and inline tables |
+| `MaxInputBytes` | `0` | Raw input size in bytes, including any BOM. Enforced for `Read(StringView)`, `ReadBytes()`, and `ReadFile()` (checked after the file is loaded), and for `Read(Stream)` as bytes are consumed |
+| `MaxStringBytes` | `0` | Byte length of any single string value after escape decoding (keys are not counted) |
+| `MaxArrayItems` | `0` | Elements in any single array, including `[[array-of-tables]]` elements |
+| `MaxTableEntries` | `0` | Keys in any single table: root, `[header]`, inline, and dotted-key implicit tables |
+| `MaxPathSegments` | `0` | Segments in a dotted key or `[table]` / `[[array]]` header path |
+| `MaxNodes` | `0` | Total value nodes: every scalar, array, and table (explicit, implicit, inline, or array element); the root table is not counted. `a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3 nodes |
+
+A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set*`/`Add*`.
+
 ### Reading Values
 
 **Path-based lookup** — dotted keys with bracket support for segments containing dots:
@@ -319,7 +340,8 @@ case .Err(let err):
 - `TomlValue` is a non-owning tagged union — it holds borrowed references to document-owned `String`, `TomlArray`, and `TomlTable` objects.
 - Tables and arrays created via `AddTable`/`AddArray` are store-backed and freed when the document is cleared or destroyed.
 - `StringView` returned by `TryGetString()` is borrowed from document-owned strings. Do not use after the document is cleared.
-- Prefer typed setters (`SetString`, `SetInteger`, etc.) over low-level `Insert`/`Add` APIs.
+- Mutate documents through typed setters and appenders (`SetString`, `SetInteger`, `AddTable`, `TomlArray.Add`, etc.); raw `TomlValue` insertion is not public API.
+- Replaced or removed values are not freed individually; their payloads stay in the document arena until `Clear()` or `delete`. This keeps borrowed `TomlValue`/`StringView` copies valid, but memory grows under heavy repeated mutation of one document.
 
 ## Supported TOML Features
 

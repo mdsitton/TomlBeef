@@ -35,7 +35,7 @@ public struct TomlInputValue
 
 	internal bool IsValid => mKind != .Invalid;
 
-	/// @brief Materialize the value into a TomlValue, allocating through the store if available.
+	/// @brief Materialize the value into a TomlValue, allocating strings through the document store.
 	internal TomlValue Materialize(TomlDocumentStore store) mut
 	{
 		switch (mKind)
@@ -94,7 +94,7 @@ public struct TomlInputValue
 	}
 }
 
-/// Represents a TOML array, owning a list of TomlValue items.
+/// Represents a TOML array. Items are non-owning TomlValues whose payloads live in the document store.
 public class TomlArray
 {
 	private List<TomlValue> mItems;
@@ -170,7 +170,7 @@ public class TomlArray
 		}
 	}
 
-	/// @brief Append a string value to the array. Uses the store if store-backed.
+	/// @brief Append a string value to the array. The string is copied into the document store.
 	/// @param value The string value.
 	public void AddString(StringView value)
 	{
@@ -252,10 +252,7 @@ public class TomlArray
 		var slot = value;
 		if (!slot.IsValid)
 			Runtime.FatalError("Invalid TomlInputValue — use a valid scalar");
-		TomlValue stored = (mStore != null)
-			? slot.Materialize(mStore)
-			: slot.Materialize(null);
-		Add(stored);
+		Add(slot.Materialize(mStore));
 	}
 
 	/// @brief Replace the element at `index` with a new store-backed table and return it.
@@ -470,9 +467,7 @@ public class TomlArray
 			var slot = value;
 			if (!slot.IsValid)
 				Runtime.FatalError("Invalid TomlInputValue — use a valid scalar");
-			TomlValue stored = (mStore != null)
-				? slot.Materialize(mStore)
-				: slot.Materialize(null);
+			TomlValue stored = slot.Materialize(mStore);
 			mItems[index] = stored;
 			MarkItemDirty(index);
 			BindContainerMetadata(stored);
