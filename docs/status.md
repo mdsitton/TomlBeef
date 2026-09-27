@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 229/229 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 229/229 pass |
+| `beefbuild -test` (Debug checks) | 230/230 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 230/230 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -58,7 +58,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| I1 | `ReadFile` copies the file into a `String` and calls `Read(StringView)`; it should call `ReadBytes` directly. No streaming option for files | S |
+| I1 | No streaming option for files: `ReadFile` loads the whole file (then parses the bytes directly). A `ReadFile` mode that wraps a `FileStream` in `Read(Stream)` would bound memory for large files | S |
 | I2 | Stream buffer is fixed at 8 KiB: no growth policy, no config for buffer size, no `MaxTokenBytes`/`MaxKeys` limits | M |
 | I3 | No writer sinks: no `Write(Stream)`/`WriteBytes`; `WriteFile` builds the whole output `String` first | M |
 | I4 | No benchmarks, so byte-cursor performance and generic-parser code size are unmeasured | S |
@@ -68,8 +68,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Gap | Size |
 |----|-----|------|
 | A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
-| A3 | Borrowed raw read APIs (`TomlTable.GetValueAt`, `TomlArray.GetValueAt`, `TryGetValue`, `Get`, `this[StringView]`, `TomlDocument.Get`/`GetPath`) are public without an "advanced/borrowed" note. Internalize or document | S |
-| A4 | `TomlParserImpl` receives its store via `SetStore` instead of requiring it at construction | S |
 | A5 | `DefaultReadConfig`/`DefaultWriteConfig` are global mutable statics; consider per-document defaults | S–M |
 | A6 | Neither tables nor arrays have an enumerator; walking a document means index loops over `Count` with `GetKeyAt`/`GetValueAt` | S |
 | A7 | `TomlTester` reads all stdin into memory and exposes no limit flags | S |
@@ -94,6 +92,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. I1, A3, A4 (small fixes and API hygiene).
-2. P2 (comments inside inline tables), then P3–P5.
-3. I2–I4 and optional items as needed.
+1. P2 (comments inside inline tables), then P3–P5.
+2. I1–I4 and A2, A5–A7 as needed.
+3. Optional items.

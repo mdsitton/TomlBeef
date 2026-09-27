@@ -65,8 +65,11 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 
 - Overloads without a config use the static `TomlDocument.DefaultReadConfig` /
   `DefaultWriteConfig`. These are process-global and not thread-safe; set them once at startup.
-- `ReadFile` loads the whole file (`File.ReadAll`) and then uses the string path. The file is
-  treated as raw bytes, so any BOM goes through the normal BOM rules.
+- `ReadFile` loads the whole file (`File.ReadAll`) and parses the bytes with `ReadBytes`, without a
+  second copy. Any BOM goes through the normal BOM rules; a missing or unreadable file is `IoError`.
+- `Get`, `GetPath`, `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
+  `TomlArray.GetValueAt` return a borrowed `TomlValue` of any type, for generic walking (the
+  `TomlTester` serializer uses them). Typed `TryGet*` accessors are preferred when the type is known.
 - Document setters resolve every path segment except the last, and **require the intermediate
   tables to already exist**. They do not create tables implicitly. Build nested content top-down
   with `AddTable`.

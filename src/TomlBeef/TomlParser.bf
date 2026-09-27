@@ -41,11 +41,15 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mCrlfCount;
 	private int mLfOnlyCount;
 
-	public this(TomlReadConfig config, TomlResourceLimitState externalLimits = null)
+	/// @param store The store that owns every value the parser creates. Required.
+	/// @param metadata The PreserveStyle sidecar to capture into, or null when not capturing.
+	public this(TomlReadConfig config, TomlDocumentStore store, TomlDocumentMetadata metadata, TomlResourceLimitState externalLimits = null)
 	{
+		Runtime.Assert(store != null, "TomlParserImpl requires a store");
 		mVersion = config.Version;
 		mLimits = externalLimits;
-		mMetadata = null;
+		mStore = store;
+		mMetadata = metadata;
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
 		mSeenContent = false;
@@ -75,16 +79,6 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return .Err(e);
 
 		return .Ok;
-	}
-
-	public void SetMetadata(TomlDocumentMetadata metadata)
-	{
-		mMetadata = metadata;
-	}
-
-	public void SetStore(TomlDocumentStore store)
-	{
-		mStore = store;
 	}
 
 	// ================================================================

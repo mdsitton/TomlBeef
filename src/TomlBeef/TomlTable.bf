@@ -77,7 +77,11 @@ public class TomlTable
 		return mKeyOrder[index];
 	}
 
-	/// @brief Get the value for the key at the given index in insertion order.
+	/// @brief Get the value for the key at the given index in insertion order, for reading values of any
+	/// type (e.g. when walking a document). Prefer the typed TryGet* methods when the type is known.
+	/// The returned TomlValue borrows document-owned storage: valid until the document is cleared.
+	/// @param index The entry index (0 to Count - 1).
+	/// @return The entry value.
 	public TomlValue GetValueAt(int index)
 	{
 		return mEntries[mKeyOrder[index]];
@@ -96,6 +100,11 @@ public class TomlTable
 		return false;
 	}
 
+	/// @brief Get the value for a key regardless of its type. Prefer the typed TryGet* methods when the
+	/// type is known. The value borrows document-owned storage: valid until the document is cleared.
+	/// @param key The key to look up.
+	/// @param value Receives the value, or default if the key is missing.
+	/// @return True if the key exists.
 	public bool TryGetValue(StringView key, out TomlValue value)
 	{
 		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
@@ -338,6 +347,10 @@ public class TomlTable
 		return false;
 	}
 
+	/// @brief Get the value for a key regardless of its type. The value borrows document-owned storage:
+	/// valid until the document is cleared. Prefer the typed TryGet* methods when the type is known.
+	/// @param key The key to look up.
+	/// @return The value, or .Err if the key is missing.
 	public Result<TomlValue> Get(StringView key)
 	{
 		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
@@ -345,7 +358,8 @@ public class TomlTable
 		return .Err;
 	}
 
-	/// @brief Indexer that returns the value for a key, or an error result if not found.
+	/// @brief Indexer that returns the value for a key, or an error result if not found. Same as Get:
+	/// the value borrows document-owned storage and is valid until the document is cleared.
 	/// @param key The key to look up.
 	/// @return The TomlValue on success, or an error result.
 	public Result<TomlValue> this[StringView key]

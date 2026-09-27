@@ -292,6 +292,28 @@ static class TomlReadTests
 		AssertWritesAndRereads(doc);
 	}
 
+	[Test]
+	public static void ReadFile_MissingFileIsIoErrorAndFollowsReadMode()
+	{
+		var replace = scope TomlDocument();
+		ReadOrFail(replace, "old = 1");
+		switch (replace.ReadFile("tests/does-not-exist.toml"))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected IoError for a missing file");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .IoError, scope $"Expected IoError, got {e.mKind}");
+		}
+		Test.Assert(replace.RootTable.Count == 0, "A failed Replace read leaves the document empty");
+
+		var merge = scope TomlDocument();
+		ReadOrFail(merge, "old = 1");
+		if (merge.ReadFile("tests/does-not-exist.toml", .() { Mode = .Merge }) case .Err(let e2))
+			e2.Dispose();
+		Test.Assert(merge.TryGetInteger("old", var old) && old == 1, "A failed Merge read leaves the document unchanged");
+	}
+
 	// ================================================================
 	// Accessors
 	// ================================================================

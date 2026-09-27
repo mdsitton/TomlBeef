@@ -255,22 +255,17 @@ public class TomlDocument
 	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
 	{
 		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
-		let parser = scope TomlParserImpl<TCursor>(config, limits);
 		var tempStore = new TomlDocumentStore();
 		defer delete tempStore;
 		var incoming = tempStore.RootTable;
 		incoming.mSuppressAutoDirty = true;
 
-		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
 		TomlDocumentMetadata incomingMetadata = null;
-		if (wantsMetadata)
-		{
+		if (config.MetadataMode == .PreserveStyle)
 			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
-			parser.SetMetadata(incomingMetadata);
-		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 
-		parser.SetStore(tempStore);
+		let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
 		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
 		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
@@ -330,7 +325,6 @@ public class TomlDocument
 	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
 	{
 		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
-		let parser = scope TomlParserImpl<TCursor>(config, limits);
 		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
 
 		// Fast path: nothing to preserve — parse directly into root
@@ -338,15 +332,11 @@ public class TomlDocument
 		{
 			if (config.Mode == .Replace)
 				Clear();
-			if (wantsMetadata)
-			{
-				// A Merge into an empty document keeps an existing sidecar (nothing may delete it before a
-				// store reset); Replace has just cleared it.
-				if (mMetadata == null)
-					mMetadata = new TomlDocumentMetadata(config.MetadataMode);
-				parser.SetMetadata(mMetadata);
-			}
-			parser.SetStore(mStore);
+			// A Merge into an empty document keeps an existing sidecar (nothing may delete it before a
+			// store reset); Replace has just cleared it.
+			if (wantsMetadata && mMetadata == null)
+				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			let parser = scope TomlParserImpl<TCursor>(config, mStore, wantsMetadata ? mMetadata : null, limits);
 			mRootTable.mSuppressAutoDirty = true;
 			let resolver = scope TomlPathResolver(mRootTable, mMetadata, mStore, limits);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
@@ -367,13 +357,10 @@ public class TomlDocument
 		incoming.mSuppressAutoDirty = true;
 		TomlDocumentMetadata incomingMetadata = null;
 		if (wantsMetadata)
-		{
 			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
-			parser.SetMetadata(incomingMetadata);
-		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 		{
-			parser.SetStore(tempStore);
+			let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
 			let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
@@ -567,7 +554,9 @@ public class TomlDocument
 		return .Ok;
 	}
 
-	/// @brief Navigate a bracket-aware dotted path and return the value at that path.
+	/// @brief Navigate a bracket-aware dotted path and return the value at that path, regardless of type.
+	/// The value borrows document-owned storage: valid until the document is cleared. Prefer the typed
+	/// TryGet* path accessors when the type is known.
 	/// Supports `[segment]` syntax for path segments that contain literal dots:
 	///   "a.b.c"      → ["a", "b", "c"]
 	///   "a.[b.c]"    → ["a", "b.c"]
@@ -582,7 +571,7 @@ public class TomlDocument
 		return GetPath(segments);
 	}
 
-	/// @brief Navigate exact path segments and return the value. Accepts individual
+	/// @brief Navigate exact path segments and return the value (borrowed, like Get). Accepts individual
 	/// segment strings for ergonomic multi-segment lookups.
 	/// @param segments The path segments to traverse, in order.
 	/// @return The value on success, or .Err if any segment is not found.
@@ -594,7 +583,7 @@ public class TomlDocument
 		return GetPath(list);
 	}
 
-	/// @brief Navigate exact path segments from a list. Useful when segments are
+	/// @brief Navigate exact path segments from a list (value borrowed, like Get). Useful when segments are
 	/// already in a list (e.g., from ParseDottedPath).
 	/// @param segments The path segments to traverse, in order.
 	/// @return The value on success, or .Err if any segment is not found.
@@ -820,10 +809,11 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path, TomlReadConfig config)
 	{
-		String content = scope String();
-		if (ReadFileContent(path, content) case .Err(let e))
-			return ReadFailure(e, config);
-		return Read(content, config);
+		// Parse the loaded bytes directly; no second copy into a String
+		let data = scope List<uint8>();
+		if (File.ReadAll(path, data) case .Err)
+			return ReadFailure(TomlParseError(.IoError, scope $"Cannot read file: {path}", 0, 0, 0), config);
+		return ReadBytes(Span<uint8>(data.Ptr, data.Count), config);
 	}
 
 	/// @brief Write this document to a file. Convenience wrapper around Write().
@@ -844,18 +834,6 @@ public class TomlDocument
 		Write(output, config);
 		if (File.WriteAllText(path, output) case .Err)
 			return .Err(TomlParseError(.IoError, scope $"Cannot write file: {path}" , 0, 0, 0));
-		return .Ok;
-	}
-
-	/// @brief Read raw bytes from a file into a String, returning an IoError on failure.
-	private static Result<void, TomlParseError> ReadFileContent(StringView path, String outContent)
-	{
-		var data = new List<uint8>();
-		defer delete data;
-		if (File.ReadAll(path, data) case .Err)
-			return .Err(TomlParseError(.IoError, scope $"Cannot read file: {path}" , 0, 0, 0));
-		for (int i = 0; i < data.Count; i++)
-			outContent.Append((char8)data[i]);
 		return .Ok;
 	}
 }
