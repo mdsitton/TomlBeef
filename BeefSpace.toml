@@ -6,3 +6,8 @@ StartupProject = "TomlTester"
 [Projects]
 TomlBeef = {Path = "."}
 TomlTester = {Path = "TomlTester"}
+
+# Runs the [Test] methods with Release settings (O2, CRT allocator, no runtime checks):
+#   beefbuild -test -config=TestRelease
+[Configs.TestRelease.Linux64]
+BuildKind = "Test"

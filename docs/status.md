@@ -10,14 +10,18 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` | 216/216 pass |
+| `beefbuild -test` (Debug checks) | 222/222 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 222/222 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
 | `./test-official-toml.sh` | Upstream toml-test v2.2.0 (requires Go). 1.0: 205 valid, 205 encoder, 474 invalid. 1.1: 214 valid, 214 encoder, 467 invalid. All pass |
 
-Any change to `.bf` files must keep these green. Parser or writer behavior changes need the shell scripts
-as well as `beefbuild -test`.
+Any change to `.bf` files must keep these green **in both Debug and Release**: run `beefbuild -test`
+and `beefbuild -test -config=TestRelease`, and run the shell scripts against both binaries
+(`beefbuild` then the scripts; `beefbuild -config=Release` then the scripts with
+`BIN=./build/Release_Linux64/TomlTester/TomlTester`). `beefbuild -test` does not rebuild the
+`TomlTester` binary the scripts use, so always run `beefbuild` first.
 
 ## Feature status
 
@@ -41,11 +45,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Problem | Where | Size |
 |----|---------|-------|------|
-| B1 | Inline-table fields get no metadata node IDs, so inside inline tables there is no token reuse, no numeric/date/array format, and no dirty tracking | `TomlParser.ParseInlineTable` creates the table without a metadata context; `TomlTable.BindContainerMetadata` attaches one later with an empty map | M |
-| B2 | Root table metadata context has an invalid node ID, so root-level `Children` dirtying is never recorded | `TomlDocument` metadata setup; `TomlTable.MarkChildrenDirty` | S |
-| B3 | `TomlTable.Clear()` deletes the table's whole metadata context, dropping header comments and stopping later node-ID assignment | `TomlTable.Clear` | S |
-| B4 | Writing an equal value still marks it dirty via the array indexer setter, `TomlTableEntry.Value`/`SetValueAt`, and `Insert` on an existing key (only `ReplaceValue`/`SetString` check equality) | `TomlArray` indexer; `TomlTable.SetValueAt`, `Insert` | S |
-| B5 | A dirty string ignores its own `TomlStringFormat` and uses the document's dominant style; `mStartsWithNewline`/`mHadEscapes` are captured but never used | `TomlWriter` per-node format lookup has no `.String` case | S |
 | B6 | Lowercase `t` date-time separator is re-emitted as a space; lowercase `z` becomes `Z` | Datetime format capture in `TomlParser`; `TomlWriter` datetime emission | S |
 | B7 | Quoted key styles (`QuotedBasic`/`QuotedLiteral`) are captured but the writer only emits bare or basic-quoted keys | `TomlWriter.AppendKey` | S–M |
 | B8 | *Unverified.* Whitespace lookahead after a line-ending backslash is unbounded; on the stream path a whitespace run longer than the 8 KiB buffer reads as `0` and may misparse | `peekPos` loop in the multiline basic string parser | S |

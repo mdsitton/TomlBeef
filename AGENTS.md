@@ -18,7 +18,7 @@
 - **When using `edit` with multiple changes** in the same file, merge nearby changes into a single edit call with multiple entries in the `edits` array.
 - **Do not include large unchanged regions** in `edits[].oldText`. Keep it as small as possible while still being unique.
 - **NEVER REVERT CODE USING GIT OR ANY VERSION CONTROL.** Do not use `git checkout`, `git revert`, `git reset`, or any similar command that discards or rolls back code changes. This destroys work and context. If you think a revert is needed, **end your turn and ask for explicit permission first.**
-- **Verify Beef source/project changes.** After modifying `.bf`, `BeefProj.toml`, or workspace files, run the most relevant `beefbuild` check (`beefbuild -test`, `beefbuild -run`, or `beefbuild -config=Release -run`) and report results. For docs-only edits (including `AGENTS.md`), no build is required. If verification cannot be run, say why.
+- **Verify Beef source/project changes.** After modifying `.bf`, `BeefProj.toml`, or workspace files, run the tests in **both** Debug and Release: `beefbuild -test` and `beefbuild -test -config=TestRelease`. Debug catches runtime-check and allocator issues; Release catches optimizer-dependent bugs. For parser/writer changes also run the acceptance scripts against both binaries (see `docs/status.md`); `beefbuild -test` does not rebuild `TomlTester`, so run `beefbuild` (and `beefbuild -config=Release`) first. Report results. For docs-only edits (including `AGENTS.md`), no build is required. If verification cannot be run, say why.
 
 ## Beef Language Gotchas
 

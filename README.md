@@ -379,8 +379,9 @@ The semantic comparison and roundtrip scripts require Python 3.
 # Build
 beefbuild
 
-# Run Beef tests
+# Run Beef tests with Debug checks, then with Release optimizations
 beefbuild -test
+beefbuild -test -config=TestRelease
 
 # Compare decoded values against the tracked fixtures
 ./test-toml.sh
