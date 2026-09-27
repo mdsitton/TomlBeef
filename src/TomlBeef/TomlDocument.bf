@@ -80,10 +80,9 @@ public class TomlDocument
 
 	private TomlDocumentStore mStore ~ delete _;
 	private TomlTable mRootTable; // borrowed from mStore.RootTable
+	/// PreserveStyle sidecar. Only replaced or deleted together with a store reset (Clear/destruction),
+	/// because containers the caller removed earlier stay alive in the arena and may still reference it.
 	private TomlDocumentMetadata mMetadata ~ delete _;
-	/// Metadata dropped by a merge. Containers the caller detached earlier may still reference it, so it
-	/// lives until the store resets (Clear/destruction) frees those containers too. Allocated lazily.
-	private List<TomlDocumentMetadata> mRetiredMetadata ~ DeleteContainerAndItems!(_);
 
 	/// @brief The document's root table (read-only). Use typed setters (SetString, SetInteger, etc.)
 	/// or document-level methods (AddTable, AddArray) to modify content.
@@ -98,23 +97,6 @@ public class TomlDocument
 		ClearMetadata();
 		mStore.Reset();
 		mRootTable = mStore.RootTable;
-		// Every container is gone now, so nothing can reference retired metadata any more
-		if (mRetiredMetadata != null)
-			ClearAndDeleteItems!(mRetiredMetadata);
-	}
-
-	/// Drop PreserveStyle metadata while keeping the store (after a merge). Reachable containers are
-	/// detached; the sidecar itself is retired rather than deleted because containers the caller removed
-	/// earlier are unreachable but still alive in the arena and may still point at it.
-	private void RetireMetadata()
-	{
-		if (mMetadata == null)
-			return;
-		mRootTable.ClearMetadataContexts();
-		if (mRetiredMetadata == null)
-			mRetiredMetadata = new List<TomlDocumentMetadata>();
-		mRetiredMetadata.Add(mMetadata);
-		mMetadata = null;
 	}
 
 	private void ClearMetadata()
@@ -317,11 +299,18 @@ public class TomlDocument
 		if (state.mUtf8Error)
 			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
-		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
-		// Metadata-aware merge not yet implemented — drop metadata to prevent stale state
-		if (mergeResult case .Ok)
-			RetireMetadata();
-		return mergeResult;
+		return MergeIncoming(incoming, incomingMetadata, config);
+	}
+
+	/// Deep-merges a parsed temporary document into this one. The destination keeps its PreserveStyle
+	/// metadata; merged values get node IDs and, when `incomingMetadata` exists, the incoming styles.
+	private Result<void, TomlParseError> MergeIncoming(TomlTable incoming, TomlDocumentMetadata incomingMetadata, TomlReadConfig config)
+	{
+		// The root context is how MergeFrom finds the incoming sidecar
+		if (incomingMetadata != null && incoming.MetadataContext == null)
+			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
+		incoming.ClearAutoDirtySuppression();
+		return mRootTable.MergeFrom(incoming, config.OnConflict);
 	}
 
 	private bool ShouldParseDirectly(TomlReadConfig config)
@@ -351,7 +340,10 @@ public class TomlDocument
 				Clear();
 			if (wantsMetadata)
 			{
-				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
+				// A Merge into an empty document keeps an existing sidecar (nothing may delete it before a
+				// store reset); Replace has just cleared it.
+				if (mMetadata == null)
+					mMetadata = new TomlDocumentMetadata(config.MetadataMode);
 				parser.SetMetadata(mMetadata);
 			}
 			parser.SetStore(mStore);
@@ -386,12 +378,7 @@ public class TomlDocument
 			if (parser.Parse(cursor, resolver) case .Err(let e))
 				return .Err(e);
 		}
-		incoming.ClearAutoDirtySuppression();
-		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
-		// Metadata-aware merge not yet implemented — drop metadata to prevent stale state
-		if (mergeResult case .Ok)
-			RetireMetadata();
-		return mergeResult;
+		return MergeIncoming(incoming, incomingMetadata, config);
 	}
 
 	/// @brief Serialize this document to a TOML string using the current DefaultWriteConfig.

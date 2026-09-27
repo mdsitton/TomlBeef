@@ -507,7 +507,9 @@ public class TomlTable
 	{
 		if (onConflict == .Error)
 			Try!(ValidateMerge(source, scope String()));
-		ApplyMerge(source, onConflict);
+		// Carry the source's PreserveStyle metadata when both sides have a sidecar
+		let srcMeta = source.mMetadataContext?.mMetadata;
+		ApplyMerge(source, onConflict, srcMeta);
 		return .Ok;
 	}
 
@@ -532,24 +534,54 @@ public class TomlTable
 	}
 
 	/// Pass 2: insert new keys, recurse into shared tables, and resolve conflicting leaves.
-	private void ApplyMerge(TomlTable source, MergeConflict onConflict)
+	/// When this table has PreserveStyle metadata, merged values get node IDs; with `srcMeta` they also
+	/// take the source's tokens, formats, and comments (see TomlMetadataTransfer).
+	private void ApplyMerge(TomlTable source, MergeConflict onConflict, TomlDocumentMetadata srcMeta)
 	{
+		let dstMeta = mMetadataContext?.mMetadata;
 		for (int i = 0; i < source.mKeyOrder.Count; i++)
 		{
 			String key = source.mKeyOrder[i];
 			TomlValue incoming = source.mEntries[key];
 			if (!TryGetValue(key, let existing))
 			{
-				Insert(key, incoming.CloneInto(mStore));
+				TomlValue copy = incoming.CloneInto(mStore);
+				Insert(key, copy);
+				if (dstMeta != null)
+				{
+					// A new slot takes the source's key format and comments along with its value style
+					CopySourceEntryStyle(source, key, srcMeta, dstMeta, true);
+					TomlMetadataTransfer.AdoptValue(copy, incoming, dstMeta, srcMeta);
+				}
 				continue;
 			}
 
 			if (existing.IsTable && incoming.IsTable)
-				existing.AsTable.ApplyMerge(incoming.AsTable, onConflict);
-			else if (onConflict == .Overwrite)
-				ReplaceValue(key, incoming.CloneInto(mStore));
+			{
+				existing.AsTable.ApplyMerge(incoming.AsTable, onConflict, srcMeta);
+			}
+			else if (onConflict == .Overwrite && !existing.IsSemanticallyEqualTo(incoming))
+			{
+				TomlValue copy = incoming.CloneInto(mStore);
+				ReplaceValue(key, copy);
+				if (dstMeta != null)
+				{
+					// The slot keeps its key and comments; the value is written as the source had it
+					CopySourceEntryStyle(source, key, srcMeta, dstMeta, false);
+					TomlMetadataTransfer.AdoptValue(copy, incoming, dstMeta, srcMeta);
+				}
+			}
 			// .Skip keeps the existing value; .Error conflicts were rejected by ValidateMerge
 		}
+	}
+
+	/// Copies the style of `source`'s entry `key` onto this table's entry `key`, if both have node IDs.
+	private void CopySourceEntryStyle(TomlTable source, StringView key, TomlDocumentMetadata srcMeta, TomlDocumentMetadata dstMeta, bool includeSlotStyle)
+	{
+		if (srcMeta == null || source.mMetadataContext == null)
+			return;
+		if (source.mMetadataContext.TryGetEntryNodeId(key, let srcId) && mMetadataContext.TryGetEntryNodeId(key, let dstId))
+			TomlMetadataTransfer.CopyNodeStyle(srcMeta, srcId, dstMeta, dstId, includeSlotStyle);
 	}
 
 	/// Appends a key to a merge error path using the document path syntax (bracketed if it contains '.').

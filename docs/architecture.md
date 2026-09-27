@@ -38,6 +38,7 @@ workspace startup project is `TomlTester/`.
 | `TomlParser.bf` | `TomlParserImpl<TCursor>`: recursive-descent parser, version gates, and PreserveStyle capture (tokens, formats, comments, document style inference) |
 | `TomlPathResolver.bf` | Table-tree navigation for headers and dotted keys, implicit table creation, all structural conflict rules |
 | `TomlResourceLimitState.bf` | Per-read limit counters and `Check*` helpers shared by the parser and the resolver |
+| `TomlMetadataTransfer.bf` | Carries PreserveStyle metadata across a merge: attaches node IDs to copied subtrees and copies tokens, formats and comments between sidecars |
 | `TomlMetadata.bf` | The PreserveStyle sidecar: `TomlMetadataMode`, node IDs, `TomlNodeStyle`, dirty flags, comment sets, format structs, `TomlContainerMetadataContext`, `TomlDocumentMetadata` |
 | `TomlWriter.bf` | `TomlWriterImpl`: the normal writer and the preserving writer |
 | `TomlChar.bf` | Character classes, UTF-8 decode/encode, and whole-buffer `ValidateUtf8` (with BOM handling) |
@@ -99,9 +100,15 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
   conflicting dotted path in document path syntax (e.g. `server.port`, `a.[b.c].x`); the position
   is 0:0 because the conflict has no single source location. `ApplyMerge` then inserts, recurses,
   and resolves leaves.
-- A successful merge into a non-empty document **drops PreserveStyle metadata**
-  (`ClearMetadata`). Merging metadata is not implemented, and keeping stale node IDs would be
-  unsafe.
+- A merge **keeps the destination's PreserveStyle metadata** and carries style across
+  (`TomlMetadataTransfer`). New keys, including new keys inside shared tables, get destination node
+  IDs throughout their copied subtree. When the incoming document was also read with PreserveStyle,
+  each merged node takes the incoming original token, value/key formats and comments, and is clean,
+  so it is written exactly as the incoming file had it. An `Overwrite` takes the incoming value style
+  but keeps the destination slot's key format and comments. Without incoming metadata, new nodes use
+  default styling and overwritten values are marked dirty (regenerated in the slot's format). The
+  destination's document-wide style is kept. The public `TomlTable.MergeFrom` behaves the same way,
+  finding the source sidecar through the source table's context.
 
 ### Tables, arrays and entries
 
@@ -404,9 +411,10 @@ key/value (`CaptureValueMetadata`). `TomlTable.Clear()` keeps the table's own co
 header comments) and only drops the entry mappings. The root table is not an entry of anything, so
 its dirty flags live in `TomlDocumentMetadata.mRootDirtyFlags`, next to `mRootComments`.
 
-When a merge drops the metadata, the document **retires** the sidecar instead of deleting it:
-reachable containers are detached, but tables the caller removed earlier are still alive in the
-arena and may still reference it, so it is freed only when the store resets (`Clear`/destruction).
+The sidecar is only deleted together with a store reset (`Clear`, Replace, destruction). Tables the
+caller removed earlier are still alive in the arena and keep their contexts, so freeing the sidecar
+while the store lives would leave them pointing at freed memory. For the same reason a Merge into an
+empty document reuses its existing sidecar instead of replacing it.
 
 **Dirty tracking** (`TomlDirtyFlags`):
 

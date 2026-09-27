@@ -865,33 +865,29 @@ static class TomlPreserveStyleMetadataTests
 	}
 
 	[Test]
-	public static void PreserveStyle_MergeClearsMetadata()
+	public static void PreserveStyle_MergeKeepsMetadataAndTracksMergedNodes()
 	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
+		let doc = ReadPreserveStyle(scope .(), "a = 'hello'\n[t]\nx = 1");
+		let metadata = doc.Metadata;
 
-		if (doc.Read("a = 'hello'", config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Setup failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-
-		// Merge — metadata should be cleared since merge-aware metadata is not yet implemented
 		var mergeConfig = TomlReadConfig();
 		mergeConfig.MetadataMode = .PreserveStyle;
 		mergeConfig.Mode = .Merge;
-		if (doc.Read("b = 'world'", mergeConfig) case .Err(let mergeErr))
+		if (doc.Read("b = 'world'\n[t]\ny = 2\n[u.v]\nz = 3", mergeConfig) case .Err(let mergeErr))
 		{
 			defer mergeErr.Dispose();
 			Test.Assert(false, scope $"Merge failed: {mergeErr.mMessage}");
 		}
-		// Metadata should be cleared after merge
-		Test.Assert(doc.Metadata == null);
-		// Semantic content should be merged
-		Test.Assert(doc.RootTable.Count == 2);
+		Test.Assert(doc.Metadata === metadata, "Merge must keep the destination sidecar");
+		Test.Assert(doc.RootTable.Count == 4);
+
+		// Existing nodes stay clean; merged nodes are tracked and carry the incoming tokens
+		Test.Assert(StyleFor(doc, "a").mDirtyFlags == .None);
+		Test.Assert(StyleFor(doc, "b").mDirtyFlags == .None);
+		Test.Assert(metadata.GetOriginalToken(StyleFor(doc, "b").mOriginalValueToken) == "'world'");
+		Test.Assert(NodeIdFor(doc, "t.y").IsValid, "Keys merged into an existing table get node IDs");
+		Test.Assert(NodeIdFor(doc, "u.v.z").IsValid, "Keys inside merged subtrees get node IDs");
+		Test.Assert(metadata.mRootDirtyFlags == .Children, "Adding root keys marks the root Children-dirty");
 	}
 
 	[Test]

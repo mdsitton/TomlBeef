@@ -1,5 +1,6 @@
 using System;
 using TomlBeef;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -113,17 +114,18 @@ static class TomlLifetimeTests
 	}
 
 	[Test]
-	public static void RemovedTableStaysUsableAfterMergeDropsMetadata()
+	public static void RemovedTableStaysUsableAcrossMerge()
 	{
-		// A PreserveStyle merge discards the style metadata while keeping the store. A table the
-		// caller removed earlier (and still holds) must not be left pointing at freed metadata.
+		// A table the caller removed earlier (and still holds) stays alive in the arena and keeps its
+		// metadata context, so a merge must never free the sidecar out from under it.
 		var doc = scope TomlDocument();
 		ReadOrFail(doc, "[t]\nx = 1\n[u]\ny = 2", .() { MetadataMode = .PreserveStyle });
+		let metadata = doc.Metadata;
 		Test.Assert(doc.TryGetTable("t", var removed));
 		Test.Assert(doc.Remove("t"));
 
 		ReadOrFail(doc, "z = 3", .() { Mode = .Merge });
-		Test.Assert(doc.Metadata == null, "A successful merge drops PreserveStyle metadata");
+		Test.Assert(doc.Metadata === metadata, "A merge keeps the destination sidecar");
 
 		// Mutating the detached table exercises its metadata context
 		removed.SetString("x", "changed");
@@ -138,6 +140,23 @@ static class TomlLifetimeTests
 		String output = scope String();
 		doc.Write(output);
 		Test.Assert(output.Contains("y = 5") && output.Contains("z = 3"), scope $"Unexpected output:\n{output}");
+	}
+
+	[Test]
+	public static void MergeIntoEmptyDocumentReusesSidecar()
+	{
+		// An empty PreserveStyle document takes the direct-parse path on Merge; it must reuse its
+		// sidecar rather than replacing (and leaking) it while the root still references it.
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "", .() { MetadataMode = .PreserveStyle });
+		let metadata = doc.Metadata;
+		Test.Assert(metadata != null);
+		ReadOrFail(doc, "a = 0x10", .() { Mode = .Merge, MetadataMode = .PreserveStyle });
+		Test.Assert(doc.Metadata === metadata);
+		Test.Assert(doc.RootTable.MetadataContext.mMetadata === metadata);
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("a = 0x10"), scope $"Merged value lost its format:\n{output}");
 	}
 
 	[Test]

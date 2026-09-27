@@ -1460,6 +1460,81 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(!output.Contains("old"));
 	}
 
+	static void ReadPreserving(TomlDocument doc, StringView input, TomlReadMode mode = .Replace, MergeConflict onConflict = .Error, TomlMetadataMode metadataMode = .PreserveStyle)
+	{
+		if (doc.Read(input, .() { Mode = mode, OnConflict = onConflict, MetadataMode = metadataMode }) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Read failed: {e.mMessage}\n{input}");
+		}
+	}
+
+	static void AssertContains(StringView output, StringView expected)
+	{
+		Test.Assert(output.Contains(expected), scope $"Expected to find:\n{expected}\nin output:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_MergeKeepsBaseStyleAndBringsIncomingStyle()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "# base header\nname = 'base'\nport = 0x1F\n\n[server]\nhost = \"a\\u0020b\"");
+		ReadPreserving(doc, "# about extra\nextra = 0o17\n\n[server]\n# about timeout\ntimeout = 1e3\n\n[[items]]\nn = 0b101", .Merge);
+
+		String output = scope String();
+		doc.Write(output);
+		// Destination style is untouched
+		AssertContains(output, "# base header\nname = 'base'");
+		AssertContains(output, "port = 0x1F");
+		AssertContains(output, "host = \"a\\u0020b\"");
+		// Incoming values keep their own formats and comments, including inside a shared table
+		AssertContains(output, "# about extra\nextra = 0o17");
+		AssertContains(output, "# about timeout\ntimeout = 1e3");
+		AssertContains(output, "n = 0b101");
+
+		var reparsed = scope TomlDocument();
+		ReadPreserving(reparsed, output, .Replace, .Error, .None);
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Merged output changed on re-read:\n{output}");
+
+		// Merged nodes stay editable with their captured format
+		doc.RootTable.SetInteger("extra", 8);
+		String edited = scope String();
+		doc.Write(edited);
+		AssertContains(edited, "extra = 0o10");
+	}
+
+	[Test]
+	public static void PreserveStyle_MergeOverwriteTakesIncomingValueStyleKeepsSlotComments()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "# port comment\nport = 0x1F\ns = 'lit'");
+		ReadPreserving(doc, "# ignored comment\nport = 0o17\ns = \"esc\\u0041\"", .Merge, .Overwrite);
+
+		String output = scope String();
+		doc.Write(output);
+		AssertContains(output, "# port comment\nport = 0o17");
+		AssertContains(output, "s = \"esc\\u0041\"");
+		Test.Assert(!output.Contains("# ignored comment"), scope $"Overwrite keeps the destination slot's comments:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_MergeWithoutIncomingMetadataUsesSlotFormats()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "port = 0x1F\n[t]\nx = 1");
+		// The override is read without PreserveStyle, so only the destination has style data
+		ReadPreserving(doc, "port = 32\nadded = 5\n[t]\ny = 2", .Merge, .Overwrite, .None);
+
+		Test.Assert(doc.Metadata != null);
+		String output = scope String();
+		doc.Write(output);
+		AssertContains(output, "port = 0x20");
+		AssertContains(output, "added = 5");
+		AssertContains(output, "y = 2");
+		Test.Assert(StyleFor(doc, "port").mDirtyFlags == .Value, "Overwritten value without incoming style is dirty");
+		Test.Assert(NodeIdFor(doc, "t.y").IsValid);
+	}
+
 	[Test]
 	public static void PreserveStyle_ClearedTableKeepsCommentsAndTracksNewKeys()
 	{

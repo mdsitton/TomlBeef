@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 222/222 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 222/222 pass |
+| `beefbuild -test` (Debug checks) | 226/226 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 226/226 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -30,7 +30,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | TOML 1.0 and 1.1 parsing | Complete; full valid/invalid corpus passes for both versions |
 | Encoding | `TomlTester -from-json` builds documents from toml-test tagged JSON through the public API; passes the upstream encoder suite for both versions |
 | Input paths | `Read(StringView)`, `ReadBytes`, `Read(Stream)`, `ReadFile`, all decoding identically |
-| Read modes | `Replace` and deep `Merge` (`Error`/`Skip`/`Overwrite` on conflicting leaves), transactional on failure |
+| Read modes | `Replace` and deep `Merge` (`Error`/`Skip`/`Overwrite` on conflicting leaves), transactional on failure; PreserveStyle metadata is kept and carried across merges |
 | Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
@@ -53,7 +53,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Gap | Size |
 |----|-----|------|
-| P1 | A successful `Merge` clears all style metadata (a test pins this). Needs a temporary sidecar, node-ID remapping across the deep merge (new keys inside existing tables too), and Overwrite marking replaced leaves dirty | M–L |
 | P2 | Comments inside multiline inline tables are discarded; no "detached comment" placement | M |
 | P3 | The `Style` dirty flag is never set; no public API to edit comments or style | M |
 | P4 | Document-style defaults: `mUseTabs` never inferred; `mDefaultArrayStyle` and `mPreferDottedKeys` inferred but unused for new values; no "nearby style" fallback | S |
@@ -99,8 +98,7 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 ## Suggested order
 
-1. B1–B5 (PreserveStyle correctness), each with a writer-output test.
-2. P1 (metadata through merge), now that deep merge (A1) is settled.
-3. B6–B8, then I1, A3, A4 (small fixes and API hygiene).
-4. P1, P2.
-5. I2–I4 and optional items as needed.
+1. B6–B8 (date/time letter case, quoted key styles, stream lookahead).
+2. I1, A3, A4 (small fixes and API hygiene).
+3. P2 (comments inside inline tables), then P3–P5.
+4. I2–I4 and optional items as needed.
