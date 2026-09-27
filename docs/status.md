@@ -78,10 +78,10 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 |----|-----|------|
 | A1 | Merge is shallow: conflicts are checked and resolved per top-level key only. Base `[server] host=…` plus override `[server] port=…` fails under `.Error`, and `.Overwrite` replaces the whole `server` table. **Decision needed:** should layered configs deep-merge tables? | M |
 | A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
-| A3 | Borrowed raw read APIs (`TomlTable.GetValueAt`, `TryGetValue`, `Get`, `this[StringView]`, `TomlDocument.Get`/`GetPath`) are public without an "advanced/borrowed" note. Internalize or document | S |
+| A3 | Borrowed raw read APIs (`TomlTable.GetValueAt`, `TomlArray.GetValueAt`, `TryGetValue`, `Get`, `this[StringView]`, `TomlDocument.Get`/`GetPath`) are public without an "advanced/borrowed" note. Internalize or document | S |
 | A4 | `TomlParserImpl` receives its store via `SetStore` instead of requiring it at construction | S |
 | A5 | `DefaultReadConfig`/`DefaultWriteConfig` are global mutable statics; consider per-document defaults | S–M |
-| A6 | Arrays have no enumerator or per-index kind query | S |
+| A6 | Neither tables nor arrays have an enumerator; walking a document means index loops over `Count` with `GetKeyAt`/`GetValueAt` | S |
 | A7 | `TomlTester` reads all stdin into memory and exposes no limit flags | S |
 
 ### Tooling

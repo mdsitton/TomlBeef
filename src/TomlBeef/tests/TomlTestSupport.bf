@@ -84,7 +84,7 @@ public static class TomlTestSupport
 	{
 		if (a.Count != b.Count) return false;
 		for (int i = 0; i < a.Count; i++)
-			if (!TomlValueEquals(a.GetValue(i), b.GetValue(i))) return false;
+			if (!TomlValueEquals(a.GetValueAt(i), b.GetValueAt(i))) return false;
 		return true;
 	}
 

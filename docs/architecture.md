@@ -40,7 +40,6 @@ workspace startup project is `TomlTester/`.
 | `TomlResourceLimitState.bf` | Per-read limit counters and `Check*` helpers shared by the parser and the resolver |
 | `TomlMetadata.bf` | The PreserveStyle sidecar: `TomlMetadataMode`, node IDs, `TomlNodeStyle`, dirty flags, comment sets, format structs, `TomlContainerMetadataContext`, `TomlDocumentMetadata` |
 | `TomlWriter.bf` | `TomlWriterImpl`: the normal writer and the preserving writer |
-| `TomlSerializer.bf` | Public `TomlSerializer`: writes a document as toml-test tagged JSON |
 | `TomlChar.bf` | Character classes, UTF-8 decode/encode, and whole-buffer `ValidateUtf8` (with BOM handling) |
 | `TomlError.bf` | `TomlErrorKind` and `TomlParseError` |
 | `TomlVersion.bf` | `TomlVersion { V1_0, V1_1 }` |
@@ -108,7 +107,8 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 - `TomlArray` provides typed `Add*`, `Add(TomlInputValue)`, `AddTable()`, `AddArray()`, index
   assignment `arr[i] = <scalar>`, `SetTable(i)`/`SetArray(i)`, `RemoveAt`, `Clear`, typed
   `TryGet*(index, out v)`, and `IsStatic` (true for `[...]` arrays, false for `[[...]]`
-  arrays of tables). Reading through the indexer is a fatal error, so reads go through `TryGet*`.
+  arrays of tables). Reading through the indexer is a fatal error, so reads go through `TryGet*`,
+  or `GetValueAt(i)` for elements of unknown type (mirrors `TomlTable.GetValueAt`).
 - `TomlInputValue` is a scalar-only struct with implicit conversions from `StringView`, `int64`,
   `double`, `bool` and the four date/time structs. Callers never build a `TomlValue` or a container
   themselves. The value is materialized into the document's store on assignment.
@@ -483,7 +483,8 @@ is needed.
 **TomlTester CLI** (`TomlTester/src/Program.bf`) takes `-toml 1.0|1.1` (default 1.1).
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
-  `TomlSerializer`. Each scalar becomes `{"type": ..., "value": ...}`, with types `string`,
+  `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in
+  `TomlTester` and uses only the public API (`GetKeyAt`/`GetValueAt` walks). Each scalar becomes `{"type": ..., "value": ...}`, with types `string`,
   `integer`, `float`, `bool`, `datetime`, `datetime-local`, `date-local` and `time-local`.
 - `-encode`: reads TOML and writes it back with the normal writer.
 - `-from-json` (encoder): reads tagged JSON and writes TOML (`TomlTester/src/JsonToToml.bf`). The

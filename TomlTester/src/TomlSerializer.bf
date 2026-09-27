@@ -1,12 +1,15 @@
 using System;
-using System.Collections;
-using internal TomlBeef;
+using TomlBeef;
 
-namespace TomlBeef;
+namespace TomlTester;
 
-/// Serializes a TOML document to tagged JSON format for toml-test compliance.
-public class TomlSerializer
+/// Serializes a TOML document to toml-test tagged JSON (the decoder direction).
+/// Uses only the public TomlBeef API.
+class TomlSerializer
 {
+	/// @brief Append the tagged JSON form of `doc` to `outStr`.
+	/// @param doc The document to serialize.
+	/// @param outStr Output buffer; JSON is appended.
 	public void Serialize(TomlDocument doc, String outStr)
 	{
 		SerializeTable(doc.RootTable, outStr);
@@ -22,17 +25,12 @@ public class TomlSerializer
 			return;
 		}
 
-		int count = tbl.KeyOrder.Count;
-		for (int i = 0; i < count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
 			if (i > 0) outStr.Append(',');
-
-			WriteString(key, outStr);
+			WriteString(tbl.GetKeyAt(i), outStr);
 			outStr.Append(':');
-
-			TomlValue val = tbl.Entries[key];
-			SerializeValue(val, outStr);
+			SerializeValue(tbl.GetValueAt(i), outStr);
 		}
 
 		outStr.Append('}');
@@ -144,7 +142,7 @@ public class TomlSerializer
 			for (int i = 0; i < arr.Count; i++)
 			{
 				if (i > 0) outStr.Append(',');
-				SerializeValue(arr.GetValue(i), outStr);
+				SerializeValue(arr.GetValueAt(i), outStr);
 			}
 		}
 		outStr.Append(']');

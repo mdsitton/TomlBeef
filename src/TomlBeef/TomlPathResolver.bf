@@ -182,7 +182,7 @@ class TomlPathResolver
 				if (arr.Count == 0)
 					return .Err(MakeError(.ArrayElementOrdering,
 						"Cannot access child of empty array-of-tables; define an [[array]] element first", mCurrentOffset));
-				TomlValue lastVal = arr.GetValue(arr.Count - 1);
+				TomlValue lastVal = arr.GetValueAt(arr.Count - 1);
 				TomlTable lastTable = null; if (lastVal case .Table(ref lastTable))
 					mCurrentTable = lastTable;
 				else

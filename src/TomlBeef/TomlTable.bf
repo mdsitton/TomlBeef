@@ -553,7 +553,7 @@ public class TomlTable
 				{
 					for (int j = 0; j < arr.Count; j++)
 					{
-						if (arr.GetValue(j) case .Table(let elemTbl) && elemTbl != null && elemTbl.mOrigin == .InlineTable)
+						if (arr.GetValueAt(j) case .Table(let elemTbl) && elemTbl != null && elemTbl.mOrigin == .InlineTable)
 							elemTbl.SealInlineRecursively();
 					}
 				}

@@ -326,8 +326,11 @@ public class TomlArray
 
 	public int Count => mItems.Count;
 
-	/// @brief Get the value at the given index. Internal — use typed TryGet* methods for safe reading.
-	internal TomlValue GetValue(int index)
+	/// @brief Get the value at the given index, for reading elements of any type (e.g. when walking a document).
+	/// The returned TomlValue borrows document-owned storage. Prefer the typed TryGet* methods when the type is known.
+	/// @param index The element index.
+	/// @return The element value.
+	public TomlValue GetValueAt(int index)
 	{
 		return mItems[index];
 	}
@@ -460,7 +463,7 @@ public class TomlArray
 	{
 		internal get
 		{
-			Runtime.FatalError("Internal: use GetValue(int) or typed TryGet* methods for reading");
+			Runtime.FatalError("Internal: use GetValueAt(int) or typed TryGet* methods for reading");
 		}
 		set
 		{
