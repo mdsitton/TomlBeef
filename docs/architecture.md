@@ -48,7 +48,7 @@ workspace startup project is `TomlTester/`.
 
 Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `tests/valid` and
 `tests/invalid`, the CLI is `TomlTester/src/Program.bf`, and the acceptance scripts are
-`test-toml.sh`, `test-roundtrip.sh` and `test-official-toml.sh` (with `json-compare.py`). `BJSON/`,
+`test-toml.sh`, `test-roundtrip.sh`, `test-encoder.sh` and `test-official-toml.sh` (with `json-compare.py`). `BJSON/`,
 `toml-test/` and `recovery/` are external or forensic material (see `AGENTS.md`).
 
 ## 3. Public API model
@@ -474,21 +474,27 @@ is needed.
   Needs Python 3.
 - `./test-roundtrip.sh`: parse → `-encode` (the normal writer) → re-parse, then compare the two
   JSON outputs semantically.
+- `./test-encoder.sh`: every fixture `.json` → `-from-json` → TOML → decoder → tagged JSON,
+  compared semantically against the fixture.
 - `./test-official-toml.sh`: runs the pinned upstream `toml-test` v2 runner (via `go run`, or
-  `TOML_TEST_BIN`) for 1.0 and 1.1, writing `test-official-toml-<ver>.log`.
+  `TOML_TEST_BIN`) for 1.0 and 1.1 with both `-decoder` and `-encoder`, writing
+  `test-official-toml-<ver>.log`.
 
-**TomlTester CLI** (`TomlTester/src/Program.bf`) reads TOML from stdin and takes `-toml 1.0|1.1`
-(default 1.1).
+**TomlTester CLI** (`TomlTester/src/Program.bf`) takes `-toml 1.0|1.1` (default 1.1).
 
-- Default: writes toml-test tagged JSON through `TomlSerializer`. Each scalar becomes
-  `{"type": ..., "value": ...}`, with types `string`, `integer`, `float`, `bool`, `datetime`,
-  `datetime-local`, `date-local` and `time-local`.
-- `-encode`: writes TOML with the normal writer.
+- Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
+  `TomlSerializer`. Each scalar becomes `{"type": ..., "value": ...}`, with types `string`,
+  `integer`, `float`, `bool`, `datetime`, `datetime-local`, `date-local` and `time-local`.
+- `-encode`: reads TOML and writes it back with the normal writer.
+- `-from-json` (encoder): reads tagged JSON and writes TOML (`TomlTester/src/JsonToToml.bf`). The
+  JSON is parsed with **BJSON**, a `TomlTester`-only dependency; the library never depends on it.
+  An object with exactly two string members `type` and `value` is a scalar, any other object a
+  table, any array an array. The document is built only through the public typed API
+  (`Set*`, `AddTable`, `AddArray`, `TomlArray.Add*`), so this mode also exercises that API.
+  Integer, float and date/time values are converted by parsing `v = <value>` with TomlBeef itself,
+  so the encoder shares the decoder's grammar. BJSON stores short strings inline in `JsonValue`,
+  so tag and value text are copied out rather than viewed.
 - On a parse error: prints `Parse error at line L:C: msg` to stderr and exits with 1.
-
-The project file declares a `BJSON` dependency for the planned encoder mode (tagged JSON in, TOML
-out) used by toml-test's encoder suite; it is not used yet (status.md T2). The library itself
-never depends on BJSON.
 
 ## 10. Glossary
 

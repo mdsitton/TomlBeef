@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run the official upstream toml-test decoder suite against TomlTester.
+# Run the official upstream toml-test decoder and encoder suites against TomlTester.
+# The encoder is `TomlTester -from-json` (tagged JSON in, TOML out).
 #
 # This intentionally uses the upstream Go module instead of the vendored/root
 # toml-test/ checkout, so the local toml-test directory is not required.
@@ -32,17 +33,19 @@ run_version() {
 	local version="$1"
 	local logfile="$LOGDIR/test-official-toml-${version}.log"
 	local decoder="$BIN -toml $version"
+	local encoder="$BIN -from-json -toml $version"
 	local rc
 
 	echo "=== Official toml-test ${version} ==="
 	echo "Decoder: $decoder"
+	echo "Encoder: $encoder"
 	if [ -n "${TOML_TEST_BIN:-}" ]; then
 		echo "Runner:  $TOML_TEST_BIN"
-		"$TOML_TEST_BIN" test -decoder="$decoder" -toml="$version" -color=never > "$logfile" 2>&1
+		"$TOML_TEST_BIN" test -decoder="$decoder" -encoder="$encoder" -toml="$version" -color=never > "$logfile" 2>&1
 		rc=$?
 	else
 		echo "Runner:  go run $TOML_TEST_PKG"
-		go run "$TOML_TEST_PKG" test -decoder="$decoder" -toml="$version" -color=never > "$logfile" 2>&1
+		go run "$TOML_TEST_PKG" test -decoder="$decoder" -encoder="$encoder" -toml="$version" -color=never > "$logfile" 2>&1
 		rc=$?
 	fi
 

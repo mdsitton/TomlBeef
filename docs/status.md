@@ -13,7 +13,8 @@ Last reviewed: 2026-09-27.
 | `beefbuild -test` | 206/206 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
-| `./test-official-toml.sh` | Pinned upstream toml-test suite, TOML 1.0 and 1.1 (requires Go) |
+| `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
+| `./test-official-toml.sh` | Upstream toml-test v2.2.0 (requires Go). 1.0: 205 valid, 205 encoder, 474 invalid. 1.1: 214 valid, 214 encoder, 467 invalid. All pass |
 
 Any change to `.bf` files must keep these green. Parser or writer behavior changes need the shell scripts
 as well as `beefbuild -test`.
@@ -23,6 +24,7 @@ as well as `beefbuild -test`.
 | Area | State |
 |------|-------|
 | TOML 1.0 and 1.1 parsing | Complete; full valid/invalid corpus passes for both versions |
+| Encoding | `TomlTester -from-json` builds documents from toml-test tagged JSON through the public API; passes the upstream encoder suite for both versions |
 | Input paths | `Read(StringView)`, `ReadBytes`, `Read(Stream)`, `ReadFile`, all decoding identically |
 | Read modes | `Replace` and `Merge` (`Error`/`Skip`/`Overwrite`), transactional on failure |
 | Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
@@ -86,7 +88,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Gap | Size |
 |----|-----|------|
-| T2 | **Next up: encoder (JSON-input) testing.** Add a `TomlTester` mode that reads toml-test tagged JSON from stdin (parsed with the `BJSON` dependency already declared in `TomlTester/BeefProj.toml`), builds a `TomlDocument` through the public typed API, and writes TOML. That enables the upstream `toml-test` encoder suite in `test-official-toml.sh` and a local JSON → TOML → JSON check over the `tests/valid/**/*.json` fixtures | M |
 | T1 | No automatic leak detection in tests. Beef's realtime leak check (`BF_ENABLE_REALTIME_LEAK_CHECK`) is a workspace config setting; enabling it for the Test config would catch error-path leaks. **Decision needed:** workspace config change | S |
 
 ### Optional / nice to have

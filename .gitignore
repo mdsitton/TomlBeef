@@ -14,6 +14,8 @@ test-toml-mismatches.log
 
 test-roundtrip.log
 
+test-encoder.log
+
 test-roundtrip-baseline.txt
 
 test-official-toml-1.0.log

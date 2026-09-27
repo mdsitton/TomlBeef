@@ -8,11 +8,14 @@ class Program
 	public static int Main(String[] args)
 	{
 		bool encode = false;
+		bool fromJson = false;
 		TomlVersion version = .V1_1;
 		for (int i = 0; i < args.Count; i++)
 		{
 			if (args[i] == "-encode")
 				encode = true;
+			else if (args[i] == "-from-json")
+				fromJson = true;
 			else if (args[i] == "-toml" && i + 1 < args.Count)
 			{
 				if (args[i + 1] == "1.0") version = .V1_0;
@@ -26,6 +29,21 @@ class Program
 
 		var doc = new TomlDocument();
 		defer delete doc;
+
+		// Encoder mode for toml-test: tagged JSON on stdin, TOML on stdout
+		if (fromJson)
+		{
+			String error = scope String();
+			if (scope JsonToToml().Convert(input, doc, error) case .Err)
+			{
+				Console.Error.WriteLine(error);
+				return 1;
+			}
+			String tomlOut = scope String();
+			doc.Write(tomlOut, .() { Version = version });
+			Console.Write(tomlOut);
+			return 0;
+		}
 
 		if (doc.Read(input, .() { Version = version }) case .Err(let err))
 		{

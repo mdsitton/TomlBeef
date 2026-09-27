@@ -386,7 +386,10 @@ beefbuild -test
 # Roundtrip test
 ./test-roundtrip.sh
 
-# Run the pinned upstream suite for TOML 1.0 and 1.1 (requires Go)
+# Encoder test: fixture JSON -> TOML -> JSON, compared against the fixture
+./test-encoder.sh
+
+# Run the pinned upstream decoder and encoder suites for TOML 1.0 and 1.1 (requires Go)
 ./test-official-toml.sh
 ```
 
