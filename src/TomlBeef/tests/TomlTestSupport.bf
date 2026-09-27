@@ -88,12 +88,60 @@ public static class TomlTestSupport
 		return true;
 	}
 
-	public static String GetRelativePath(StringView fullPath)
+	/// Node ID of the value at `dottedPath` (split on the last '.'), looked up by key through the
+	/// parent table's metadata context rather than by allocation order.
+	public static TomlNodeId NodeIdFor(TomlDocument doc, StringView dottedPath)
+	{
+		TomlTable parent = doc.RootTable;
+		StringView key = dottedPath;
+		int lastDot = dottedPath.LastIndexOf('.');
+		if (lastDot >= 0)
+		{
+			Test.Assert(doc.TryGetTable(dottedPath.Substring(0, lastDot), out parent), scope $"No parent table for '{dottedPath}'");
+			key = dottedPath.Substring(lastDot + 1);
+		}
+		TomlNodeId nodeId = .Invalid;
+		if (parent.MetadataContext != null)
+			parent.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+		Test.Assert(nodeId.IsValid, scope $"No metadata node ID for '{dottedPath}'");
+		return nodeId;
+	}
+
+	/// Style record for the value at `dottedPath`.
+	public static TomlNodeStyle* StyleFor(TomlDocument doc, StringView dottedPath)
+	{
+		return doc.Metadata.GetNodeStyle(NodeIdFor(doc, dottedPath));
+	}
+
+	/// Comment set attached to the value at `dottedPath`, or null if it has none.
+	public static TomlCommentSet CommentsFor(TomlDocument doc, StringView dottedPath)
+	{
+		return doc.Metadata.GetCommentSet(NodeIdFor(doc, dottedPath));
+	}
+
+	/// Captured value format for the value at `dottedPath`.
+	public static TomlValueFormat ValueFormatFor(TomlDocument doc, StringView dottedPath)
+	{
+		let formatRef = StyleFor(doc, dottedPath).mValueFormatRef;
+		Test.Assert(formatRef.IsValid, scope $"No value format captured for '{dottedPath}'");
+		return doc.Metadata.mValueFormats[formatRef.mIndex];
+	}
+
+	/// Captured key format for the value at `dottedPath`.
+	public static TomlKeyFormat KeyFormatFor(TomlDocument doc, StringView dottedPath)
+	{
+		let formatRef = StyleFor(doc, dottedPath).mKeyFormatRef;
+		Test.Assert(formatRef.IsValid, scope $"No key format captured for '{dottedPath}'");
+		return doc.Metadata.mKeyFormats[formatRef.mIndex];
+	}
+
+	/// Returns the part of `fullPath` after the test base directory, as a view into `fullPath`.
+	public static StringView GetRelativePath(StringView fullPath)
 	{
 		int prefixLen = TestBaseDir.Length + 1;
 		if (fullPath.Length > prefixLen)
-			return scope String(fullPath.Substring(prefixLen));
-		return scope String(fullPath);
+			return fullPath.Substring(prefixLen);
+		return fullPath;
 	}
 
 	public static void AddAscii(List<uint8> bytes, StringView text)
@@ -175,9 +223,10 @@ class FailingAfterBytesStream : Stream
 		if (mPos >= mFailAfter)
 			return .Err;
 
+		// Normal end of data before the failure point is a clean EOF, not an I/O error
 		int remaining = mData.Length - mPos;
 		if (remaining <= 0)
-			return .Err;
+			return 0;
 
 		int allowed = mFailAfter - mPos;
 		int toCopy = Math.Min(data.Length, Math.Min(remaining, allowed));

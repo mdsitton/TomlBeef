@@ -320,5 +320,68 @@ static class TomlResourceLimitTests
 			Test.Assert(false, "Expected MaxInputBytes limit for replace-mode ReadBytes");
 		Test.Assert(doc.RootTable.Count == 0);
 	}
+
+	/// Asserts that `input` parses with MaxNodes = nodeCount and fails with MaxNodes = nodeCount - 1.
+	static void AssertExactNodeCount(StringView input, int nodeCount)
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		if (doc.Read(input, TomlReadConfig() { MaxNodes = nodeCount }) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Expected {nodeCount} nodes to fit for '{input}': {e.mMessage}");
+		}
+		switch (doc.Read(input, TomlReadConfig() { MaxNodes = nodeCount - 1 }))
+		{
+		case .Err(let limitErr):
+			defer limitErr.Dispose();
+			Test.Assert(limitErr.mKind == .ResourceLimitExceeded, scope $"Expected ResourceLimitExceeded, got {limitErr.mKind}");
+		case .Ok:
+			Test.Assert(false, scope $"Expected MaxNodes = {nodeCount - 1} to reject '{input}'");
+		}
+	}
+
+	[Test]
+	public static void ResourceLimit_MaxNodes_ArrayCountsSelfAndElements()
+	{
+		AssertExactNodeCount("a = [1, 2]", 3);
+	}
+
+	[Test]
+	public static void ResourceLimit_MaxNodes_ExplicitTable()
+	{
+		AssertExactNodeCount("[t]\na = 1", 2);
+	}
+
+	[Test]
+	public static void ResourceLimit_MaxNodes_ImplicitTables()
+	{
+		AssertExactNodeCount("a.b.c = 1", 3);
+	}
+
+	[Test]
+	public static void ResourceLimit_MaxNodes_ArrayOfTables()
+	{
+		// array + first element table + scalar, then second element table + scalar
+		AssertExactNodeCount("[[p]]\nname = \"x\"", 3);
+		AssertExactNodeCount("[[p]]\nname = \"x\"\n[[p]]\nname = \"y\"", 5);
+	}
+
+	[Test]
+	public static void ResourceLimit_StreamUnderLimitSucceeds()
+	{
+		var doc = new TomlDocument();
+		defer delete doc;
+		List<uint8> bytes = scope List<uint8>();
+		TomlTestSupport.AddAscii(bytes, "a = 1\nb = 2");
+		var stream = scope MemoryStream(bytes, false);
+		var config = TomlReadConfig() { MaxInputBytes = bytes.Count };
+		if (doc.Read(stream, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Expected stream at exactly MaxInputBytes to parse: {e.mMessage}");
+		}
+		Test.Assert(doc.RootTable.Count == 2);
+	}
 }
 

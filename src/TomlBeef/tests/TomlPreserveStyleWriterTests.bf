@@ -1,147 +1,15 @@
-using System; using System.Collections; using System.IO; using TomlBeef; using internal TomlBeef; using static TomlBeef.TomlTestSupport; namespace TomlBeef; static class TomlPreserveStyleWriterTests {
-	[Test]
-	public static void PreserveStyle_LeadingComment()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# leading comment\na = 1";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
+using System;
+using System.Collections;
+using System.IO;
+using TomlBeef;
+using internal TomlBeef;
+using static TomlBeef.TomlTestSupport;
 
-		// Check that the node has a leading comment
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(commentSet != null);
-		Test.Assert(commentSet.mLeading.Count == 1);
-		Test.Assert(commentSet.mLeading[0] == "leading comment");
-	}
+namespace TomlBeef;
 
-	[Test]
-	public static void PreserveStyle_TrailingComment()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "a = 1 # trailing comment";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
-
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(commentSet != null);
-		Test.Assert(commentSet.mTrailing != null);
-		Test.Assert(commentSet.mTrailing == "trailing comment");
-	}
-
-	[Test]
-	public static void PreserveStyle_LeadingAndTrailingComment()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# leading\na = 1 # trailing";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
-
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(commentSet != null);
-		Test.Assert(commentSet.mLeading.Count == 1);
-		Test.Assert(commentSet.mLeading[0] == "leading");
-		Test.Assert(commentSet.mTrailing != null);
-		Test.Assert(commentSet.mTrailing == "trailing");
-	}
-
-	[Test]
-	public static void PreserveStyle_MultipleLeadingComments()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# comment 1\n# comment 2\na = 1";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(commentSet != null);
-		Test.Assert(commentSet.mLeading.Count == 2);
-		Test.Assert(commentSet.mLeading[0] == "comment 1");
-		Test.Assert(commentSet.mLeading[1] == "comment 2");
-	}
-
-	[Test]
-	public static void PreserveStyle_CommentBeforeTableHeader()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# table comment\n[server]\nport = 8080";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-
-		// The server table should have the comment
-		let serverTable = doc.RootTable.Entries["server"].AsTable;
-		Test.Assert(serverTable.MetadataContext != null);
-		let nodeId = serverTable.MetadataContext.mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(commentSet != null);
-		Test.Assert(commentSet.mLeading.Count == 1);
-		Test.Assert(commentSet.mLeading[0] == "table comment");
-	}
-
-	[Test]
-	public static void PreserveStyle_FileHeaderComment()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		// Blank line separates the comment from [server], making it a root comment
-		let input = "# file header\n\n[server]\nport = 8080";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-
-		// The file header comment should be on the dedicated root comment set
-		let rootComments = doc.Metadata.mRootComments;
-		Test.Assert(rootComments != null);
-		Test.Assert(rootComments.mLeading.Count == 1);
-		Test.Assert(rootComments.mLeading[0] == "file header");
-	}
-
+/// Preserve-style writer output: token reuse, formats, comments, and dirty-write effects.
+static class TomlPreserveStyleWriterTests
+{
 	[Test]
 	public static void PreserveStyle_CommentEmission()
 	{
@@ -164,37 +32,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 	}
 
 	[Test]
-	public static void PreserveStyle_CommentOnMultpleKeys()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# first comment\na = 1\n# second comment\nb = 2";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 2);
-
-		// Check first key
-		let nodeIdA = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSetA = doc.Metadata.GetCommentSet(nodeIdA);
-		Test.Assert(commentSetA != null);
-		Test.Assert(commentSetA.mLeading.Count == 1);
-		Test.Assert(commentSetA.mLeading[0] == "first comment");
-
-		// Check second key
-		let nodeIdB = doc.Metadata.mNodeStyles[1].mNodeId;
-		let commentSetB = doc.Metadata.GetCommentSet(nodeIdB);
-		Test.Assert(commentSetB != null);
-		Test.Assert(commentSetB.mLeading.Count == 1);
-		Test.Assert(commentSetB.mLeading[0] == "second comment");
-	}
-
-	[Test]
 	public static void PreserveStyle_EmptyTrailingComment()
 	{
 		var doc = new TomlDocument();
@@ -210,8 +47,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		Test.Assert(doc.Metadata != null);
 		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
 
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSet = doc.Metadata.GetCommentSet(nodeId);
+		let commentSet = CommentsFor(doc, "a");
 		Test.Assert(commentSet != null);
 		// Trailing comment should exist (empty string, not null)
 		Test.Assert(commentSet.mTrailing != null);
@@ -221,66 +57,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		String output = scope String();
 		doc.Write(output);
 		Test.Assert(output.Contains("a = 1 #"));
-	}
-
-	[Test]
-	public static void PreserveStyle_RootCommentDoesNotCollideWithFirstNode()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		// Blank line separates root comment from the leading comment for 'a'
-		let input = "# root comment\n\n# first node comment\na = 1";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 1);
-
-		// Root comment should be on dedicated root comment set
-		let rootComments = doc.Metadata.mRootComments;
-		Test.Assert(rootComments != null);
-		Test.Assert(rootComments.mLeading.Count == 1);
-		Test.Assert(rootComments.mLeading[0] == "root comment");
-
-		// First node comment should be on first node (node ID 0)
-		let firstNodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let firstComments = doc.Metadata.GetCommentSet(firstNodeId);
-		Test.Assert(firstComments != null);
-		Test.Assert(firstComments.mLeading.Count == 1);
-		Test.Assert(firstComments.mLeading[0] == "first node comment");
-	}
-
-	[Test]
-	public static void PreserveStyle_DetachedCommentSeparatedByBlankLine()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "# detached comment\n\n# leading comment\na = 1";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-
-		// Detached comment should be on root comment set (separated by blank line)
-		let rootComments = doc.Metadata.mRootComments;
-		Test.Assert(rootComments != null);
-		Test.Assert(rootComments.mLeading.Count == 1);
-		Test.Assert(rootComments.mLeading[0] == "detached comment");
-
-		// Leading comment should be on the key node
-		let nodeId = doc.Metadata.mNodeStyles[0].mNodeId;
-		let nodeComments = doc.Metadata.GetCommentSet(nodeId);
-		Test.Assert(nodeComments != null);
-		Test.Assert(nodeComments.mLeading.Count == 1);
-		Test.Assert(nodeComments.mLeading[0] == "leading comment");
 	}
 
 	[Test]
@@ -303,38 +79,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		// Exact output assertion
 		let expected = "# leading\na = 1 # trailing\n";
 		Test.Assert(output == expected, scope $"Expected:\n{expected}\nGot:\n{output}");
-	}
-
-	[Test]
-	public static void PreserveStyle_DetachedAfterContentStaysWithNextNode()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "a = 1\n\n# note for b\nb = 2";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles.Count == 2);
-
-		// 'a' should have no comments
-		let nodeIdA = doc.Metadata.mNodeStyles[0].mNodeId;
-		let commentSetA = doc.Metadata.GetCommentSet(nodeIdA);
-		Test.Assert(commentSetA == null || commentSetA.mLeading.Count == 0);
-
-		// 'b' should have the comment (detached after content stays with next node)
-		let nodeIdB = doc.Metadata.mNodeStyles[1].mNodeId;
-		let commentSetB = doc.Metadata.GetCommentSet(nodeIdB);
-		Test.Assert(commentSetB != null);
-		Test.Assert(commentSetB.mLeading.Count == 1);
-		Test.Assert(commentSetB.mLeading[0] == "note for b");
-
-		// Root comments should be empty (no pre-content detached comments)
-		Test.Assert(doc.Metadata.mRootComments == null || doc.Metadata.mRootComments.mLeading.Count == 0);
 	}
 
 	[Test]
@@ -381,42 +125,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		Test.Assert(output == expected, scope $"Expected:\n{expected}\nGot:\n{output}");
 	}
 
-	[Test]
-	public static void PreserveStyle_StreamCommentAtEof()
-	{
-		// Build a comment at EOF (no trailing newline)
-		List<uint8> bytes = scope .();
-		AddAscii(bytes, "# eof comment");
-
-		let ms = scope MemoryStream();
-		ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
-		ms.Position = 0;
-
-		// First parse without metadata to establish a value
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		if (doc.Read("a = 1", config) case .Err(let setupErr))
-		{
-			defer setupErr.Dispose();
-			Test.Assert(false, scope $"Setup parse failed: {setupErr.mMessage}");
-		}
-
-		// Parse the stream comment (EOF without newline)
-		if (doc.Read(ms, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		// The comment should be captured correctly (trimmed leading space)
-		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mRootComments != null);
-		Test.Assert(doc.Metadata.mRootComments.mLeading.Count == 1);
-		Test.Assert(doc.Metadata.mRootComments.mLeading[0] == "eof comment");
-	}
-
 	// ================================================================
 	// Float style preservation tests
 	// ================================================================
@@ -434,7 +142,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
-		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		let fmt = ValueFormatFor(doc, "f");
 		if (fmt case .Float(let floatFmt))
 		{
 			Test.Assert(floatFmt.mStyle == .Scientific);
@@ -467,7 +175,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
-		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		let fmt = ValueFormatFor(doc, "f");
 		if (fmt case .Float(let floatFmt))
 		{
 			Test.Assert(floatFmt.mStyle == .Scientific);
@@ -518,7 +226,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
-		let fmt = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+		let fmt = ValueFormatFor(doc, "f");
 		if (fmt case .Float(let floatFmt))
 		{
 			Test.Assert(floatFmt.mUseUnderscores == true);
@@ -571,7 +279,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 
 		// Check +inf format
 		{
-			let fmtA = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[0].mValueFormatRef.mIndex];
+			let fmtA = ValueFormatFor(doc, "a");
 			if (fmtA case .Float(let floatFmt))
 			{
 				Test.Assert(floatFmt.mStyle == .Special);
@@ -584,7 +292,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 
 		// Check +nan format
 		{
-			let fmtB = doc.Metadata.mValueFormats[doc.Metadata.mNodeStyles[1].mValueFormatRef.mIndex];
+			let fmtB = ValueFormatFor(doc, "b");
 			if (fmtB case .Float(let floatFmt))
 			{
 				Test.Assert(floatFmt.mStyle == .Special);
@@ -607,33 +315,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 	// ================================================================
 	// Inline table format preservation tests
 	// ================================================================
-
-	[Test]
-	public static void PreserveStyle_InlineTableFormatCaptured()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		if (doc.Read("t = { a = 1, b = 2 }", config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		// Check that table format was captured
-		let nodeId = doc.Metadata.mNodeStyles[0];
-		Test.Assert(nodeId.mValueFormatRef.IsValid);
-		let fmt = doc.Metadata.mValueFormats[nodeId.mValueFormatRef.mIndex];
-		if (fmt case .Table(let tFmt))
-		{
-			Test.Assert(tFmt.mInline == true);
-			Test.Assert(tFmt.mOpenBraceSpacing == 1, scope $"Expected open brace spacing 1, got {tFmt.mOpenBraceSpacing}");
-			Test.Assert(tFmt.mCloseBraceSpacing == 1, scope $"Expected close brace spacing 1, got {tFmt.mCloseBraceSpacing}");
-		}
-		else
-			Test.Assert(false, "Expected Table format");
-	}
 
 	[Test]
 	public static void PreserveStyle_InlineTableStaysInlineAfterMutation()
@@ -700,8 +381,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		}
 
 		// Check multiline format was captured
-		let nodeId = doc.Metadata.mNodeStyles[0];
-		let fmt = doc.Metadata.mValueFormats[nodeId.mValueFormatRef.mIndex];
+		let fmt = ValueFormatFor(doc, "t");
 		if (fmt case .Table(let tFmt))
 		{
 			Test.Assert(tFmt.mMultiline == true);
@@ -1056,33 +736,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 	}
 
 	[Test]
-	public static void PreserveStyle_InlineTableSpacedEqualsAndComma()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "t = { a = 1 , b = 2 }";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		TomlNodeId nodeId = .Invalid;
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out nodeId);
-		let style = doc.Metadata.GetNodeStyle(nodeId);
-		let fmt = doc.Metadata.mValueFormats[style.mValueFormatRef.mIndex];
-		if (fmt case .Table(let tFmt))
-		{
-			Test.Assert(tFmt.mEqualsSpacing == 1, scope $"Expected equals spacing 1, got {tFmt.mEqualsSpacing}");
-			Test.Assert(tFmt.mCommaSpacing == 1, scope $"Expected comma spacing 1, got {tFmt.mCommaSpacing}");
-			Test.Assert(tFmt.mOpenBraceSpacing == 1, scope $"Expected open brace spacing 1, got {tFmt.mOpenBraceSpacing}");
-			Test.Assert(tFmt.mCloseBraceSpacing == 1, scope $"Expected close brace spacing 1, got {tFmt.mCloseBraceSpacing}");
-		}
-	}
-
-	[Test]
 	public static void PreserveStyle_InlineTableV10ForcesSingleLine()
 	{
 		var doc = new TomlDocument();
@@ -1169,63 +822,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 	}
 
 	[Test]
-	public static void PreserveStyle_BlankLineMetadataCaptured()
-	{
-		// Verify blank line metadata is correctly distinguished between
-		// separated and non-separated cases
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "[a]\nx = 1\n\n[b]\ny = 2";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		doc.RootTable.TryGetTable("a", var tblA);
-		let csA = doc.Metadata.GetCommentSet(tblA.MetadataContext.mNodeId);
-		Test.Assert(csA == null || !csA.mSeparatedByBlankLine,
-			"First table should not have blank line flag");
-
-		doc.RootTable.TryGetTable("b", var tblB);
-		let csB = doc.Metadata.GetCommentSet(tblB.MetadataContext.mNodeId);
-		Test.Assert(csB != null && csB.mSeparatedByBlankLine,
-			"Second table should have blank line flag");
-	}
-
-	[Test]
-	public static void PreserveStyle_NoBlankLineForDirectAdjacentSections()
-	{
-		// Direct-adjacent sections (no blank line between) should NOT get blank line flag
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		let input = "[a]\nx = 1\n[b]\ny = 2";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		doc.RootTable.TryGetTable("a", var tblA);
-		let csA = doc.Metadata.GetCommentSet(tblA.MetadataContext.mNodeId);
-		Test.Assert(csA == null || !csA.mSeparatedByBlankLine,
-			"Table a should not have blank line flag");
-
-		doc.RootTable.TryGetTable("b", var tblB);
-		let csB = doc.Metadata.GetCommentSet(tblB.MetadataContext.mNodeId);
-		// When sections are directly adjacent, [b]'s header follows immediately
-		// after the preceding content's newline with no extra blank line.
-		// mBlankLineCount catches the single newline between sections but only
-		// flags it as separatedByBlankLine when there's at least one extra.
-		Test.Assert(csB == null || !csB.mSeparatedByBlankLine,
-			"Table b should not have blank line flag when directly adjacent");
-	}
-
-	[Test]
 	public static void PreserveStyle_ArrayCrlfWithComments()
 	{
 		var doc = new TomlDocument();
@@ -1263,54 +859,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 	// ================================================================
 	// Dirty propagation tests
 	// ================================================================
-
-	[Test]
-	public static void PreserveStyle_NestedMutationDoesNotDirtyParent()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		// Nested table: [tbl] with entry x = 1
-		let input = "[tbl]\nx = 1";
-		if (doc.Read(input, config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		// Verify all nodes start clean
-		for (int i = 0; i < doc.Metadata.mNodeStyles.Count; i++)
-			Test.Assert(doc.Metadata.mNodeStyles[i].mDirtyFlags == .None,
-				scope $"Node {i} should start clean");
-
-		// Mutate x inside [tbl]
-		doc.RootTable.TryGetTable("tbl", var tbl);
-		tbl.ReplaceValue("x", .Integer(42));
-
-		// Find node IDs
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("tbl", let tblNodeId);
-		Test.Assert(tblNodeId.IsValid);
-		tbl.MetadataContext.TryGetEntryNodeId("x", let xNodeId);
-		Test.Assert(xNodeId.IsValid);
-
-		// The x entry should be dirty
-		let xStyle = doc.Metadata.GetNodeStyle(xNodeId);
-		Test.Assert(xStyle != null && xStyle.mDirtyFlags == .Value,
-			"x entry should have Value dirty flag");
-
-		// The tbl entry and the root table should NOT be dirty
-		let tblStyle = doc.Metadata.GetNodeStyle(tblNodeId);
-		Test.Assert(tblStyle != null && tblStyle.mDirtyFlags == .None,
-			"Parent tbl entry should remain clean after child mutation");
-
-		// Mutate tbl itself — should mark tbl dirty
-		// Re-fetch style after Insert since it may reallocate mNodeStyles
-		tbl.Insert("y", .Integer(99));
-		let tblStyle2 = doc.Metadata.GetNodeStyle(tblNodeId);
-		Test.Assert(tblStyle2 != null && (tblStyle2.mDirtyFlags & .Children) != 0,
-			"Parent tbl should get Children dirty after direct insertion");
-	}
 
 	[Test]
 	public static void PreserveStyle_CleanSiblingTokensReused()
@@ -1523,23 +1071,17 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		}
 
 		// Verify format was captured
-		Test.Assert(doc.Metadata.mValueFormats.Count == 1);
-		let fmt = doc.Metadata.mValueFormats[0];
-		if (fmt case .Integer(let intFmt))
+		if (ValueFormatFor(doc, "n") case .Integer(let intFmt))
 			Test.Assert(intFmt.mBase == .Hex);
 		else
 			Test.Assert(false, "Expected Integer format");
-
-		// Verify node has format ref
-		let style = doc.Metadata.mNodeStyles[0];
-		Test.Assert(style.mValueFormatRef.IsValid);
 
 		// Mutate the value to a different hex value
 		bool replaced = doc.RootTable.ReplaceValue("n", .Integer(0x12345));
 		Test.Assert(replaced);
 
 		// Verify dirty
-		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .Value);
+		Test.Assert(StyleFor(doc, "n").mDirtyFlags == .Value);
 
 		String output = scope String();
 		doc.Write(output);
@@ -1699,48 +1241,6 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		doc.Write(output);
 		Test.Assert(output.Contains("arr = [\n"), scope $"Expected multiline array, got: {output}");
 		Test.Assert(output.Contains("  3,"), scope $"Expected indented changed element with comma, got: {output}");
-	}
-
-	[Test]
-	public static void PreserveStyle_ArrayAddMarksChildrenDirtyAfterParse()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		if (doc.Read("arr = [1]", config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-
-		doc.RootTable.TryGetArray("arr", var arr);
-		let nodeId = arr.MetadataContext.mNodeId;
-		Test.Assert(doc.Metadata.mNodeStyles[nodeId.mIndex].mDirtyFlags == .None);
-
-		arr.Add(.Integer(2));
-		Test.Assert(doc.Metadata.mNodeStyles[nodeId.mIndex].mDirtyFlags == .Children);
-	}
-
-	[Test]
-	public static void PreserveStyle_ReplaceEqualValueKeepsClean()
-	{
-		var doc = new TomlDocument();
-		defer delete doc;
-		var config = TomlReadConfig();
-		config.MetadataMode = .PreserveStyle;
-		if (doc.Read("s = 'original'", config) case .Err(let e))
-		{
-			defer e.Dispose();
-			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
-		}
-		let style = doc.Metadata.mNodeStyles[0];
-		Test.Assert(style.mOriginalValueToken.IsValid);
-		Test.Assert(style.mDirtyFlags == .None);
-
-		// Replace with same value
-		doc.RootTable.SetString("s", "original");
-		Test.Assert(doc.Metadata.mNodeStyles[0].mDirtyFlags == .None); // still clean
 	}
 
 	[Test]
@@ -1911,7 +1411,7 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 
 		// Verify original token is captured
 		Test.Assert(doc.Metadata != null);
-		Test.Assert(doc.Metadata.mNodeStyles[0].mOriginalValueToken.IsValid);
+		Test.Assert(StyleFor(doc, "a").mOriginalValueToken.IsValid);
 
 		// Remove and reinsert with a new value
 		doc.RootTable.Remove("a");
@@ -1924,4 +1424,80 @@ using System; using System.Collections; using System.IO; using TomlBeef; using i
 		Test.Assert(!output.Contains("old"));
 	}
 
+	/// Parses `input` in PreserveStyle mode via string and via stream, applies `mutate`, and requires identical output.
+	static void AssertStreamMatchesStringPreserveStyle(StringView input, delegate void(TomlDocument doc) mutate)
+	{
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+
+		var fromString = scope TomlDocument();
+		if (fromString.Read(input, config) case .Err(let e1))
+		{
+			defer e1.Dispose();
+			Test.Assert(false, scope $"String parse failed: {e1.mMessage}");
+			return;
+		}
+
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>((uint8*)input.Ptr, input.Length));
+		ms.Position = 0;
+		var fromStream = scope TomlDocument();
+		if (fromStream.Read(ms, config) case .Err(let e2))
+		{
+			defer e2.Dispose();
+			Test.Assert(false, scope $"Stream parse failed: {e2.mMessage}");
+			return;
+		}
+
+		mutate(fromString);
+		mutate(fromStream);
+		String outString = scope String();
+		fromString.Write(outString);
+		String outStream = scope String();
+		fromStream.Write(outStream);
+		Test.Assert(outString == outStream, scope $"Stream output differs from string output (lengths {outString.Length} vs {outStream.Length})");
+	}
+
+	[Test]
+	public static void PreserveStyle_StreamMultilineArrayCrossesBuffer()
+	{
+		// A multiline array far larger than the 8 KiB stream buffer, so refills happen mid-container.
+		String input = scope String("arr = [\n");
+		for (int i = 0; i < 2000; i++)
+			input.AppendF("  {},\n", i);
+		input.Append("]\n");
+		AssertStreamMatchesStringPreserveStyle(input, scope (doc) =>
+		{
+			doc.RootTable.TryGetArray("arr", var arr);
+			arr[1] = 42;
+		});
+	}
+
+	[Test]
+	public static void PreserveStyle_StreamInlineTableCrossesBuffer()
+	{
+		String input = scope String();
+		input.Append("# pad\n");
+		for (int i = 0; i < 8150; i++)
+			input.Append('#');
+		input.Append("\nt = { a = 1, b = 'x', c = [1, 2] }\n");
+		AssertStreamMatchesStringPreserveStyle(input, scope (doc) =>
+		{
+			doc.RootTable.TryGetTable("t", var t);
+			t.SetInteger("a", 2);
+		});
+	}
+
+	[Test]
+	public static void PreserveStyle_StreamDottedLiteralKeyCrossesBuffer()
+	{
+		String input = scope String();
+		for (int i = 0; i < 8170; i++)
+			input.Append('#');
+		input.Append("\n'lit'.\"quoted\".bare = 'v'\nplain = 1\n");
+		AssertStreamMatchesStringPreserveStyle(input, scope (doc) =>
+		{
+			doc.SetInteger("plain", 2);
+		});
+	}
 }

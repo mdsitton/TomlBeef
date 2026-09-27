@@ -1,12 +1,115 @@
 using System;
+using System.Collections;
 using System.IO;
 using TomlBeef;
+using internal TomlBeef;
 using static TomlBeef.TomlTestSupport;
 
 namespace TomlBeef;
 
 static class TomlCorpusTests
 {
+	/// Every valid fixture must decode to the same document through all four input paths.
+	[Test]
+	public static void InputPathsDecodeIdentically()
+	{
+		let validDir = scope $"{TestBaseDir}/valid";
+		Test.Assert(Directory.Exists(validDir), scope $"Test directory not found: {validDir}");
+		int compared = 0;
+		WalkTomlFiles(validDir, null, scope [&] (path) =>
+		{
+			let name = GetRelativePath(path);
+			let fromFile = scope TomlDocument();
+			if (fromFile.ReadFile(path) case .Err(let fileErr))
+			{
+				defer fileErr.Dispose();
+				Test.Assert(false, scope $"ReadFile failed [{name}]: {fileErr.mMessage}");
+				return;
+			}
+
+			let data = scope List<uint8>();
+			if (File.ReadAll(path, data) case .Err)
+			{
+				Test.Assert(false, scope $"Cannot read [{name}]");
+				return;
+			}
+			let text = StringView((char8*)data.Ptr, data.Count);
+
+			let fromString = scope TomlDocument();
+			let fromBytes = scope TomlDocument();
+			let fromStream = scope TomlDocument();
+			let ms = scope MemoryStream(data, false);
+			let results = scope Result<void, TomlParseError>[](
+				fromString.Read(text),
+				fromBytes.ReadBytes(Span<uint8>(data.Ptr, data.Count)),
+				fromStream.Read(ms));
+			let pathNames = scope String[]("Read(string)", "ReadBytes", "Read(Stream)");
+			let docs = scope TomlDocument[](fromString, fromBytes, fromStream);
+			for (int i < results.Count)
+			{
+				if (results[i] case .Err(let e))
+				{
+					defer e.Dispose();
+					Test.Assert(false, scope $"{pathNames[i]} failed [{name}]: {e.mMessage}");
+				}
+				else if (!TomlDocumentEquals(fromFile, docs[i]))
+					Test.Assert(false, scope $"{pathNames[i]} decoded differently from ReadFile [{name}]");
+			}
+			compared++;
+		});
+		Test.Assert(compared >= 266, scope $"Expected >= 266 fixtures compared, got {compared}");
+	}
+
+	/// Every valid fixture must produce identical PreserveStyle output whether read from bytes or from a
+	/// stream with a tiny buffer, which forces refills and spills inside nested marked tokens.
+	[Test]
+	public static void StreamPreserveStyleMatchesBytes()
+	{
+		let validDir = scope $"{TestBaseDir}/valid";
+		Test.Assert(Directory.Exists(validDir), scope $"Test directory not found: {validDir}");
+		let savedBufferBytes = TomlDocument.sStreamBufferBytes;
+		TomlDocument.sStreamBufferBytes = 64;
+		defer { TomlDocument.sStreamBufferBytes = savedBufferBytes; }
+
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		int compared = 0;
+		WalkTomlFiles(validDir, null, scope [&] (path) =>
+		{
+			let name = GetRelativePath(path);
+			let data = scope List<uint8>();
+			if (File.ReadAll(path, data) case .Err)
+			{
+				Test.Assert(false, scope $"Cannot read [{name}]");
+				return;
+			}
+
+			let fromBytes = scope TomlDocument();
+			if (fromBytes.ReadBytes(Span<uint8>(data.Ptr, data.Count), config) case .Err(let e1))
+			{
+				defer e1.Dispose();
+				Test.Assert(false, scope $"ReadBytes failed [{name}]: {e1.mMessage}");
+				return;
+			}
+			let ms = scope MemoryStream(data, false);
+			let fromStream = scope TomlDocument();
+			if (fromStream.Read(ms, config) case .Err(let e2))
+			{
+				defer e2.Dispose();
+				Test.Assert(false, scope $"Stream read failed [{name}]: {e2.mMessage}");
+				return;
+			}
+
+			String outBytes = scope String();
+			fromBytes.Write(outBytes);
+			String outStream = scope String();
+			fromStream.Write(outStream);
+			Test.Assert(outBytes == outStream, scope $"Stream/bytes PreserveStyle output differs [{name}]\nbytes:\n{outBytes}\nstream:\n{outStream}");
+			compared++;
+		});
+		Test.Assert(compared >= 266, scope $"Expected >= 266 fixtures compared, got {compared}");
+	}
+
 	[Test]
 	public static void VerifyTestFilesFound()
 	{
