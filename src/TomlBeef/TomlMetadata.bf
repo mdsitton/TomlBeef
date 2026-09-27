@@ -284,10 +284,12 @@ public struct TomlDateTimeFormat
 	public bool mHasSeconds = false;
 	/// Number of fractional second digits (0 = none).
 	public uint8 mFractionalDigits = 0;
-	/// Whether the date-time separator was uppercase T (vs lowercase t or space).
-	public bool mUsesUppercaseT = true;
+	/// The date-time separator as written: 'T', 't', or ' '.
+	public char8 mSeparator = 'T';
 	/// Whether UTC offset used Z shorthand (vs +00:00).
 	public bool mUsesZ = false;
+	/// Whether the Z shorthand was written in lowercase ('z').
+	public bool mLowercaseZ = false;
 	/// Whether an offset was present at all (offset date-time vs local).
 	public bool mHasOffset = false;
 }

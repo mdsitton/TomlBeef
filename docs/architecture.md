@@ -439,7 +439,7 @@ empty document reuses its existing sidecar instead of replacing it.
    cannot represent the content.
 3. An **integer, float or date/time** with a captured value format: regenerated from the current
    value using that format (base, digit case and underscore grouping; exponent style, special-value
-   sign and `-0.0`; `T` vs space, `Z` vs offset, seconds and fraction precision). The value always
+   sign and `-0.0`; `T`/`t`/space separator, `Z`/`z` vs offset, seconds and fraction precision). The value always
    comes from the semantic model, so an edited number keeps its original formatting.
 4. An **array** with a metadata context: inline or multi-line according to its `TomlArrayFormat`
    (indent, trailing comma, per-element comments). Elements recurse through these rules.
@@ -450,7 +450,10 @@ Tables use the same three-phase order as normal mode, with some additions. Leadi
 comments are written around entries and headers. Header blocks are separated by a blank line. A
 sub-table whose entries were written as dotted keys (`HasDottedPreference`) is written back as
 `parent.key = value` lines instead of a `[header]`. Newlines follow the document's newline style.
-Key quoting is the same as normal mode: the captured quoted-literal key style is not reused.
+Keys keep their captured quoting (`WriteKeyPreserving`): a quoted key stays quoted even if it could be
+bare, and a literal-quoted key stays literal unless its (possibly renamed) text cannot be written
+that way. Dotted keys only captured their first segment's style, so they use normal-mode quoting,
+as do header keys (header key style is not captured).
 
 The **functional-equivalence invariant** is the safety rule: `parse(write(parse(x,
 PreserveStyle)))` must give the same semantic document as `x`. Tokens are reused only for values

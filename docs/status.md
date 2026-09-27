@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 226/226 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 226/226 pass |
+| `beefbuild -test` (Debug checks) | 229/229 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 229/229 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -41,13 +41,9 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 
 Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
-### Correctness bugs (PreserveStyle and streaming)
+### Correctness bugs
 
-| ID | Problem | Where | Size |
-|----|---------|-------|------|
-| B6 | Lowercase `t` date-time separator is re-emitted as a space; lowercase `z` becomes `Z` | Datetime format capture in `TomlParser`; `TomlWriter` datetime emission | S |
-| B7 | Quoted key styles (`QuotedBasic`/`QuotedLiteral`) are captured but the writer only emits bare or basic-quoted keys | `TomlWriter.AppendKey` | S–M |
-| B8 | *Unverified.* Whitespace lookahead after a line-ending backslash is unbounded; on the stream path a whitespace run longer than the 8 KiB buffer reads as `0` and may misparse | `peekPos` loop in the multiline basic string parser | S |
+None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ### PreserveStyle gaps
 
@@ -98,7 +94,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 ## Suggested order
 
-1. B6–B8 (date/time letter case, quoted key styles, stream lookahead).
-2. I1, A3, A4 (small fixes and API hygiene).
-3. P2 (comments inside inline tables), then P3–P5.
-4. I2–I4 and optional items as needed.
+1. I1, A3, A4 (small fixes and API hygiene).
+2. P2 (comments inside inline tables), then P3–P5.
+3. I2–I4 and optional items as needed.

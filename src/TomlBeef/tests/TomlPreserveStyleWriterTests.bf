@@ -1475,6 +1475,55 @@ static class TomlPreserveStyleWriterTests
 	}
 
 	[Test]
+	public static void PreserveStyle_QuotedKeyStylesKept()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "'raw key' = 1\n\"simple\" = 2\nbare = 3\n\"has'quote\" = 4\nt = { 'lk' = 5, \"bk\" = 6 }\n'dot'.leaf = 7");
+
+		String output = scope String();
+		doc.Write(output);
+		AssertContains(output, "'raw key' = 1");
+		AssertContains(output, "\"simple\" = 2");
+		AssertContains(output, "bare = 3");
+		AssertContains(output, "\"has'quote\" = 4");
+		AssertContains(output, "'lk' = 5");
+		AssertContains(output, "\"bk\" = 6");
+		Test.Assert(!output.Contains("'leaf'"), scope $"A dotted key's first-segment quoting must not apply to the leaf:\n{output}");
+
+		// A literal-quoted key renamed to something a literal key cannot hold falls back to basic quotes
+		Test.Assert(doc.RootTable[0].Rename("it's") case .Ok);
+		String renamed = scope String();
+		doc.Write(renamed);
+		AssertContains(renamed, "\"it's\" = 1");
+
+		var reparsed = scope TomlDocument();
+		ReadPreserving(reparsed, renamed, .Replace, .Error, .None);
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Output changed on re-read:\n{renamed}");
+	}
+
+	[Test]
+	public static void PreserveStyle_DateTimeSeparatorAndZCaseKept()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "a = 1979-05-27t07:32:00z\nb = 1979-05-27 07:32:00Z\nc = 1979-05-27t07:32:00\nd = 1979-05-27T07:32:00Z");
+
+		String clean = scope String();
+		doc.Write(clean);
+		AssertContains(clean, "a = 1979-05-27t07:32:00z");
+		AssertContains(clean, "b = 1979-05-27 07:32:00Z");
+		AssertContains(clean, "c = 1979-05-27t07:32:00");
+		AssertContains(clean, "d = 1979-05-27T07:32:00Z");
+
+		// Edited values keep the captured separator and Z case
+		doc.RootTable.SetOffsetDateTime("a", TomlOffsetDateTime(2000, 1, 2, 3, 4, 5, 0, 0));
+		doc.RootTable.SetLocalDateTime("c", TomlLocalDateTime(2000, 1, 2, 3, 4, 5, 0));
+		String edited = scope String();
+		doc.Write(edited);
+		AssertContains(edited, "a = 2000-01-02t03:04:05z");
+		AssertContains(edited, "c = 2000-01-02t03:04:05");
+	}
+
+	[Test]
 	public static void PreserveStyle_MergeKeepsBaseStyleAndBringsIncomingStyle()
 	{
 		var doc = scope TomlDocument();

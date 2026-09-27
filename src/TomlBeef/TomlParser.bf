@@ -675,17 +675,22 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				mCursor.AdvanceByte();
 
-				int peekPos = 0;
-				while (true)
+				// Line-ending backslash: optional spaces/tabs, then a newline. `\ ` and `\<tab>` are never
+				// valid escapes, so the whitespace is consumed as it is read rather than peeked ahead;
+				// an unbounded lookahead would exceed the stream buffer on long runs.
+				char8 next = mCursor.PeekByte();
+				if (next == ' ' || next == '\t' || next == '\r' || next == '\n')
 				{
-					char8 pb = mCursor.PeekByteAt(peekPos);
-					if (pb == ' ' || pb == '\t') { peekPos++; continue; }
-					break;
-				}
-				char8 nextNonWs = mCursor.PeekByteAt(peekPos);
-				if (nextNonWs == '\r' || nextNonWs == '\n')
-				{
+					let escLine = mCursor.Line;
+					let escColumn = mCursor.Column;
+					let escOffset = mCursor.Offset;
 					mCursor.SkipWhitespace();
+					char8 afterWs = mCursor.PeekByte();
+					if (afterWs != '\r' && afterWs != '\n')
+					{
+						delete result;
+						return .Err(TomlParseError(.ReservedEscape, scope $"Reserved escape '\\{next}'", escLine, escColumn, escOffset));
+					}
 					while (!mCursor.IsEOF && (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n'))
 						mCursor.SkipNewline();
 					mCursor.SkipWhitespace();
@@ -2614,9 +2619,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		for (int i = 0; i < rawToken.Length; i++)
 		{
 			char8 c = rawToken[i];
-			if (c == 'T') { fmt.mUsesUppercaseT = true; break; }
-			if (c == 't') { fmt.mUsesUppercaseT = false; break; }
-			if (c == ' ') { fmt.mUsesUppercaseT = false; break; }
+			if (c == 'T' || c == 't' || c == ' ') { fmt.mSeparator = c; break; }
 		}
 
 		// Detect offset style (Z vs +00:00)
@@ -2632,7 +2635,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			for (int i = rawToken.Length - 1; i > timeSepPos; i--)
 			{
 				char8 c = rawToken[i];
-				if (c == 'Z' || c == 'z') { fmt.mUsesZ = true; fmt.mHasOffset = true; break; }
+				if (c == 'Z' || c == 'z') { fmt.mUsesZ = true; fmt.mLowercaseZ = c == 'z'; fmt.mHasOffset = true; break; }
 				if (c == '+' || c == '-') { fmt.mUsesZ = false; fmt.mHasOffset = true; break; }
 			}
 		}

@@ -243,6 +243,41 @@ static class TomlStreamTests
 	}
 
 	[Test]
+	public static void Stream_LineEndingBackslashWithWhitespaceLongerThanBuffer()
+	{
+		// After a line-ending backslash the parser looks ahead over whitespace to find the newline;
+		// a run longer than the stream buffer must still be handled like the string path.
+		for (let trailing in int[](10, 9000))
+		{
+			List<uint8> bytes = scope List<uint8>();
+			AddAscii(bytes, "s = \"\"\"a \\");
+			AddRepeat(bytes, ' ', trailing);
+			AddAscii(bytes, "\n   b\"\"\"\n");
+
+			var fromString = scope TomlDocument();
+			if (fromString.Read(StringView((char8*)bytes.Ptr, bytes.Count)) case .Err(let e1))
+			{
+				defer e1.Dispose();
+				Test.Assert(false, scope $"String parse failed ({trailing}): {e1.mMessage}");
+				continue;
+			}
+			Test.Assert(fromString.TryGetString("s", var s1) && s1 == "a b", scope $"Unexpected string value ({trailing})");
+
+			let ms = scope MemoryStream();
+			ms.TryWrite(Span<uint8>(bytes.Ptr, (int)bytes.Count));
+			ms.Position = 0;
+			var fromStream = scope TomlDocument();
+			if (fromStream.Read(ms) case .Err(let e2))
+			{
+				defer e2.Dispose();
+				Test.Assert(false, scope $"Stream parse failed ({trailing}): {e2.mMessage}");
+				continue;
+			}
+			Test.Assert(fromStream.TryGetString("s", var s2) && s2 == "a b", scope $"Stream decoded differently ({trailing}): '{s2}'");
+		}
+	}
+
+	[Test]
 	public static void Stream_LongBareValueCrossesBufferBoundary()
 	{
 		List<uint8> bytes = scope List<uint8>();

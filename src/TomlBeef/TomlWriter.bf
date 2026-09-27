@@ -337,7 +337,7 @@ static class TomlWriterImpl
 		if (nodeId.IsValid)
 			EmitLeadingComments(nodeId, outStr, metadata);
 
-		WriteKey(key, outStr, version);
+		WriteKeyPreserving(key, parentTable, metadata, outStr, version);
 		outStr.Append(" = ");
 		WriteValuePreserving(val, outStr, version, parentTable, key, metadata);
 
@@ -729,6 +729,12 @@ static class TomlWriterImpl
 		}
 	}
 
+	/// The captured date-time separator, or 'T' if none valid was captured.
+	private static char8 DateTimeSeparator(TomlDateTimeFormat fmt)
+	{
+		return (fmt.mSeparator == 't' || fmt.mSeparator == ' ') ? fmt.mSeparator : 'T';
+	}
+
 	/// Write a date-time value using format metadata for style preservation.
 	private static void WriteDateTimeWithFormat(TomlValue val, TomlDateTimeFormat fmt, String outStr, TomlVersion version)
 	{
@@ -736,10 +742,10 @@ static class TomlWriterImpl
 		{
 			let dt = val.AsOffsetDateTime;
 			FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
-			outStr.Append(fmt.mUsesUppercaseT ? 'T' : ' ');
+			outStr.Append(DateTimeSeparator(fmt));
 			FormatTimeWithFormat(dt.mHour, dt.mMinute, dt.mSecond, dt.mNanosecond, fmt, version, outStr);
 			if (dt.mOffsetMinutes == 0 && fmt.mUsesZ)
-				outStr.Append('Z');
+				outStr.Append(fmt.mLowercaseZ ? 'z' : 'Z');
 			else
 			{
 				int32 absOff = dt.mOffsetMinutes;
@@ -755,7 +761,7 @@ static class TomlWriterImpl
 		{
 			let dt = val.AsLocalDateTime;
 			FormatDate(dt.mYear, dt.mMonth, dt.mDay, outStr);
-			outStr.Append(fmt.mUsesUppercaseT ? 'T' : ' ');
+			outStr.Append(DateTimeSeparator(fmt));
 			FormatTimeWithFormat(dt.mHour, dt.mMinute, dt.mSecond, dt.mNanosecond, fmt, version, outStr);
 			return;
 		}
@@ -970,6 +976,48 @@ static class TomlWriterImpl
 	private static void WriteKey(StringView key, String outStr, TomlVersion version)
 	{
 		AppendKey(key, outStr, version);
+	}
+
+	/// Write a key using its captured key style: a key written quoted stays quoted, and a literal-quoted
+	/// key stays literal when it can be. Dotted keys only captured the first segment's style, so they
+	/// (and keys without metadata) fall back to AppendKey.
+	private static void WriteKeyPreserving(StringView key, TomlTable parentTable, TomlDocumentMetadata metadata, String dest, TomlVersion version)
+	{
+		TomlNodeId nodeId = .Invalid;
+		if (parentTable != null && parentTable.MetadataContext != null)
+			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+		let style = nodeId.IsValid ? metadata.GetNodeStyle(nodeId) : null;
+		if (style != null && style.mKeyFormatRef.IsValid)
+		{
+			let keyFmt = metadata.mKeyFormats[style.mKeyFormatRef.mIndex];
+			if (!keyFmt.mPreferDottedPath)
+			{
+				if (keyFmt.mStyle == .QuotedLiteral && IsLiteralKeyRepresentable(key))
+				{
+					dest.Append('\'');
+					dest.Append(key);
+					dest.Append('\'');
+					return;
+				}
+				if (keyFmt.mStyle == .QuotedBasic || keyFmt.mStyle == .QuotedLiteral)
+				{
+					WriteBasicString(key, dest, version);
+					return;
+				}
+			}
+		}
+		AppendKey(key, dest, version);
+	}
+
+	/// A literal-quoted key cannot contain a single quote, a newline, or other control characters.
+	private static bool IsLiteralKeyRepresentable(StringView key)
+	{
+		for (let c in key)
+		{
+			if (c == '\'' || c == '\n' || c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
+				return false;
+		}
+		return true;
 	}
 
 	private static void AppendKey(StringView key, String dest, TomlVersion version)
@@ -1348,7 +1396,7 @@ static class TomlWriterImpl
 			}
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
-			WriteKey(key, outStr, version);
+			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			// Without a captured format (e.g. a sub-table created by a dotted key), match the normal writer
 			if (!hasFormat || fmt.mEqualsSpacing > 0)
 				outStr.Append(" = ");
@@ -1378,7 +1426,7 @@ static class TomlWriterImpl
 			AppendIndent(outStr, entryIndent);
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
-			WriteKey(key, outStr, version);
+			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			if (fmt.mEqualsSpacing > 0)
 				outStr.Append(" = ");
 			else

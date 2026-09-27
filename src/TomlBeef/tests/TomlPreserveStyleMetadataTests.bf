@@ -238,8 +238,9 @@ static class TomlPreserveStyleMetadataTests
 		let fmt = ValueFormatFor(doc, "dob");
 		if (fmt case .DateTime(let dtFmt))
 		{
-			Test.Assert(dtFmt.mUsesUppercaseT == true);
+			Test.Assert(dtFmt.mSeparator == 'T');
 			Test.Assert(dtFmt.mUsesZ == true);
+			Test.Assert(dtFmt.mLowercaseZ == false);
 			Test.Assert(dtFmt.mHasOffset == true);
 			Test.Assert(dtFmt.mHasSeconds == true);
 		}
@@ -262,7 +263,7 @@ static class TomlPreserveStyleMetadataTests
 		let fmt = ValueFormatFor(doc, "dt");
 		if (fmt case .DateTime(let dtFmt))
 		{
-			Test.Assert(dtFmt.mUsesUppercaseT == false); // space separator
+			Test.Assert(dtFmt.mSeparator == ' ');
 			Test.Assert(dtFmt.mUsesZ == false); // offset, not Z
 			Test.Assert(dtFmt.mHasOffset == true);
 		}
@@ -330,7 +331,7 @@ static class TomlPreserveStyleMetadataTests
 		let fmt = ValueFormatFor(doc, "dt");
 		if (fmt case .DateTime(let dtFmt))
 		{
-			Test.Assert(dtFmt.mUsesUppercaseT == true);
+			Test.Assert(dtFmt.mSeparator == 'T');
 			Test.Assert(dtFmt.mHasOffset == false); // no offset
 			Test.Assert(dtFmt.mHasSeconds == true);
 		}
