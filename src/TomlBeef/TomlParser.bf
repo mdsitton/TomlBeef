@@ -1755,25 +1755,24 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mMetadata != null)
 			tbl.MetadataContext = new TomlContainerMetadataContext(mMetadata, mMetadata.AllocateNodeId(), false);
 
-		if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
-		{
-			
-			return .Err(e);
-		}
+		// Comments can only appear inside inline tables in TOML 1.1 (they need newlines). In PreserveStyle
+		// they are collected here and attached: lines above a field become its leading comments, a comment
+		// on the field's own line its trailing comment, and comments before `}` the table's closing comments.
+		List<String> pendingComments = (mMetadata != null && mVersion != .V1_0) ? scope:: List<String>() : null;
+		defer { if (pendingComments != null) ClearAndDeleteItems!(pendingComments); }
+
+		Try!(SkipInlineTableWs(pendingComments));
 		if (mCursor.PeekByte() == '}')
 		{
 			mCursor.AdvanceByte();
+			FlushCommentsToLeading(pendingComments, tbl.MetadataContext?.mNodeId ?? .Invalid);
 			tbl.SealInlineRecursively();
 			return TomlValue.Table(tbl);
 		}
 
 		while (true)
 		{
-			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let wsErr))
-			{
-				
-				return .Err(wsErr);
-			}
+			Try!(SkipInlineTableWs(pendingComments));
 
 			// Key style only depends on the key's first byte
 			TomlKeyStyle keyStyle = .Bare;
@@ -1830,21 +1829,20 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 
 			// Capture the field's token and formats against its node ID. Slicing releases the mark.
+			TomlNodeId fieldNodeId = .Invalid;
 			if (mMetadata != null)
 			{
 				String scratch = scope String();
 				StringView rawToken = mCursor.Slice(valueStart, scratch);
-				TomlNodeId nodeId = .Invalid;
 				if (target.MetadataContext != null)
-					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out nodeId);
-				CaptureValueMetadata(nodeId, val, rawToken, keyStyle, keyPath.Count > 1);
+					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out fieldNodeId);
+				CaptureValueMetadata(fieldNodeId, val, rawToken, keyStyle, keyPath.Count > 1);
 			}
+			FlushCommentsToLeading(pendingComments, fieldNodeId);
 
-			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let trailWsErr))
-			{
-				
-				return .Err(trailWsErr);
-			}
+			// A comment on the field's own line, before any comma: `a = 1 # note`
+			Try!(CaptureInlineTrailingComment(pendingComments, fieldNodeId));
+			Try!(SkipInlineTableWs(pendingComments));
 
 			char8 b = mCursor.PeekByte();
 			if (b == ',')
@@ -1854,21 +1852,17 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				// Trailing comma: reject in v1.0
 				if (mVersion == .V1_0 && mCursor.PeekByte() == '}')
 				{
-					
 					return .Err(Error(.UnexpectedToken,
 						"Trailing comma in inline table requires TOML v1.1"));
 				}
-				if (SkipWsAndComments(mVersion != .V1_0) case .Err(let commaWsErr))
-				{
-					
-					return .Err(commaWsErr);
-				}
+				// A comment on the field's line after its comma: `a = 1, # note`
+				Try!(CaptureInlineTrailingComment(pendingComments, fieldNodeId));
+				Try!(SkipInlineTableWs(pendingComments));
 				if (mCursor.PeekByte() == '}')
 				{
 					tbl.mHasTrailingComma = true;
 					mCursor.AdvanceByte();
-					tbl.SealInlineRecursively();
-					return TomlValue.Table(tbl);
+					break;
 				}
 				continue;
 			}
@@ -1879,13 +1873,59 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else
 			{
-				
 				return .Err(Error(.UnexpectedToken, "Expected ',' or '}' in inline table"));
 			}
 		}
 
+		// Comments after the last field belong to the closing brace
+		FlushCommentsToLeading(pendingComments, tbl.MetadataContext?.mNodeId ?? .Invalid);
 		tbl.SealInlineRecursively();
 		return TomlValue.Table(tbl);
+	}
+
+	/// Skips whitespace, newlines (1.1) and comments inside an inline table. With `pendingComments`
+	/// (PreserveStyle on 1.1) comment text is collected instead of discarded.
+	private Result<void, TomlParseError> SkipInlineTableWs(List<String> pendingComments)
+	{
+		if (pendingComments == null)
+			return SkipWsAndComments(mVersion != .V1_0);
+		return SkipWsAndCaptureComments(pendingComments, let _);
+	}
+
+	/// If a comment follows on the current line, records it as `nodeId`'s trailing comment.
+	private Result<void, TomlParseError> CaptureInlineTrailingComment(List<String> pendingComments, TomlNodeId nodeId)
+	{
+		if (pendingComments == null)
+			return .Ok;
+		mCursor.SkipWhitespace();
+		if (mCursor.IsEOF || mCursor.PeekByte() != '#')
+			return .Ok;
+		String text = new String();
+		if (CaptureCommentText(text) case .Err(let e))
+		{
+			delete text;
+			return .Err(e);
+		}
+		if (!nodeId.IsValid)
+		{
+			delete text;
+			return .Ok;
+		}
+		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		delete commentSet.mTrailing;
+		commentSet.mTrailing = text;
+		return .Ok;
+	}
+
+	/// Moves collected comments onto `nodeId` as leading comments (ownership transfers).
+	private void FlushCommentsToLeading(List<String> pendingComments, TomlNodeId nodeId)
+	{
+		if (pendingComments == null || pendingComments.IsEmpty || !nodeId.IsValid)
+			return;
+		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		for (let text in pendingComments)
+			commentSet.mLeading.Add(text);
+		pendingComments.Clear();
 	}
 
 	/// Inserts `value` at a dotted key path inside an inline table, creating intermediate inline tables.

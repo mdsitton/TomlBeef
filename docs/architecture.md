@@ -352,7 +352,7 @@ Every parser gate checks `mVersion == .V1_0`. The gated features are all v1.1 ad
 | `\e` escape | `ReservedEscape` | ESC (0x1B) | `ParseEscapeSequence` |
 | `\xHH` escape | `ReservedEscape` | accepted | `ParseEscapeSequence` |
 | Omitted seconds (`HH:MM`) in times and date-times | `InvalidTime` | accepted, seconds = 0 | `TryParse{Offset,Local}DateTime`, local time |
-| Newlines and comments inside inline tables | rejected | accepted | `ParseInlineTable` via `SkipWsAndComments(mVersion != .V1_0)` |
+| Newlines and comments inside inline tables | rejected | accepted | `ParseInlineTable` via `SkipInlineTableWs` |
 | Trailing comma in an inline table | `UnexpectedToken` | accepted (recorded as `mHasTrailingComma`) | `ParseInlineTable` |
 
 Writer downgrades when `TomlWriteConfig.Version = .V1_0`:
@@ -399,7 +399,10 @@ The metadata is a **sidecar**, so normal mode pays nothing for it. `TomlDocument
 - Pools of key formats and value formats. `TomlValueFormat` is a union of the string, integer,
   float, date/time, array and table formats.
 - Comment sets per node (leading comments, trailing comment, blank-line separation), plus root
-  (file header) and footer comments.
+  (file header) and footer comments. Inside multi-line inline tables (1.1), comments above a field
+  are its leading comments, a comment on its line (before or after the comma) its trailing comment,
+  and comments before `}` are stored on the inline table's own node and written before the brace.
+  A 1.0 write puts the table on one line, where comments cannot be kept.
 - `TomlDocumentStyle`, inferred once at the end of the parse: newline style (CRLF if CRLF lines
   are at least as common as LF-only lines), indent size, dotted-key preference, the dominant
   string style and the dominant array style.

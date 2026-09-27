@@ -1475,6 +1475,42 @@ static class TomlPreserveStyleWriterTests
 	}
 
 	[Test]
+	public static void PreserveStyle_CommentsInsideMultilineInlineTableKept()
+	{
+		let input = "t = {\n  # about a\n  a = 1, # trailing a\n  # about b\n  b = 2 # trailing b\n  ,\n  # closing\n}\n";
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, input);
+
+		String output = scope String();
+		doc.Write(output);
+		AssertContains(output, "  # about a\n  a = 1, # trailing a\n");
+		AssertContains(output, "  # about b\n  b = 2, # trailing b\n");
+		AssertContains(output, "  # closing\n}");
+
+		// Editing a field keeps its comments
+		Test.Assert(doc.TryGetTable("t", var t));
+		t.SetInteger("a", 10);
+		String edited = scope String();
+		doc.Write(edited);
+		AssertContains(edited, "  # about a\n  a = 10, # trailing a\n");
+
+		var reparsed = scope TomlDocument();
+		ReadPreserving(reparsed, edited);
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Output changed on re-read:\n{edited}");
+
+		// TOML 1.0 has no multi-line inline tables: the table is written on one line without comments
+		String v10 = scope String();
+		doc.Write(v10, .() { Version = .V1_0 });
+		var reparsed10 = scope TomlDocument();
+		if (reparsed10.Read(v10, .() { Version = .V1_0 }) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"V1_0 output is not valid TOML 1.0: {e.mMessage}\n{v10}");
+		}
+		Test.Assert(!v10.Contains("#"), scope $"Comments cannot be kept in a single-line inline table:\n{v10}");
+	}
+
+	[Test]
 	public static void PreserveStyle_QuotedKeyStylesKept()
 	{
 		var doc = scope TomlDocument();

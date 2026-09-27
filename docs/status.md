@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 230/230 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 230/230 pass |
+| `beefbuild -test` (Debug checks) | 231/231 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 231/231 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -49,7 +49,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| P2 | Comments inside multiline inline tables are discarded; no "detached comment" placement | M |
+| P2 | No "detached comment" placement: a comment block separated from the next node by a blank line is attached to that node (or the root/footer) rather than kept free-standing where it was | M |
 | P3 | The `Style` dirty flag is never set; no public API to edit comments or style | M |
 | P4 | Document-style defaults: `mUseTabs` never inferred; `mDefaultArrayStyle` and `mPreferDottedKeys` inferred but unused for new values; no "nearby style" fallback | S |
 | P5 | `TomlNodeStyle.mRange` source locations are never populated | S |
@@ -92,6 +92,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. P2 (comments inside inline tables), then P3–P5.
+1. P3 (Style dirty flag, comment/style editing API), P4, P5, then P2 (detached comments).
 2. I1–I4 and A2, A5–A7 as needed.
 3. Optional items.

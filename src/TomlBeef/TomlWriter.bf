@@ -1423,9 +1423,15 @@ static class TomlWriterImpl
 
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
-			AppendIndent(outStr, entryIndent);
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
+			TomlNodeId fieldId = .Invalid;
+			if (tbl.MetadataContext != null)
+				tbl.MetadataContext.TryGetEntryNodeId(key, out fieldId);
+			if (fieldId.IsValid)
+				EmitIndentedCommentSet(metadata.GetCommentSet(fieldId), entryIndent, outStr, metadata);
+
+			AppendIndent(outStr, entryIndent);
 			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			if (fmt.mEqualsSpacing > 0)
 				outStr.Append(" = ");
@@ -1434,9 +1440,14 @@ static class TomlWriterImpl
 			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
 			if (i < tbl.KeyOrder.Count - 1 || fmt.mTrailingComma)
 				outStr.Append(',');
+			if (fieldId.IsValid)
+				EmitTrailingComment(fieldId, outStr, metadata);
 			WriteNewline(outStr, metadata);
 		}
 
+		// Comments that sat after the last field, before the closing brace
+		if (tbl.MetadataContext != null && tbl.MetadataContext.mNodeId.IsValid)
+			EmitIndentedCommentSet(metadata.GetCommentSet(tbl.MetadataContext.mNodeId), entryIndent, outStr, metadata);
 		outStr.Append('}');
 	}
 
