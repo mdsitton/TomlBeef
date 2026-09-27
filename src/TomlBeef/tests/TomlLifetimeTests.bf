@@ -113,6 +113,34 @@ static class TomlLifetimeTests
 	}
 
 	[Test]
+	public static void RemovedTableStaysUsableAfterMergeDropsMetadata()
+	{
+		// A PreserveStyle merge discards the style metadata while keeping the store. A table the
+		// caller removed earlier (and still holds) must not be left pointing at freed metadata.
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "[t]\nx = 1\n[u]\ny = 2", .() { MetadataMode = .PreserveStyle });
+		Test.Assert(doc.TryGetTable("t", var removed));
+		Test.Assert(doc.Remove("t"));
+
+		ReadOrFail(doc, "z = 3", .() { Mode = .Merge });
+		Test.Assert(doc.Metadata == null, "A successful merge drops PreserveStyle metadata");
+
+		// Mutating the detached table exercises its metadata context
+		removed.SetString("x", "changed");
+		removed.SetInteger("new", 4);
+		Test.Assert(removed.Remove("new"));
+		removed.Clear();
+		Test.Assert(removed.Count == 0);
+
+		// Reachable tables were detached from the metadata and keep working
+		Test.Assert(doc.TryGetTable("u", var u));
+		u.SetInteger("y", 5);
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("y = 5") && output.Contains("z = 3"), scope $"Unexpected output:\n{output}");
+	}
+
+	[Test]
 	public static void MergeFromCopiesSoSourceCanBeDeleted()
 	{
 		var dest = scope TomlDocument();

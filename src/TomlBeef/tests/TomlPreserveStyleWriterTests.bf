@@ -1363,6 +1363,42 @@ static class TomlPreserveStyleWriterTests
 	}
 
 	[Test]
+	public static void PreserveStyle_ChangedStringKeepsItsOwnStyle()
+	{
+		var doc = scope TomlDocument();
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		// Literal strings dominate, but `basic` is a basic string and the multiline ones differ in shape
+		let input = "a = 'one'\nb = 'two'\nc = 'three'\nbasic = \"four\"\nml = \"\"\"inline start\"\"\"\nmlnl = '''\nnewline start'''";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
+
+		doc.RootTable.SetString("basic", "changed");
+		doc.RootTable.SetString("ml", "still inline");
+		doc.RootTable.SetString("mlnl", "still newline");
+		doc.RootTable.SetString("added", "new key");
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("basic = \"changed\""), scope $"Changed basic string should stay basic:\n{output}");
+		Test.Assert(output.Contains("ml = \"\"\"still inline\"\"\""), scope $"Multiline string without leading newline should keep that shape:\n{output}");
+		Test.Assert(output.Contains("mlnl = '''\nstill newline'''"), scope $"Multiline literal with leading newline should keep it:\n{output}");
+		Test.Assert(output.Contains("added = 'new key'"), scope $"A new key should use the dominant (literal) style:\n{output}");
+
+		var reparsed = scope TomlDocument();
+		if (reparsed.Read(output) case .Err(let e2))
+		{
+			defer e2.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e2.mMessage}\n{output}");
+		}
+		Test.Assert(TomlDocumentEquals(doc, reparsed));
+	}
+
+	[Test]
 	public static void PreserveStyle_EofCommentEmittedAfterContent()
 	{
 		var doc = new TomlDocument();
@@ -1422,6 +1458,62 @@ static class TomlPreserveStyleWriterTests
 		doc.Write(output);
 		Test.Assert(output.Contains("new"));
 		Test.Assert(!output.Contains("old"));
+	}
+
+	[Test]
+	public static void PreserveStyle_ClearedTableKeepsCommentsAndTracksNewKeys()
+	{
+		var doc = scope TomlDocument();
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		if (doc.Read("a = 1\n\n# about t\n[t] # trailing\nx = 1\ny = 2", config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetTable("t", var t));
+		t.Clear();
+		Test.Assert(t.MetadataContext != null, "Clear must keep the table's metadata context");
+		Test.Assert((doc.Metadata.GetNodeStyle(t.MetadataContext.mNodeId).mDirtyFlags & .Children) != 0, "Clear should mark children dirty");
+
+		t.SetString("z", "new");
+		Test.Assert(NodeIdFor(doc, "t.z").IsValid, "Keys added after Clear should get node IDs");
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("# about t\n[t] # trailing\n"), scope $"Header comments should survive Clear:\n{output}");
+		Test.Assert(output.Contains("z = \"new\"") && !output.Contains("x = 1"), scope $"Unexpected content after Clear:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_InlineTableFieldsKeepTokensAndFormats()
+	{
+		var doc = scope TomlDocument();
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "t = { s = \"a\\u0020b\", n = 0xFF, d = 1979-05-27 07:32:00Z, sub.f = 1e3 }";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String clean = scope String();
+		doc.Write(clean);
+		Test.Assert(clean.Contains("s = \"a\\u0020b\""), scope $"String token inside inline table should be reused:\n{clean}");
+		Test.Assert(clean.Contains("n = 0xFF"), scope $"Hex format inside inline table lost:\n{clean}");
+		Test.Assert(clean.Contains("d = 1979-05-27 07:32:00Z"), scope $"Datetime format inside inline table lost:\n{clean}");
+		Test.Assert(clean.Contains("f = 1e3"), scope $"Float format inside dotted inline key lost:\n{clean}");
+
+		// Editing one field keeps its format; untouched siblings keep their tokens
+		Test.Assert(doc.TryGetTable("t", var t));
+		t.SetInteger("n", 16);
+		Test.Assert(StyleFor(doc, "t.n").mDirtyFlags == .Value, "Edited inline field should be dirty");
+		Test.Assert(StyleFor(doc, "t.s").mDirtyFlags == .None, "Untouched inline field should stay clean");
+		String edited = scope String();
+		doc.Write(edited);
+		Test.Assert(edited.Contains("n = 0x10"), scope $"Edited hex field should keep hex format:\n{edited}");
+		Test.Assert(edited.Contains("s = \"a\\u0020b\""), scope $"Sibling token should still be reused:\n{edited}");
 	}
 
 	[Test]

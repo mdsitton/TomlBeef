@@ -111,6 +111,8 @@ public class TomlTable
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
+			if (existingVal.IsSemanticallyEqualTo(value))
+				return;
 			mEntries[existingKey] = value;
 			MarkEntryDirty(key);
 			BindContainerMetadata(value);
@@ -477,14 +479,18 @@ public class TomlTable
 	/// @brief Remove all entries from this table. Removed payloads stay allocated in the document store until the document is cleared or destroyed.
 	public void Clear()
 	{
+		bool hadEntries = mKeyOrder != null && mKeyOrder.Count > 0;
 		if (mEntries != null)
 			mEntries.Clear();
 		if (mKeyOrder != null)
 			mKeyOrder.Clear();
+		// Keep the table's own metadata (node ID, header comments) so it is still written with its style
+		// and later insertions get node IDs; only the per-entry mappings go.
 		if (mMetadataContext != null)
 		{
-			delete mMetadataContext;
-			mMetadataContext = null;
+			mMetadataContext.ClearEntryNodeIds();
+			if (hadEntries)
+				MarkChildrenDirty();
 		}
 		mSuppressAutoDirty = false;
 	}
@@ -670,11 +676,17 @@ public class TomlTable
 	/// Mark the container as having changed children. Call after programmatic insert/remove.
 	internal void MarkChildrenDirty()
 	{
-		if (mMetadataContext != null && mMetadataContext.mMetadata != null && mMetadataContext.mNodeId.IsValid)
+		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
+			return;
+		if (mMetadataContext.mNodeId.IsValid)
 		{
 			let style = mMetadataContext.mMetadata.GetNodeStyle(mMetadataContext.mNodeId);
 			if (style != null)
 				style.mDirtyFlags |= .Children;
+		}
+		else if (mOrigin == .Root)
+		{
+			mMetadataContext.mMetadata.mRootDirtyFlags |= .Children;
 		}
 	}
 
@@ -699,6 +711,9 @@ public class TomlTable
 		var slot = value;
 		if (!slot.IsValid)
 			Runtime.FatalError("Invalid TomlInputValue");
+		// Assigning an equal value keeps the entry clean (and its original token reusable)
+		if (slot.Matches(mEntries[mKeyOrder[index]]))
+			return;
 		TomlValue stored = slot.Materialize(mStore);
 		StringView key = mKeyOrder[index];
 		MarkEntryDirty(key);

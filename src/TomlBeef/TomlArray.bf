@@ -35,6 +35,16 @@ public struct TomlInputValue
 
 	internal bool IsValid => mKind != .Invalid;
 
+	/// Whether this input equals an existing value (same rules as TomlValue.IsSemanticallyEqualTo).
+	/// Strings are compared in place so an unchanged assignment allocates nothing in the arena.
+	internal bool Matches(TomlValue existing)
+	{
+		if (mKind == .String)
+			return existing case .String(let s) && s == mStringValue;
+		var copy = this;
+		return copy.Materialize(null).IsSemanticallyEqualTo(existing);
+	}
+
 	/// @brief Materialize the value into a TomlValue, allocating strings through the document store.
 	internal TomlValue Materialize(TomlDocumentStore store) mut
 	{
@@ -470,6 +480,9 @@ public class TomlArray
 			var slot = value;
 			if (!slot.IsValid)
 				Runtime.FatalError("Invalid TomlInputValue — use a valid scalar");
+			// Assigning an equal value keeps the element clean (and its original token reusable)
+			if (slot.Matches(mItems[index]))
+				return;
 			TomlValue stored = slot.Materialize(mStore);
 			mItems[index] = stored;
 			MarkItemDirty(index);

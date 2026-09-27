@@ -398,7 +398,15 @@ Node identity is stored **beside the slots, not in `TomlValue`**. Each table and
 `TomlContainerMetadataContext` (only in PreserveStyle) that maps entry key or item index to a
 `TomlNodeId` and holds the container's own node ID. This keeps `TomlValue` small and lets style
 follow the slot or path. New entries inserted after the parse get node IDs automatically, and
-`Rename` moves the ID to the new key.
+`Rename` moves the ID to the new key. Inline tables get their context as soon as the parser opens
+them, so every field (including dotted sub-tables inside the braces) is captured like a top-level
+key/value (`CaptureValueMetadata`). `TomlTable.Clear()` keeps the table's own context (node ID,
+header comments) and only drops the entry mappings. The root table is not an entry of anything, so
+its dirty flags live in `TomlDocumentMetadata.mRootDirtyFlags`, next to `mRootComments`.
+
+When a merge drops the metadata, the document **retires** the sidecar instead of deleting it:
+reachable containers are detached, but tables the caller removed earlier are still alive in the
+arena and may still reference it, so it is freed only when the store resets (`Clear`/destruction).
 
 **Dirty tracking** (`TomlDirtyFlags`):
 
@@ -407,19 +415,20 @@ follow the slot or path. New entries inserted after the parse get node IDs autom
   (`MarkChildrenDirty`). The parser builds the tree with `mSuppressAutoDirty` set, then clears it
   with `ClearAutoDirtySuppression()`, so a freshly parsed document is clean.
 - `Style` is defined but no current code sets it.
-- `ReplaceValue` and `SetString` skip a semantically equal value, so the node stays clean. Other
-  setters (array indexer, `TomlTableEntry.Value`, `Insert` on an existing key) still mark it dirty
-  (status.md B4). `IsSemanticallyEqualTo` compares scalars by value (treating NaN as equal to NaN)
-  and containers by identity.
+- Every setter skips a semantically equal value, so the node stays clean and a string's original
+  token remains reusable. `IsSemanticallyEqualTo` compares scalars by value (treating NaN as equal
+  to NaN) and containers by identity; `TomlInputValue.Matches` does the same without copying the
+  incoming string into the arena first.
 
 **How a value is written in PreserveStyle** (`WriteValuePreserving`, `WriteArrayElementPreserving`,
 `WriteValueWithDocumentStyle`), checked in this order:
 
 1. A **string** with a node that is **completely clean** (`mDirtyFlags == .None`) and has an
    original token: the token is copied verbatim.
-2. Any other **string**: written in the document's dominant string style (literal or multi-line
-   forms), falling back to basic when that style cannot represent the content. The node's own
-   captured string format is not consulted yet (status.md B5).
+2. Any other **string**: written in its **own** captured style (style follows the slot), including
+   whether a multi-line string started with a newline. A string with no captured format (e.g. a
+   newly added key) uses the document's dominant style. Literal forms fall back to basic when they
+   cannot represent the content.
 3. An **integer, float or date/time** with a captured value format: regenerated from the current
    value using that format (base, digit case and underscore grouping; exponent style, special-value
    sign and `-0.0`; `T` vs space, `Z` vs offset, seconds and fraction precision). The value always

@@ -476,6 +476,17 @@ internal class TomlContainerMetadataContext
 		if (mItemNodeIds != null)
 			mItemNodeIds.Clear();
 	}
+
+	/// Remove every table entry node ID mapping. Deletes the owned keys.
+	internal void ClearEntryNodeIds()
+	{
+		if (mEntryNodeIds != null)
+		{
+			for (let key in mEntryNodeIds.Keys)
+				delete key;
+			mEntryNodeIds.Clear();
+		}
+	}
 }
 
 // ================================================================
@@ -495,6 +506,10 @@ public class TomlDocumentMetadata
 	internal TomlCommentSet mRootComments ~ delete _;
 	/// @brief Footer/EOF comments.
 	internal TomlCommentSet mFooterComments ~ delete _;
+
+	/// @brief Dirty flags for the root table. The root is not an entry of any table, so like
+	/// mRootComments it is tracked here instead of through a node ID.
+	internal TomlDirtyFlags mRootDirtyFlags;
 
 	/// @brief Document-level style defaults.
 	internal TomlDocumentStyle mDocumentStyle;

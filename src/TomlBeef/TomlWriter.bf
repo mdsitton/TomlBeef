@@ -861,20 +861,34 @@ static class TomlWriterImpl
 	{
 		if (val.IsString && metadata != null)
 		{
-			let style = metadata.mDocumentStyle.mDefaultStringStyle;
+			// Style follows the slot: a changed string keeps its own captured style; only strings
+			// without one (e.g. newly added keys) use the document's dominant style.
+			var style = metadata.mDocumentStyle.mDefaultStringStyle;
+			bool leadingNewline = true;
+			if (nodeId.IsValid)
+			{
+				let nodeStyle = metadata.GetNodeStyle(nodeId);
+				if (nodeStyle != null && nodeStyle.mValueFormatRef.IsValid
+					&& metadata.mValueFormats[nodeStyle.mValueFormatRef.mIndex] case .String(let stringFmt))
+				{
+					style = stringFmt.mStyle;
+					leadingNewline = stringFmt.mStartsWithNewline;
+				}
+			}
 			switch (style)
 			{
 			case .Literal:
 				WriteLiteralString(val.AsString, outStr, version);
 				return;
 			case .MultilineBasic:
-				WriteMultiLineBasicString(val.AsString, outStr, version);
+				WriteMultiLineBasicString(val.AsString, outStr, version, leadingNewline);
 				return;
 			case .MultilineLiteral:
-				WriteMultiLineLiteralString(val.AsString, outStr, version);
+				WriteMultiLineLiteralString(val.AsString, outStr, version, leadingNewline);
 				return;
-			default:
-				break;
+			case .Basic:
+				WriteBasicString(val.AsString, outStr, version);
+				return;
 			}
 		}
 		// Try node-level numeric format metadata
@@ -1070,11 +1084,13 @@ static class TomlWriterImpl
 		outStr.Append('\'');
 	}
 
-	private static void WriteMultiLineBasicString(StringView s, String outStr, TomlVersion version)
+	/// @param leadingNewline Emit a newline after the opening quotes. Forced when the content starts
+	/// with a newline, since the spec trims the first newline after the delimiter.
+	private static void WriteMultiLineBasicString(StringView s, String outStr, TomlVersion version, bool leadingNewline = true)
 	{
 		outStr.Append('"'); outStr.Append('"'); outStr.Append('"');
-		// Emit an extra newline to protect a leading \n from being trimmed by spec
-		outStr.Append('\n');
+		if (leadingNewline || s.StartsWith('\n') || s.StartsWith('\r'))
+			outStr.Append('\n');
 		for (int i = 0; i < s.Length; i++)
 		{
 			char8 c = s[i];
@@ -1104,7 +1120,9 @@ static class TomlWriterImpl
 		outStr.Append('"'); outStr.Append('"'); outStr.Append('"');
 	}
 
-	private static void WriteMultiLineLiteralString(StringView s, String outStr, TomlVersion version)
+	/// @param leadingNewline Emit a newline after the opening quotes. Forced when the content starts
+	/// with a newline, since the spec trims the first newline after the delimiter.
+	private static void WriteMultiLineLiteralString(StringView s, String outStr, TomlVersion version, bool leadingNewline = true)
 	{
 		// Pre-scan: multiline literal strings can't contain ''' or control chars (except tab/newline)
 		// Bare \r is also rejected
@@ -1112,7 +1130,7 @@ static class TomlWriterImpl
 		{
 			if (s[i] == '\'' && s[i + 1] == '\'' && s[i + 2] == '\'')
 			{
-				WriteMultiLineBasicString(s, outStr, version);
+				WriteMultiLineBasicString(s, outStr, version, leadingNewline);
 				return;
 			}
 		}
@@ -1121,12 +1139,13 @@ static class TomlWriterImpl
 			char8 c = s[i];
 			if (c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t' && c != '\n'))
 			{
-				WriteMultiLineBasicString(s, outStr, version);
+				WriteMultiLineBasicString(s, outStr, version, leadingNewline);
 				return;
 			}
 		}
 		outStr.Append('\''); outStr.Append('\''); outStr.Append('\'');
-		outStr.Append('\n');
+		if (leadingNewline || s.StartsWith('\n'))
+			outStr.Append('\n');
 		outStr.Append(s);
 		outStr.Append('\''); outStr.Append('\''); outStr.Append('\'');
 	}
@@ -1330,7 +1349,8 @@ static class TomlWriterImpl
 			String key = tbl.KeyOrder[i];
 			TomlValue val = tbl.Entries[key];
 			WriteKey(key, outStr, version);
-			if (hasFormat && fmt.mEqualsSpacing > 0)
+			// Without a captured format (e.g. a sub-table created by a dotted key), match the normal writer
+			if (!hasFormat || fmt.mEqualsSpacing > 0)
 				outStr.Append(" = ");
 			else
 				outStr.Append('=');

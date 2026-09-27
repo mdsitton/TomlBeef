@@ -367,27 +367,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(valueStart, scratch);
-			if (nodeId.IsValid)
-			{
-				if (value.IsString)
-				{
-					let tokenRef = mMetadata.AddOriginalToken(rawToken);
-					let style = mMetadata.GetNodeStyle(nodeId);
-					if (style != null)
-						style.mOriginalValueToken = tokenRef;
-					CaptureStringFormat(nodeId, rawToken);
-				}
-				else if (value.IsInteger || value.IsFloat)
-					CaptureNumericFormat(nodeId, rawToken);
-				else if (value.IsArray)
-					CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
-				else if (value.IsTable)
-					CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
-				else if (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime)
-					CaptureDateTimeFormat(nodeId, rawToken);
-
-				CaptureKeyFormat(nodeId, keyStyle, keyPath.Count > 1);
-			}
+			CaptureValueMetadata(nodeId, value, rawToken, keyStyle, keyPath.Count > 1);
 		}
 
 		// Attach pending leading comments and track this node for trailing comments
@@ -1771,6 +1751,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		TomlTable tbl = mStore.NewTable(.InlineTable, true);
+		// In PreserveStyle, give the table a metadata context up front so each field gets a node ID
+		// (and dotted sub-tables inherit contexts through Insert) before its format is captured.
+		if (mMetadata != null)
+			tbl.MetadataContext = new TomlContainerMetadataContext(mMetadata, mMetadata.AllocateNodeId(), false);
 
 		if (SkipWsAndComments(mVersion != .V1_0) case .Err(let e))
 		{
@@ -1792,49 +1776,69 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(wsErr);
 			}
 
+			// Key style only depends on the key's first byte
+			TomlKeyStyle keyStyle = .Bare;
+			if (mMetadata != null)
+			{
+				char8 first = mCursor.PeekByte();
+				if (first == '"')
+					keyStyle = .QuotedBasic;
+				else if (first == '\'')
+					keyStyle = .QuotedLiteral;
+			}
+
 			var keyPath = scope List<String>();
 			defer { ClearAndDeleteItems!(keyPath); }
 			if (ParseKeyPath(keyPath) case .Err(let keyErr))
-			{
-				
 				return .Err(keyErr);
-			}
 
 			mCursor.SkipWhitespace();
 			if (mCursor.PeekByte() != '=')
-			{
-				
 				return .Err(Error(.UnexpectedToken, "Expected '=' in inline table"));
-			}
 			mCursor.AdvanceByte();
 
 			mCursor.SkipWhitespace();
+			var valueStart = TomlCursorMark();
+			if (mMetadata != null)
+				valueStart = mCursor.Mark();
+
+			TomlValue val;
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
-				
 				return .Err(valErr);
-			case .Ok(let val):
-				if (keyPath.Count == 1)
-				{
-					if (tbl.ContainsKey(keyPath[0]))
-					{
+			case .Ok(let parsed):
+				val = parsed;
+			}
 
-						
-						return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
-					}
-					Try!(CheckTableEntry(tbl));
-					tbl.Insert(keyPath[0], val);
-				}
-				else
+			TomlTable target = tbl;
+			if (keyPath.Count == 1)
+			{
+				if (tbl.ContainsKey(keyPath[0]))
+					return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
+				Try!(CheckTableEntry(tbl));
+				tbl.Insert(keyPath[0], val);
+			}
+			else
+			{
+				switch (InsertDottedKeyIntoTable(tbl, keyPath, val))
 				{
-					if (InsertDottedKeyIntoTable(tbl, keyPath, val) case .Err(let insertErr))
-					{
-
-						
-						return .Err(insertErr);
-					}
+				case .Err(let insertErr):
+					return .Err(insertErr);
+				case .Ok(let inserted):
+					target = inserted;
 				}
+			}
+
+			// Capture the field's token and formats against its node ID. Slicing releases the mark.
+			if (mMetadata != null)
+			{
+				String scratch = scope String();
+				StringView rawToken = mCursor.Slice(valueStart, scratch);
+				TomlNodeId nodeId = .Invalid;
+				if (target.MetadataContext != null)
+					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out nodeId);
+				CaptureValueMetadata(nodeId, val, rawToken, keyStyle, keyPath.Count > 1);
 			}
 
 			if (SkipWsAndComments(mVersion != .V1_0) case .Err(let trailWsErr))
@@ -1885,7 +1889,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.Table(tbl);
 	}
 
-	private Result<void, TomlParseError> InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
+	/// Inserts `value` at a dotted key path inside an inline table, creating intermediate inline tables.
+	/// Returns the table that received the final key.
+	private Result<TomlTable, TomlParseError> InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
 	{
 		TomlTable current = tbl;
 		for (int i = 0; i < keyPath.Count - 1; i++)
@@ -1923,7 +1929,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return .Err(Error(.DuplicateKey, scope $"Duplicate key '{finalKey}' in inline table"));
 		Try!(CheckTableEntry(current));
 		current.Insert(finalKey, value);
-		return .Ok;
+		return .Ok(current);
 	}
 
 	// ================================================================
@@ -2005,6 +2011,32 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			break;
 		}
 		return .Ok;
+	}
+
+	/// Record PreserveStyle metadata for a parsed key/value: the original token for strings, the value
+	/// format for numbers, date/times, arrays and inline tables, and the key format.
+	private void CaptureValueMetadata(TomlNodeId nodeId, TomlValue value, StringView rawToken, TomlKeyStyle keyStyle, bool isDotted)
+	{
+		if (mMetadata == null || !nodeId.IsValid)
+			return;
+		if (value.IsString)
+		{
+			let tokenRef = mMetadata.AddOriginalToken(rawToken);
+			let style = mMetadata.GetNodeStyle(nodeId);
+			if (style != null)
+				style.mOriginalValueToken = tokenRef;
+			CaptureStringFormat(nodeId, rawToken);
+		}
+		else if (value.IsInteger || value.IsFloat)
+			CaptureNumericFormat(nodeId, rawToken);
+		else if (value.IsArray)
+			CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
+		else if (value.IsTable)
+			CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
+		else if (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime)
+			CaptureDateTimeFormat(nodeId, rawToken);
+
+		CaptureKeyFormat(nodeId, keyStyle, isDotted);
 	}
 
 	private void SyncPathResolver()

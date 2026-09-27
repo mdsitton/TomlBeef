@@ -81,6 +81,9 @@ public class TomlDocument
 	private TomlDocumentStore mStore ~ delete _;
 	private TomlTable mRootTable; // borrowed from mStore.RootTable
 	private TomlDocumentMetadata mMetadata ~ delete _;
+	/// Metadata dropped by a merge. Containers the caller detached earlier may still reference it, so it
+	/// lives until the store resets (Clear/destruction) frees those containers too. Allocated lazily.
+	private List<TomlDocumentMetadata> mRetiredMetadata ~ DeleteContainerAndItems!(_);
 
 	/// @brief The document's root table (read-only). Use typed setters (SetString, SetInteger, etc.)
 	/// or document-level methods (AddTable, AddArray) to modify content.
@@ -95,6 +98,23 @@ public class TomlDocument
 		ClearMetadata();
 		mStore.Reset();
 		mRootTable = mStore.RootTable;
+		// Every container is gone now, so nothing can reference retired metadata any more
+		if (mRetiredMetadata != null)
+			ClearAndDeleteItems!(mRetiredMetadata);
+	}
+
+	/// Drop PreserveStyle metadata while keeping the store (after a merge). Reachable containers are
+	/// detached; the sidecar itself is retired rather than deleted because containers the caller removed
+	/// earlier are unreachable but still alive in the arena and may still point at it.
+	private void RetireMetadata()
+	{
+		if (mMetadata == null)
+			return;
+		mRootTable.ClearMetadataContexts();
+		if (mRetiredMetadata == null)
+			mRetiredMetadata = new List<TomlDocumentMetadata>();
+		mRetiredMetadata.Add(mMetadata);
+		mMetadata = null;
 	}
 
 	private void ClearMetadata()
@@ -298,9 +318,9 @@ public class TomlDocument
 			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
 		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
-		// Metadata-aware merge not yet implemented — clear metadata to prevent stale state
+		// Metadata-aware merge not yet implemented — drop metadata to prevent stale state
 		if (mergeResult case .Ok)
-			ClearMetadata();
+			RetireMetadata();
 		return mergeResult;
 	}
 
@@ -368,9 +388,9 @@ public class TomlDocument
 		}
 		incoming.ClearAutoDirtySuppression();
 		let mergeResult = mRootTable.MergeFrom(incoming, config.OnConflict);
-		// Metadata-aware merge not yet implemented — clear metadata to prevent stale state
+		// Metadata-aware merge not yet implemented — drop metadata to prevent stale state
 		if (mergeResult case .Ok)
-			ClearMetadata();
+			RetireMetadata();
 		return mergeResult;
 	}
 

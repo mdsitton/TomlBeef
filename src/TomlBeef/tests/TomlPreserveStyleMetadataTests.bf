@@ -1165,6 +1165,20 @@ static class TomlPreserveStyleMetadataTests
 	}
 
 	[Test]
+	public static void PreserveStyle_RootInsertAndRemoveMarkRootChildrenDirty()
+	{
+		let doc = ReadPreserveStyle(scope .(), "a = 1\n[t]\nx = 1");
+		Test.Assert(doc.Metadata.mRootDirtyFlags == .None, "Freshly parsed root should be clean");
+
+		doc.RootTable.SetString("new", "v");
+		Test.Assert(doc.Metadata.mRootDirtyFlags == .Children, "Inserting a root key should mark the root Children-dirty");
+
+		let removed = ReadPreserveStyle(scope .(), "a = 1\nb = 2");
+		Test.Assert(removed.RootTable.Remove("a"));
+		Test.Assert(removed.Metadata.mRootDirtyFlags == .Children, "Removing a root key should mark the root Children-dirty");
+	}
+
+	[Test]
 	public static void PreserveStyle_ArrayAddMarksChildrenDirtyAfterParse()
 	{
 		let doc = ReadPreserveStyle(scope .(), "arr = [1]");
@@ -1174,6 +1188,43 @@ static class TomlPreserveStyleMetadataTests
 
 		arr.Add(.Integer(2));
 		Test.Assert(doc.Metadata.GetNodeStyle(nodeId).mDirtyFlags == .Children);
+	}
+
+	[Test]
+	public static void PreserveStyle_EqualAssignmentsKeepNodesClean()
+	{
+		let doc = ReadPreserveStyle(scope .(), "s = 'original'\nn = 0x10\narr = ['x', 2]");
+		let tokenCount = doc.Metadata.mOriginalTokens.Count;
+
+		// TomlTableEntry.Value setter
+		doc.RootTable[0].Value = "original";
+		doc.RootTable[1].Value = 16;
+		Test.Assert(StyleFor(doc, "s").mDirtyFlags == .None, "Equal entry assignment should stay clean");
+		Test.Assert(StyleFor(doc, "n").mDirtyFlags == .None, "Equal entry assignment should stay clean");
+
+		// Array indexer setter
+		Test.Assert(doc.TryGetArray("arr", var arr));
+		arr[0] = "x";
+		arr[1] = 2;
+		Test.Assert(arr.MetadataContext.TryGetItemNodeId(0, var item0));
+		Test.Assert(doc.Metadata.GetNodeStyle(item0).mDirtyFlags == .None, "Equal array assignment should stay clean");
+
+		// Internal Insert on an existing key
+		doc.RootTable.Insert("n", .Integer(16));
+		Test.Assert(StyleFor(doc, "n").mDirtyFlags == .None, "Equal Insert on an existing key should stay clean");
+		Test.Assert(doc.Metadata.mOriginalTokens.Count == tokenCount);
+
+		// A real change still marks the node dirty
+		doc.RootTable[1].Value = 17;
+		Test.Assert(StyleFor(doc, "n").mDirtyFlags == .Value);
+		arr[0] = "y";
+		Test.Assert(doc.Metadata.GetNodeStyle(item0).mDirtyFlags == .Value);
+
+		// The unchanged literal keeps its original token on write
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("s = 'original'"), scope $"Clean token should be reused:\n{output}");
+		Test.Assert(output.Contains("n = 0x11"), scope $"Changed hex value should keep its format:\n{output}");
 	}
 
 	[Test]
