@@ -48,12 +48,14 @@ if (doc.Read(input) case .Err(let err))
 
 A TOML specification version can be passed: `doc.Read(input, .() { Version = .V1_0 })`. Defaults to V1_1.
 
-Use `Replace` mode (the default) to clear existing content before parsing. Use `Merge` mode to layer additional keys on top of existing content:
+Use `Replace` mode (the default) to clear existing content before parsing. Use `Merge` mode to layer another file on top of existing content:
 
 ```bf
-doc.Read(baseFile);                              // Replace (default)
-doc.Read(overrideFile, .() { Mode = .Merge });   // Merge on top
+doc.Read(baseFile);                                                     // Replace (default)
+doc.Read(overrideFile, .() { Mode = .Merge, OnConflict = .Overwrite }); // Merge on top
 ```
+
+Merging is deep: tables that exist on both sides are combined key by key, so a base `[server] host = "a"` merged with an override `[server] port = 80` yields both keys. Only individual values conflict (arrays count as single values and are replaced whole). `OnConflict` decides what happens then: `Error` (default) fails and leaves the document unchanged, naming the conflicting path; `Skip` keeps the existing value; `Overwrite` takes the incoming one.
 
 `TomlDocument` owns the entire parsed tree. Dispose it when done (`defer delete doc`).
 

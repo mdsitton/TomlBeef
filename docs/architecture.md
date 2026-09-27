@@ -82,14 +82,23 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
   size limit, I/O, parse or resolver error) the document is `Clear()`ed, so it is **left empty**.
 - **Merge** into an empty document behaves like Replace, because nothing needs preserving.
 - **Merge** into a non-empty document parses into a **temporary `TomlDocumentStore`**. Only after
-  that parse fully succeeds does `TomlTable.MergeFrom` copy the incoming top-level entries into the
-  real store (`CloneInto`). A parse failure therefore leaves the **existing content unchanged**.
-- `MergeFrom` makes two passes. With `OnConflict = .Error` it first checks every incoming
-  top-level key and fails with `DuplicateKey` (position 0:0) **before changing anything**. The
-  second pass inserts new keys; for an existing key it does nothing (`Skip`) or replaces the value
-  with a deep copy (`Overwrite`).
-- **Merge is shallow**: conflicts are decided per top-level key. `Overwrite` replaces the whole
-  subtree under that key; it does not merge tables recursively.
+  that parse fully succeeds does `TomlTable.MergeFrom` deep-merge the incoming tree into the real
+  store (`CloneInto`). A parse failure therefore leaves the **existing content unchanged**.
+- **Merge is deep**, designed for layering config files (defaults, then site, then user):
+  - A table present on both sides is merged recursively; that is never a conflict.
+  - Everything else is a **leaf**: scalars, whole arrays, whole arrays of tables, and type
+    mismatches (table vs value, array vs table). Arrays are replaced, never merged element-wise or
+    appended, because element-wise merging has no unambiguous meaning and overrides of `[[x]]`
+    lists are expected to redefine them.
+  - Only a leaf present on both sides conflicts: `Error` fails, `Skip` keeps the existing leaf,
+    `Overwrite` replaces it with a deep copy (the whole subtree, on a type mismatch).
+  - An existing table keeps its origin, so a base-file inline table can gain keys from an override
+    `[header]` and is still written inline.
+- `MergeFrom` makes two passes. With `OnConflict = .Error`, `ValidateMerge` first walks the whole
+  incoming tree and fails with `DuplicateKey` **before changing anything**. The message names the
+  conflicting dotted path in document path syntax (e.g. `server.port`, `a.[b.c].x`); the position
+  is 0:0 because the conflict has no single source location. `ApplyMerge` then inserts, recurses,
+  and resolves leaves.
 - A successful merge into a non-empty document **drops PreserveStyle metadata**
   (`ClearMetadata`). Merging metadata is not implemented, and keeping stale node IDs would be
   unsafe.

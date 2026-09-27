@@ -10,7 +10,7 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` | 209/209 pass |
+| `beefbuild -test` | 216/216 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -26,7 +26,7 @@ as well as `beefbuild -test`.
 | TOML 1.0 and 1.1 parsing | Complete; full valid/invalid corpus passes for both versions |
 | Encoding | `TomlTester -from-json` builds documents from toml-test tagged JSON through the public API; passes the upstream encoder suite for both versions |
 | Input paths | `Read(StringView)`, `ReadBytes`, `Read(Stream)`, `ReadFile`, all decoding identically |
-| Read modes | `Replace` and `Merge` (`Error`/`Skip`/`Overwrite`), transactional on failure |
+| Read modes | `Replace` and deep `Merge` (`Error`/`Skip`/`Overwrite` on conflicting leaves), transactional on failure |
 | Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
@@ -54,7 +54,7 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Gap | Size |
 |----|-----|------|
-| P1 | A successful `Merge` clears all style metadata (a test pins this). Needs a temporary sidecar, node-ID remapping, and Overwrite marking values dirty | M–L |
+| P1 | A successful `Merge` clears all style metadata (a test pins this). Needs a temporary sidecar, node-ID remapping across the deep merge (new keys inside existing tables too), and Overwrite marking replaced leaves dirty | M–L |
 | P2 | Comments inside multiline inline tables are discarded; no "detached comment" placement | M |
 | P3 | The `Style` dirty flag is never set; no public API to edit comments or style | M |
 | P4 | Document-style defaults: `mUseTabs` never inferred; `mDefaultArrayStyle` and `mPreferDottedKeys` inferred but unused for new values; no "nearby style" fallback | S |
@@ -73,7 +73,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Gap | Size |
 |----|-----|------|
-| A1 | **In progress.** Merge is shallow: conflicts are checked per top-level key, so base `[server] host=…` plus override `[server] port=…` fails under `.Error`, and `.Overwrite` replaces the whole table. **Decided (2026-09-27):** Merge becomes a deep merge (no shallow option): tables present on both sides recurse; only leaves conflict (scalars, whole arrays, whole arrays of tables, and type mismatches), resolved by `OnConflict`; validate the full tree before applying anything; conflict errors name the dotted path; the destination table keeps its origin | M |
 | A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
 | A3 | Borrowed raw read APIs (`TomlTable.GetValueAt`, `TomlArray.GetValueAt`, `TryGetValue`, `Get`, `this[StringView]`, `TomlDocument.Get`/`GetPath`) are public without an "advanced/borrowed" note. Internalize or document | S |
 | A4 | `TomlParserImpl` receives its store via `SetStore` instead of requiring it at construction | S |
@@ -102,7 +101,7 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 ## Suggested order
 
 1. B1–B5 (PreserveStyle correctness), each with a writer-output test.
-2. Decide A1 (deep merge) before starting P1 (metadata merge).
+2. P1 (metadata through merge), now that deep merge (A1) is settled.
 3. B6–B8, then I1, A3, A4 (small fixes and API hygiene).
 4. P1, P2.
 5. I2–I4 and optional items as needed.

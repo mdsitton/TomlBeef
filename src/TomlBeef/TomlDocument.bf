@@ -10,18 +10,19 @@ public enum TomlReadMode
 {
 	/// Clear existing root table, populate from input (default).
 	Replace,
-	/// Retain existing content, insert new top-level keys.
+	/// Retain existing content and deep-merge the input into it (see TomlTable.MergeFrom).
 	Merge
 }
 
-/// Conflict resolution strategy when merging duplicate keys.
+/// Conflict resolution for a merge. Tables present on both sides are always merged recursively;
+/// these strategies apply only to conflicting leaves (scalars, whole arrays, type mismatches).
 public enum MergeConflict
 {
-	/// Duplicate key returns an error (default — strict TOML semantics).
+	/// A conflicting leaf fails the merge with DuplicateKey and leaves the document unchanged (default).
 	Error,
-	/// Keep the existing value, ignore the incoming duplicate.
+	/// Keep the existing leaf, ignore the incoming one.
 	Skip,
-	/// Replace the existing value with the incoming one.
+	/// Replace the existing leaf (or whole subtree, on a type mismatch) with the incoming one.
 	Overwrite
 }
 

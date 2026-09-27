@@ -489,47 +489,72 @@ public class TomlTable
 		mSuppressAutoDirty = false;
 	}
 
-	/// @brief Merge keys from another table into this one.
-	/// @param source The table whose entries to merge. Unchanged on return.
-	/// @param onConflict How to handle duplicate keys (default: error).
-	/// @return .Ok on success, or .Err if a duplicate key was found with OnConflict == .Error.
+	/// @brief Deep-merge another table into this one.
+	/// Tables present on both sides are merged recursively. Everything else is a leaf: scalars, whole
+	/// arrays, whole arrays of tables, and type mismatches (e.g. a table on one side and a value on the
+	/// other). Only leaves present on both sides conflict. Existing tables keep their origin.
+	/// @param source The table whose entries to merge. Unchanged on return; values are deep-copied.
+	/// @param onConflict How to resolve a conflicting leaf (default: error).
+	/// @return .Ok on success, or .Err (DuplicateKey, naming the dotted path) if a leaf conflicts and
+	/// onConflict == .Error. The whole tree is checked first, so on error this table is unchanged.
 	public Result<void, TomlParseError> MergeFrom(TomlTable source, MergeConflict onConflict = .Error)
 	{
-		// Pass 1: validate — check for conflicting keys before modifying anything
 		if (onConflict == .Error)
-		{
-			for (int i = 0; i < source.mKeyOrder.Count; i++)
-			{
-				StringView key = source.mKeyOrder[i];
-				if (ContainsKey(key))
-					return .Err(TomlParseError(.DuplicateKey,
-						scope $"Duplicate key '{key}' during merge", 0, 0, 0));
-			}
-		}
+			Try!(ValidateMerge(source, scope String()));
+		ApplyMerge(source, onConflict);
+		return .Ok;
+	}
 
-		// Pass 2: insert or replace — copy values into the destination store
+	/// Pass 1 for MergeConflict.Error: find the first conflicting leaf without modifying anything.
+	private Result<void, TomlParseError> ValidateMerge(TomlTable source, String path)
+	{
 		for (int i = 0; i < source.mKeyOrder.Count; i++)
 		{
-			StringView key = source.mKeyOrder[i];
-			if (!source.TryGetValue(key, let val))
+			String key = source.mKeyOrder[i];
+			if (!TryGetValue(key, let existing))
 				continue;
 
-			if (ContainsKey(key))
-			{
-				if (onConflict == .Overwrite)
-				{
-					TomlValue copy = val.CloneInto(mStore);
-					ReplaceValue(key, copy);
-				}
-				// .Skip: do nothing, keep existing value
-			}
+			int pathLen = path.Length;
+			AppendMergePathSegment(path, key);
+			if (existing.IsTable && source.mEntries[key].IsTable)
+				Try!(existing.AsTable.ValidateMerge(source.mEntries[key].AsTable, path));
 			else
-			{
-				TomlValue copy = val.CloneInto(mStore);
-				Insert(key, copy);
-			}
+				return .Err(TomlParseError(.DuplicateKey, scope $"Duplicate key '{path}' during merge", 0, 0, 0));
+			path.Length = pathLen;
 		}
 		return .Ok;
+	}
+
+	/// Pass 2: insert new keys, recurse into shared tables, and resolve conflicting leaves.
+	private void ApplyMerge(TomlTable source, MergeConflict onConflict)
+	{
+		for (int i = 0; i < source.mKeyOrder.Count; i++)
+		{
+			String key = source.mKeyOrder[i];
+			TomlValue incoming = source.mEntries[key];
+			if (!TryGetValue(key, let existing))
+			{
+				Insert(key, incoming.CloneInto(mStore));
+				continue;
+			}
+
+			if (existing.IsTable && incoming.IsTable)
+				existing.AsTable.ApplyMerge(incoming.AsTable, onConflict);
+			else if (onConflict == .Overwrite)
+				ReplaceValue(key, incoming.CloneInto(mStore));
+			// .Skip keeps the existing value; .Error conflicts were rejected by ValidateMerge
+		}
+	}
+
+	/// Appends a key to a merge error path using the document path syntax (bracketed if it contains '.').
+	private static void AppendMergePathSegment(String path, StringView key)
+	{
+		if (!path.IsEmpty)
+			path.Append('.');
+		if (key.Contains('.'))
+			path.AppendF("[{}]", key);
+		else
+			path.Append(key);
 	}
 
 	/// Recursively seal this inline table and all inline-table descendants created inside it.

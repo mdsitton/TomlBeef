@@ -1,5 +1,6 @@
 using System;
 using TomlBeef;
+using static TomlBeef.TomlTestSupport;
 
 namespace TomlBeef;
 
@@ -140,6 +141,155 @@ static class TomlReadTests
 		Test.Assert(doc.TryGetString("a", var a) && a == "new");
 		Test.Assert(doc.TryGetBool("keep", var keep) && keep);
 		Test.Assert(doc.TryGetInteger("b", var b) && b == 2);
+	}
+
+	// ================================================================
+	// Deep merge
+	// ================================================================
+
+	static Result<void, TomlParseError> Merge(TomlDocument doc, StringView input, MergeConflict onConflict)
+	{
+		return doc.Read(input, .() { Mode = .Merge, OnConflict = onConflict });
+	}
+
+	static void MergeOrFail(TomlDocument doc, StringView input, MergeConflict onConflict)
+	{
+		if (Merge(doc, input, onConflict) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Merge failed: {e.mMessage}");
+		}
+	}
+
+	/// The merged document must also write out and re-read to the same content.
+	static void AssertWritesAndRereads(TomlDocument doc)
+	{
+		String output = scope String();
+		doc.Write(output);
+		var reparsed = scope TomlDocument();
+		if (reparsed.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Merged output does not re-parse: {e.mMessage}\n{output}");
+			return;
+		}
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Merged output changed on re-read:\n{output}");
+	}
+
+	[Test]
+	public static void DeepMerge_SharedTablesCombineWithoutConflict()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "[server]\nhost = \"localhost\"\n[a.b]\nx = 1");
+		MergeOrFail(doc, "[server]\nport = 8080\n[a.b]\ny = 2\n[a.c]\nz = 3", .Error);
+		Test.Assert(doc.TryGetString("server.host", var host) && host == "localhost");
+		Test.Assert(doc.TryGetInteger("server.port", var port) && port == 8080);
+		Test.Assert(doc.TryGetInteger("a.b.x", var x) && x == 1);
+		Test.Assert(doc.TryGetInteger("a.b.y", var y) && y == 2);
+		Test.Assert(doc.TryGetInteger("a.c.z", var z) && z == 3);
+		AssertWritesAndRereads(doc);
+	}
+
+	[Test]
+	public static void DeepMerge_NestedLeafConflictNamesPathAndChangesNothing()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "[server]\nport = 1\nhost = \"a\"");
+		switch (Merge(doc, "extra = true\n[server]\nnew = 1\nport = 2", .Error))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected a nested leaf conflict");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .DuplicateKey, scope $"Expected DuplicateKey, got {e.mKind}");
+			Test.Assert(e.mMessage.Contains("'server.port'"), scope $"Error should name the path: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetInteger("server.port", var port) && port == 1);
+		Test.Assert(!doc.TryGetBool("extra", ?), "Nothing may be applied when validation fails");
+		Test.Assert(!doc.TryGetInteger("server.new", ?), "Nothing may be applied when validation fails");
+	}
+
+	[Test]
+	public static void DeepMerge_ConflictPathBracketsDottedKeys()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "[a.\"b.c\"]\nx = 1");
+		switch (Merge(doc, "[a.\"b.c\"]\nx = 2", .Error))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected conflict");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mMessage.Contains("'a.[b.c].x'"), scope $"Expected bracketed path, got: {e.mMessage}");
+		}
+	}
+
+	[Test]
+	public static void DeepMerge_SkipAndOverwriteApplyToNestedLeaves()
+	{
+		var skip = scope TomlDocument();
+		ReadOrFail(skip, "[server]\nport = 1\nhost = \"a\"");
+		MergeOrFail(skip, "[server]\nport = 2\ntimeout = 30", .Skip);
+		Test.Assert(skip.TryGetInteger("server.port", var p1) && p1 == 1);
+		Test.Assert(skip.TryGetString("server.host", var h1) && h1 == "a");
+		Test.Assert(skip.TryGetInteger("server.timeout", var t1) && t1 == 30);
+
+		var overwrite = scope TomlDocument();
+		ReadOrFail(overwrite, "[server]\nport = 1\nhost = \"a\"");
+		MergeOrFail(overwrite, "[server]\nport = 2\ntimeout = 30", .Overwrite);
+		Test.Assert(overwrite.TryGetInteger("server.port", var p2) && p2 == 2);
+		Test.Assert(overwrite.TryGetString("server.host", var h2) && h2 == "a", "Overwrite must not drop sibling keys");
+		Test.Assert(overwrite.TryGetInteger("server.timeout", var t2) && t2 == 30);
+		AssertWritesAndRereads(overwrite);
+	}
+
+	[Test]
+	public static void DeepMerge_ArraysAreReplacedWhole()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "a = [1, 2]\n[[s]]\nn = 1\n[[s]]\nn = 2");
+		Test.Assert(Merge(doc, "a = [3]", .Error) case .Err(let e), "A shared array is a conflicting leaf");
+		e.Dispose();
+
+		MergeOrFail(doc, "a = [3]\n[[s]]\nn = 3", .Overwrite);
+		Test.Assert(doc.TryGetArray("a", var a) && a.Count == 1);
+		Test.Assert(a.TryGetInteger(0, var a0) && a0 == 3);
+		Test.Assert(doc.TryGetArray("s", var s) && s.Count == 1, "Arrays of tables are replaced, not appended");
+		Test.Assert(s.TryGetTable(0, var s0));
+		Test.Assert(s0.TryGetInteger("n", var n) && n == 3);
+		AssertWritesAndRereads(doc);
+	}
+
+	[Test]
+	public static void DeepMerge_TypeMismatchIsALeafConflict()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "t = 1\n[u]\nx = 1");
+		switch (Merge(doc, "[t]\nx = 1", .Error))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected conflict for value vs table");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mMessage.Contains("'t'"), scope $"Error should name the path: {e.mMessage}");
+		}
+
+		MergeOrFail(doc, "[t]\nx = 2\n[[u]]\ny = 3", .Overwrite);
+		Test.Assert(doc.TryGetInteger("t.x", var tx) && tx == 2, "Overwrite replaces a value with a table");
+		Test.Assert(doc.TryGetArray("u", var u) && u.Count == 1, "Overwrite replaces a table with an array of tables");
+		AssertWritesAndRereads(doc);
+	}
+
+	[Test]
+	public static void DeepMerge_InlineTableKeepsOriginAndAcceptsKeys()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, "t = { a = 1 }");
+		MergeOrFail(doc, "[t]\nb = 2", .Error);
+		Test.Assert(doc.TryGetTable("t", var t) && t.Origin == .InlineTable);
+		Test.Assert(t.TryGetInteger("a", var a) && a == 1);
+		Test.Assert(t.TryGetInteger("b", var b) && b == 2);
+		AssertWritesAndRereads(doc);
 	}
 
 	// ================================================================
