@@ -1,7 +1,7 @@
 #!/bin/bash
 # TOML test: parse valid/invalid files against toml-test expectations,
 # with semantic comparison of valid fixture outputs against expected JSON.
-# Usage: ./test-toml.sh [path_to_toml-test]
+# Usage: ./test-toml.sh [path_to_tests] (default: tests)
 #
 # Version selection:
 #   Valid tests:        always run with default (v1.1)
@@ -11,7 +11,7 @@
 shopt -s globstar nullglob
 
 BIN="${BIN:-./build/Debug_Linux64/TomlTester/TomlTester}"
-TESTDIR="${1:-toml-test/tests}"
+TESTDIR="${1:-tests}"
 LOGFILE="${LOGFILE:-test-toml-mismatches.log}"
 COMPARE="${COMPARE:-./json-compare.py}"
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Roundtrip test: parse TOML → write TOML → re-parse → compare tagged JSON
-# Usage: ./test-roundtrip.sh [path_to_valid_toml-tests]
+# Usage: ./test-roundtrip.sh [path_to_valid_tests] (default: tests/valid)
 #
 # Outputs a summary to stdout and detailed failure info to test-roundtrip.log
 #
@@ -10,7 +10,7 @@
 shopt -s globstar nullglob
 
 BIN="${BIN:-./build/Debug_Linux64/TomlTester/TomlTester}"
-TESTDIR="${1:-toml-test/tests/valid}"
+TESTDIR="${1:-tests/valid}"
 # Normalize: strip leading ./ and trailing / for stable log output.
 TESTDIR="${TESTDIR#./}"
 TESTDIR="${TESTDIR%/}"

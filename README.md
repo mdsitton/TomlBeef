@@ -348,16 +348,24 @@ case .Err(let err):
 
 ## Running Tests
 
+Local tests use the fixtures checked into `tests/`; a separate `toml-test/` checkout is not required.
+The semantic comparison and roundtrip scripts require Python 3.
+
 ```bash
 # Build
-BeefBuild
+beefbuild
 
-# Run toml-test suite (requires Go)
-go run github.com/toml-lang/toml-test/v2/cmd/toml-test@v2.2.0 -- \
-  test -decoder ./build/Debug_Linux64/TomlTester/TomlTester -toml 1.1
+# Run Beef tests
+beefbuild -test
+
+# Compare decoded values against the tracked fixtures
+./test-toml.sh
 
 # Roundtrip test
 ./test-roundtrip.sh
+
+# Run the pinned upstream suite for TOML 1.0 and 1.1 (requires Go)
+./test-official-toml.sh
 ```
 
 ## Requirements

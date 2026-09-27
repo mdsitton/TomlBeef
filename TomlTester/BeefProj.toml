@@ -7,3 +7,4 @@ StartupObject = "TomlTester.Program"
 [Dependencies]
 corlib = "*"
 TomlBeef = "*"
+BJSON = {Git = "https://github.com/M0n7y5/BJSON.git?path=/BJSON"}
