@@ -9,6 +9,7 @@
 - Preferred CLI tool: `beefbuild` on Linux, `BeefBuild` on Windows. Use from `PATH`.
 - Treat `BJSON/` and `toml-test/` as external upstream/reference material; do not edit them unless the task explicitly targets those dependencies.
 - Treat `recovery/` as forensic/generated reference material; consult it only for historical context and do not edit it unless explicitly requested.
+- Start with `docs/status.md` (current state, verification baseline, open items) and `docs/architecture.md` (design and rationale). Keep `status.md` current: remove finished items and update the baseline when test counts change. Do not add new plan or handoff documents; put open work in `status.md` and durable design notes in `architecture.md`.
 
 ## Critical rules
 
