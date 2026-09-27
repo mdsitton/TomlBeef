@@ -221,7 +221,8 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
     `InvalidUtf8`. Parse errors caused by truncated or garbage bytes are never reported in their
     place.
 - **BOM:** exactly one leading UTF-8 BOM is skipped. Line and column restart at 1:1 after it
-  (byte offsets currently exclude the BOM on string input but include it on streams; status.md B11). A
+  while byte offsets stay raw (they count the BOM) on every input path; the byte cursor starts at
+  offset 3 instead of slicing the BOM off. A
   second BOM right after it fails with `ControlCharInDocument`, and the parser rejects a BOM
   anywhere else in the document.
 
@@ -341,8 +342,8 @@ Writer downgrades when `TomlWriteConfig.Version = .V1_0`:
   `\u00XX`; the writer never emits `\x`.
 - PreserveStyle always writes seconds (normal mode always does anyway).
 - Multi-line inline tables are written on one line.
-- **Caveat:** in PreserveStyle, a clean string's original token is copied verbatim whatever the
-  write version is, so a 1.1-only escape can leak into 1.0 output (status.md B9).
+- PreserveStyle does not reuse an original string token containing `\e` or `\x` when writing
+  1.0 (`IsTokenValidForVersion`); the string is regenerated instead.
 
 The test corpus follows the same split: fixtures under `tests/invalid/spec-1.1.0/` are rejected
 under v1.1, and all other invalid fixtures under v1.0.
@@ -359,8 +360,8 @@ the normal path. Output is appended to the caller's `String`, and writing never 
   tables as `[[full.path]]` blocks. Array-of-tables output comes last so that its elements do not
   absorb the parent's keys. As a result, output can be reordered compared with the source, even
   though every table keeps insertion order.
-- An empty array of tables (non-static, `Count == 0`) is not written, so the key is lost on round
-  trip (status.md B10).
+- An empty array of tables (non-static, `Count == 0`) has no `[[header]]` form, so it is written in
+  phase 1 as `key = []`.
 - Keys are bare when every character is a bare-key character; otherwise they are written as basic
   quoted strings.
 - Strings are basic, integers decimal, and floats use roundtrip `"R"` formatting (with `.0`

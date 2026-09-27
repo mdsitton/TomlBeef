@@ -10,7 +10,7 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` | 206/206 pass |
+| `beefbuild -test` | 209/209 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -48,9 +48,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 | B5 | A dirty string ignores its own `TomlStringFormat` and uses the document's dominant style; `mStartsWithNewline`/`mHadEscapes` are captured but never used | `TomlWriter` per-node format lookup has no `.String` case | S |
 | B6 | Lowercase `t` date-time separator is re-emitted as a space; lowercase `z` becomes `Z` | Datetime format capture in `TomlParser`; `TomlWriter` datetime emission | S |
 | B7 | Quoted key styles (`QuotedBasic`/`QuotedLiteral`) are captured but the writer only emits bare or basic-quoted keys | `TomlWriter.AppendKey` | S–M |
-| B9 | Writing a PreserveStyle document with `Version = .V1_0` reuses clean string tokens verbatim, so a 1.1-only escape survives: `s = "a\eb"` is emitted unchanged, which is invalid TOML 1.0. Token reuse must be skipped (or the token downgraded) when the token uses 1.1-only syntax | `TomlWriter` clean-token reuse path | S |
-| B10 | An array of tables emptied programmatically (`[[p]]` then `p.Clear()`) is written as nothing, so key `p` disappears on round trip. It should be emitted as `p = []` | `TomlWriter` array-of-tables emission | S |
-| B11 | Error offsets after a leading BOM differ by input path: `Read(StringView)`/`ReadBytes` report offsets excluding the BOM, `Read(Stream)` includes it (same error: `@6` vs `@9`). Pick one convention (raw byte offset is more useful) | `TomlDocument.Read*` BOM handling; stream `ResetPosition` | S |
 | B8 | *Unverified.* Whitespace lookahead after a line-ending backslash is unbounded; on the stream path a whitespace run longer than the 8 KiB buffer reads as `0` and may misparse | `peekPos` loop in the multiline basic string parser | S |
 
 ### PreserveStyle gaps
@@ -76,7 +73,7 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 | ID | Gap | Size |
 |----|-----|------|
-| A1 | Merge is shallow: conflicts are checked and resolved per top-level key only. Base `[server] host=…` plus override `[server] port=…` fails under `.Error`, and `.Overwrite` replaces the whole `server` table. **Decision needed:** should layered configs deep-merge tables? | M |
+| A1 | **In progress.** Merge is shallow: conflicts are checked per top-level key, so base `[server] host=…` plus override `[server] port=…` fails under `.Error`, and `.Overwrite` replaces the whole table. **Decided (2026-09-27):** Merge becomes a deep merge (no shallow option): tables present on both sides recurse; only leaves conflict (scalars, whole arrays, whole arrays of tables, and type mismatches), resolved by `OnConflict`; validate the full tree before applying anything; conflict errors name the dotted path; the destination table keeps its origin | M |
 | A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
 | A3 | Borrowed raw read APIs (`TomlTable.GetValueAt`, `TomlArray.GetValueAt`, `TryGetValue`, `Get`, `this[StringView]`, `TomlDocument.Get`/`GetPath`) are public without an "advanced/borrowed" note. Internalize or document | S |
 | A4 | `TomlParserImpl` receives its store via `SetStore` instead of requiring it at construction | S |

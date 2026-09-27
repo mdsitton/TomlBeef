@@ -56,6 +56,16 @@ struct TomlByteCursor : ITomlCursor
 		mColumn = 1;
 	}
 
+	/// Starts reading at `startOffset` (e.g. past a BOM) while keeping offsets relative to the start
+	/// of `data`, so error offsets match the raw input on every read path.
+	public this(Span<uint8> data, int startOffset)
+	{
+		mData = data;
+		mOffset = startOffset;
+		mLine = 1;
+		mColumn = 1;
+	}
+
 	[Inline]
 	public int Offset => mOffset;
 	[Inline]

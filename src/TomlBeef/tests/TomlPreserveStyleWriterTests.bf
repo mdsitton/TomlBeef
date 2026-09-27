@@ -1424,6 +1424,38 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(!output.Contains("old"));
 	}
 
+	[Test]
+	public static void PreserveStyle_V1_0WriteRegeneratesTokensWithV1_1Escapes()
+	{
+		var doc = scope TomlDocument();
+		var config = TomlReadConfig();
+		config.MetadataMode = .PreserveStyle;
+		let input = "e = \"a\\eb\"\nx = \"c\\x41\"\nsafe = \"keep\\\\e\"\nlit = 'lit\\e'\narr = [\"y\\e\", \"z\"]";
+		if (doc.Read(input, config) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		String v10 = scope String();
+		doc.Write(v10, .() { Version = .V1_0 });
+		var reparsed = scope TomlDocument();
+		if (reparsed.Read(v10, .() { Version = .V1_0 }) case .Err(let e2))
+		{
+			defer e2.Dispose();
+			Test.Assert(false, scope $"V1_0 output is not valid TOML 1.0: {e2.mMessage}\n{v10}");
+		}
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"V1_0 output changed values:\n{v10}");
+		// Tokens without 1.1-only escapes are still reused verbatim
+		Test.Assert(v10.Contains("safe = \"keep\\\\e\""), scope $"Escaped backslash token should be reused:\n{v10}");
+		Test.Assert(v10.Contains("lit = 'lit\\e'"), scope $"Literal token should be reused:\n{v10}");
+
+		// A 1.1 write still reuses the original tokens
+		String v11 = scope String();
+		doc.Write(v11);
+		Test.Assert(v11.Contains("e = \"a\\eb\"") && v11.Contains("x = \"c\\x41\""), scope $"V1_1 write should reuse tokens:\n{v11}");
+	}
+
 	/// Parses `input` in PreserveStyle mode via string and via stream, applies `mutate`, and requires identical output.
 	static void AssertStreamMatchesStringPreserveStyle(StringView input, delegate void(TomlDocument doc) mutate)
 	{

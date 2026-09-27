@@ -134,7 +134,7 @@ public class TomlDocument
 		if (TomlChar.ValidateUtf8(input, out start) case .Err(let utf8Err))
 			return ReadFailure(utf8Err, config);
 
-		let cursor = TomlByteCursor(StringView(&input.Ptr[start], input.Length - start));
+		let cursor = TomlByteCursor(Span<uint8>((uint8*)input.Ptr, input.Length), start);
 		return ReadWithCursor(cursor, config);
 	}
 
@@ -160,7 +160,7 @@ public class TomlDocument
 		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let utf8Err))
 			return ReadFailure(utf8Err, config);
 
-		let cursor = TomlByteCursor(Span<uint8>((uint8*)data.Ptr + start, data.Length - start));
+		let cursor = TomlByteCursor(data, start);
 		return ReadWithCursor(cursor, config);
 	}
 

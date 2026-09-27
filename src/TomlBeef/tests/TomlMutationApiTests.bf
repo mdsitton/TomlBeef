@@ -249,4 +249,31 @@ static class TomlMutationApiTests
 
 		Test.Assert(root[0].Rename("b") case .Err);
 	}
+
+	[Test]
+	public static void Array_EmptiedArrayOfTablesWrittenAsEmptyArray()
+	{
+		for (let mode in TomlMetadataMode[](.None, .PreserveStyle))
+		{
+			var doc = scope TomlDocument();
+			if (doc.Read("before = 1\n[[p]]\nx = 1\n[[p]]\nx = 2\n[t]\ny = 3", .() { MetadataMode = mode }) case .Err(let e))
+			{
+				defer e.Dispose();
+				Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+			}
+			Test.Assert(doc.TryGetArray("p", var p));
+			p.Clear();
+
+			String output = scope String();
+			doc.Write(output);
+			var reparsed = scope TomlDocument();
+			if (reparsed.Read(output) case .Err(let e2))
+			{
+				defer e2.Dispose();
+				Test.Assert(false, scope $"Re-parse failed ({mode}): {e2.mMessage}\n{output}");
+			}
+			Test.Assert(reparsed.TryGetArray("p", var p2) && p2.Count == 0, scope $"Emptied array of tables lost ({mode}):\n{output}");
+			Test.Assert(reparsed.TryGetInteger("t.y", var y) && y == 3);
+		}
+	}
 }

@@ -43,7 +43,8 @@ static class TomlWriterImpl
 			else if (val.IsArray)
 			{
 				TomlArray arr = val.AsArray;
-				if (arr.IsStatic)
+				// An empty array of tables has no [[header]] form, so write it as `key = []`
+				if (arr.IsStatic || arr.Count == 0)
 					WriteKeyValLine(key, val, outStr, version);
 			}
 			else
@@ -171,7 +172,8 @@ static class TomlWriterImpl
 				else if (val.IsArray)
 				{
 					TomlArray arr = val.AsArray;
-					if (arr.IsStatic)
+					// An empty array of tables has no [[header]] form, so write it as `key = []`
+					if (arr.IsStatic || arr.Count == 0)
 						WriteKeyValLinePreserving(key, val, outStr, version, tbl, metadata);
 				}
 				else
@@ -361,7 +363,7 @@ static class TomlWriterImpl
 			if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
 			{
 				let token = metadata.GetOriginalToken(style.mOriginalValueToken);
-				if (!token.IsEmpty)
+				if (!token.IsEmpty && IsTokenValidForVersion(token, version))
 				{
 					outStr.Append(token);
 					return;
@@ -1258,7 +1260,7 @@ static class TomlWriterImpl
 			if (style != null && style.mDirtyFlags == .None && style.mOriginalValueToken.IsValid)
 			{
 				let token = metadata.GetOriginalToken(style.mOriginalValueToken);
-				if (!token.IsEmpty)
+				if (!token.IsEmpty && IsTokenValidForVersion(token, version))
 				{
 					outStr.Append(token);
 					return;
@@ -1266,6 +1268,24 @@ static class TomlWriterImpl
 			}
 		}
 		WriteValueWithDocumentStyle(elem, outStr, version, metadata, elemNodeId);
+	}
+
+	/// Returns false when an original string token uses syntax the target version lacks, so it must be
+	/// regenerated instead of reused. TOML 1.0 has no `\e` or `\xHH` escapes; literal strings have no escapes.
+	private static bool IsTokenValidForVersion(StringView token, TomlVersion version)
+	{
+		if (version != .V1_0 || token[0] == '\'')
+			return true;
+		for (int i = 0; i < token.Length - 1; i++)
+		{
+			if (token[i] != '\\')
+				continue;
+			char8 next = token[i + 1];
+			if (next == 'e' || next == 'x')
+				return false;
+			i++; // skip the escaped character so `\\e` is not misread
+		}
+		return true;
 	}
 
 	private static void WriteInlineTable(TomlTable tbl, String outStr, TomlVersion version)

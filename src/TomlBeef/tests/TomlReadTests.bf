@@ -221,6 +221,39 @@ static class TomlReadTests
 	}
 
 	[Test]
+	public static void ErrorLocation_OffsetsAfterBomAreRawOnEveryPath()
+	{
+		String input = scope String();
+		input.Append((char8)0xEF, 1);
+		input.Append((char8)0xBB, 1);
+		input.Append((char8)0xBF, 1);
+		input.Append("a = 1\na = 2");
+		let span = Span<uint8>((uint8*)input.Ptr, input.Length);
+		let ms = scope System.IO.MemoryStream();
+		ms.TryWrite(span);
+		ms.Position = 0;
+
+		let results = scope Result<void, TomlParseError>[](
+			scope TomlDocument().Read(input),
+			scope TomlDocument().ReadBytes(span),
+			scope TomlDocument().Read(ms));
+		let pathNames = scope String[]("Read(string)", "ReadBytes", "Read(Stream)");
+		for (int i < results.Count)
+		{
+			switch (results[i])
+			{
+			case .Ok:
+				Test.Assert(false, scope $"{pathNames[i]}: expected DuplicateKey");
+			case .Err(let e):
+				defer e.Dispose();
+				// Line/column restart after the BOM; the byte offset counts it (3 + 6)
+				Test.Assert(e.mKind == .DuplicateKey && e.mLine == 2 && e.mColumn == 1 && e.mOffset == 9,
+					scope $"{pathNames[i]}: got {e.mKind} {e.mLine}:{e.mColumn} @{e.mOffset}");
+			}
+		}
+	}
+
+	[Test]
 	public static void ErrorLocation_SemanticErrorsPointAtStatementStart()
 	{
 		AssertErrorAt("a = 1\nb = 2\na = 3", .DuplicateKey, 3, 1, 12);
