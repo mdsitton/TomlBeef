@@ -471,6 +471,11 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (token.IsEmpty)
 			return .Err(Error(.UnexpectedToken, "Empty value"));
 
+		// The most common bare value, a plain decimal integer, skips the keyword, date and number
+		// checks below
+		if (TryParsePlainInteger(token, var plain))
+			return TomlValue.Integer(plain);
+
 		if (token == "true") return TomlValue.Bool(true);
 		if (token == "false") return TomlValue.Bool(false);
 
@@ -496,6 +501,31 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// ================================================================
 	// Number parsing
 	// ================================================================
+
+	/// One-pass parse of an optional sign and 1–18 decimal digits with no leading zero (other than a
+	/// lone "0"): valid as written and unable to overflow int64. Anything else, including every
+	/// invalid token, returns false and takes the full path, so errors are unchanged.
+	[Inline]
+	private static bool TryParsePlainInteger(StringView token, out int64 value)
+	{
+		value = 0;
+		char8* ptr = token.Ptr;
+		int length = token.Length;
+		int pos = (ptr[0] == '-' || ptr[0] == '+') ? 1 : 0;
+		int digits = length - pos;
+		if (digits < 1 || digits > 18 || (ptr[pos] == '0' && digits > 1))
+			return false;
+		int64 result = 0;
+		for (int i = pos; i < length; i++)
+		{
+			uint8 digit = (uint8)ptr[i] - (uint8)'0';
+			if (digit > 9)
+				return false;
+			result = result * 10 + digit;
+		}
+		value = (ptr[0] == '-') ? -result : result;
+		return true;
+	}
 
 	private Result<TomlValue, TomlParseError> ParseNumber(StringView token)
 	{

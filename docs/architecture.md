@@ -732,7 +732,11 @@ the resolver checks the sealed/limit errors first); the parser's limit checks co
 call out when a limit is exceeded; and `TomlParseError`'s positions are `int32`, which shrinks every
 parser `Result` (copied on each return up the call chain) from ~80 to 64 bytes. Together (same-run,
 2026-09-28): the 5 MB mixed bench went from ~40 to ~77 MB/s, integers ~94, dates ~109, strings ~270,
-headers ~64, dotted keys ~42, small arrays ~40.
+headers ~64, dotted keys ~42, small arrays ~40. A one-pass fast path for plain decimal integers
+(`TryParsePlainInteger`: optional sign, 1–18 digits, no leading zero, so valid and unable to
+overflow) then let them skip the keyword, date and two-pass number checks. Everything else,
+including every invalid token, still takes the full parser. Same-build A/B against the pre-change
+build: ints 111 → 150 MB/s, small arrays 41 → 58, headers 64 → 74, dotted 47 → 52.
   - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`). Each
     library parses the same generated inputs (2–9 MB, at most 1000 keys per table) into its own
     schema-less document, in one process per cell: one warm-up parse, then the average of up to 5

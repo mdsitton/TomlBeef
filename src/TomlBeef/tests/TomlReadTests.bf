@@ -573,4 +573,46 @@ static class TomlReadTests
 		Test.Assert(server.GetString("host", "localhost") == "localhost");
 		Test.Assert(server.GetFloat("port", 2.5) == 2.5);
 	}
+
+	[Test]
+	public static void Integers_FastPathBoundaries()
+	{
+		// Plain decimal integers take a one-pass fast path (sign plus up to 18 digits); everything
+		// else takes the full number parser. Both sides of that boundary must agree.
+		var doc = scope TomlDocument();
+		Test.Assert(doc.Read("""
+			a = 0
+			b = -0
+			c = +0
+			d = +123
+			e = -123
+			f = 999999999999999999
+			g = -999999999999999999
+			h = 9223372036854775807
+			i = -9223372036854775808
+			j = 1_000
+			k = 0x10
+			l = [1,2 , 3 ]
+			m = 12 # comment
+			""") case .Ok);
+		int64[?] expected = .(0, 0, 0, 123, -123, 999999999999999999, -999999999999999999, int64.MaxValue, int64.MinValue, 1000, 16);
+		for (int i = 0; i < expected.Count; i++)
+		{
+			let key = scope String()..Append((char8)('a' + i));
+			Test.Assert(doc.TryGetInteger(key, var value) && value == expected[i], scope $"{key}");
+		}
+		Test.Assert(doc.TryGetArray("l", var list) && list.Count == 3 && list.GetValueAt(2).AsInteger == 3);
+		Test.Assert(doc.TryGetInteger("m", var m) && m == 12);
+
+		// Invalid integers are still rejected with their specific errors
+		(StringView input, TomlErrorKind kind)[?] invalid = .(
+			("x = 01", .LeadingZero), ("x = -01", .LeadingZero), ("x = 00", .LeadingZero),
+			("x = 9223372036854775808", .IntegerOverflow), ("x = -9223372036854775809", .IntegerOverflow),
+			("x = +", .InvalidInteger), ("x = 1__0", .InvalidUnderscore));
+		for (let (input, kind) in invalid)
+		{
+			var bad = scope TomlDocument();
+			Test.Assert(bad.Read(input) case .Err(let err) && err.mKind == kind, scope $"{input}");
+		}
+	}
 }
