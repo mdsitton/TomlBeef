@@ -30,9 +30,9 @@ workspace startup project is `TomlTester/`.
 | `TomlDocument.bf` | Public entry point: `TomlReadMode`, `MergeConflict`, `TomlReadConfig`, `TomlWriteConfig`, and `TomlDocument` (read/write, file helpers, path lookup, typed path accessors and setters, transactional read/merge orchestration) |
 | `TomlDocumentStore.bf` | Internal arena (`BumpAllocator`) that owns every string, table and array of a document |
 | `TomlValue.bf` | `TomlTableOrigin` enum and the non-owning `TomlValue` tagged union (`Is*`, `As*`, `TryGet*`, internal `CloneInto`, `IsSemanticallyEqualTo`) |
-| `TomlTable.bf` | `TomlTable`: an ordered map (`Dictionary<String, TomlValue>` plus `List<String>` key order) with origin and sealing flags, typed setters, `MergeFrom`, and the `TomlTableEntry` proxy |
+| `TomlTable.bf` | `TomlTable`: an ordered map (`Dictionary<String, TomlTableSlot>` of value plus metadata node ID, and a `List<String>` key order) with internal origin and sealing flags, `Set`, `MergeFrom`, validation (`Require*`, `MakeError`), and the `TomlTableEntry` proxy |
 | `TomlArray.bf` | `TomlArray` (static array or array of tables) and the `TomlInputValue` scalar-input wrapper |
-| `TomlDateTime.bf` | `TomlOffsetDateTime`, `TomlLocalDateTime`, `TomlLocalDate`, `TomlLocalTime`. Public fields; constructors assert field ranges |
+| `TomlDateTime.bf` | `TomlOffsetDateTime`, `TomlLocalDateTime`, `TomlLocalDate`, `TomlLocalTime`, and the internal `TomlDateRules` (RFC 3339 validity: years 0–9999, real month lengths with leap years, times to 23:59:60, offsets within ±23:59) shared with the parser. Public fields; constructors assert the rules (a programming error is fatal), `Create` factories return `Result` for untrusted input |
 | `TomlCursor.bf` | `ITomlCursor` interface, `TomlCursorMark`, and `TomlByteCursor` (zero-copy over contiguous bytes) |
 | `TomlBufferedStreamCursor.bf` | `TomlBufferedStreamCursor` (fixed buffer, nested marks, spill) and `TomlStreamState` (incremental UTF-8 validation, I/O and size-limit flags) |
 | `TomlParser.bf` | `TomlParserImpl<TCursor>`: fields, `Parse`, document loop, `[header]`s, key/value statements, key paths, whitespace skipping, error and limit helpers. The class is split across files with `extension TomlParserImpl<TCursor>`: |

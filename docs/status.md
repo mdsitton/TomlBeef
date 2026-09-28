@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 270/270 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 270/270 pass |
-| `./test-leaks.sh` | 270/270 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 273/273 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 273/273 pass |
+| `./test-leaks.sh` | 273/273 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -67,7 +67,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Idea | Size |
 |----|------|------|
 | O1 | Writer output limits (deep dotted paths expand into cumulative headers unless `MaxPathSegments` is set) | M |
-| O2 | Validating date/time factories returning `Result`; per-month day check (Feb 31 passes the debug assert) | S |
 | O3 | Plain-mode writer choosing literal strings for backslash- or quote-heavy values | S |
 | O4 | `doc["a.b"]` indexer on `TomlDocument` | S |
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
@@ -76,6 +75,5 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. O2 (a date factory that accepts Feb 31 is closer to a bug than a nicety).
-2. P3, then P4, if tools write configs back.
-3. The remaining optional items as needed.
+1. P3, then P4, if tools write configs back.
+2. The remaining optional items as needed.

@@ -409,6 +409,16 @@ If both documents were read with `PreserveStyle`, the copied values keep their c
 
 All date/time structs have public `int32` fields (`mYear`, `mMonth`, `mDay`, `mHour`, `mMinute`, `mSecond`, `mNanosecond` with 0–999,999,999). `TomlOffsetDateTime` also has `mOffsetMinutes` (UTC offset in minutes, e.g. 330 for +05:30, 0 for Z).
 
+The constructors (`TomlLocalDate(2024, 7, 15)`) are for values known to be valid: an impossible date or time is a fatal error. For values from outside (user input, other formats), use the `Create` factories, which check the same rules as the parser (years 0–9999, real month lengths including leap years, times up to 23:59:60, offsets within ±23:59) and return an `InvalidDate`/`InvalidTime`/`InvalidDateTime` error instead:
+
+```bf
+switch (TomlLocalDate.Create(year, month, day))
+{
+case .Ok(let date): doc.Set("release", date);
+case .Err(let err): Console.Error.WriteLine($"{err}");   // Invalid date: day 31 is outside 1-30 for 2024-04
+}
+```
+
 Assertions in debug builds validate field ranges. Release builds trust the caller.
 
 ### Error Handling

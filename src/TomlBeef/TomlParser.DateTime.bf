@@ -184,19 +184,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (pos >= token.Length || token[pos] != '-') return false;
 		pos++;
 		if (!TryReadNDigits(token, ref pos, 2, out day)) return false;
-		if (day < 1 || day > 31) return false;
-		// Basic month/day validation
-		if (month == 2)
-		{
-			bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
-			int32 maxDay = leap ? 29 : 28;
-			if (day > maxDay) return false;
-		}
-		else if (month == 4 || month == 6 || month == 9 || month == 11)
-		{
-			if (day > 30) return false;
-		}
-		return true;
+		// Real month lengths, leap years included (the same rules as the date constructors)
+		return TomlDateRules.IsValidDate(year, month, day);
 	}
 
 	private bool ParseTimePart(StringView token, ref int pos,
