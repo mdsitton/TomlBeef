@@ -557,7 +557,12 @@ is needed.
   `TOML_TEST_BIN`) for 1.0 and 1.1 with both `-decoder` and `-encoder`, writing
   `test-official-toml-<ver>.log`.
 
-**TomlTester CLI** (`TomlTester/src/Program.bf`) takes `-toml 1.0|1.1` (default 1.1).
+**TomlTester CLI** (`TomlTester/src/Program.bf`) takes `-toml 1.0|1.1` (default 1.1), `-preserve`
+(read with PreserveStyle, so `-encode` exercises the preserving writer), and one flag per
+`TomlReadConfig` limit (`-max-input-bytes`, `-max-depth`, `-max-string-bytes`, `-max-array-items`,
+`-max-table-entries`, `-max-path-segments`, `-max-nodes`). TOML input is parsed straight from the
+stdin stream (`Read(Stream)`), so the acceptance scripts also run the whole corpus through the
+stream path. Unknown options or bad values exit with 2.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
   `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in

@@ -3,36 +3,79 @@ using TomlBeef;
 
 namespace TomlTester;
 
+/// Command-line driver used by the acceptance scripts and toml-test.
+///
+///   TomlTester [options] < input
+///
+/// Modes (default: decode TOML to toml-test tagged JSON):
+///   -encode       Read TOML, write TOML (normal writer; with -preserve, the PreserveStyle writer)
+///   -from-json    Read toml-test tagged JSON, write TOML (toml-test encoder)
+/// Options:
+///   -toml 1.0|1.1                 TOML version to read and write (default 1.1)
+///   -preserve                     Read with MetadataMode = PreserveStyle
+///   -max-input-bytes N, -max-depth N, -max-string-bytes N, -max-array-items N,
+///   -max-table-entries N, -max-path-segments N, -max-nodes N
+///                                 Resource limits (TomlReadConfig; 0 = unlimited)
+/// Exit codes: 0 success, 1 invalid input (parse or limit error), 2 bad command line.
 class Program
 {
 	public static int Main(String[] args)
 	{
 		bool encode = false;
 		bool fromJson = false;
-		TomlVersion version = .V1_1;
+		var config = TomlReadConfig();
 		for (int i = 0; i < args.Count; i++)
 		{
-			if (args[i] == "-encode")
+			let arg = args[i];
+			if (arg == "-encode")
 				encode = true;
-			else if (args[i] == "-from-json")
+			else if (arg == "-from-json")
 				fromJson = true;
-			else if (args[i] == "-toml" && i + 1 < args.Count)
+			else if (arg == "-preserve")
+				config.MetadataMode = .PreserveStyle;
+			else if (arg == "-toml" && i + 1 < args.Count)
 			{
-				if (args[i + 1] == "1.0") version = .V1_0;
-				else if (args[i + 1] == "1.1") version = .V1_1;
-				i++;
+				let value = args[++i];
+				if (value == "1.0")
+					config.Version = .V1_0;
+				else if (value == "1.1")
+					config.Version = .V1_1;
+				else
+					return UsageError(scope $"Unknown TOML version '{value}'");
 			}
+			else if (arg.StartsWith("-max-") && i + 1 < args.Count)
+			{
+				int limit;
+				switch (int.Parse(args[++i]))
+				{
+				case .Ok(let parsed) when parsed >= 0: limit = parsed;
+				default: return UsageError(scope $"{arg} needs a non-negative integer");
+				}
+				switch (arg)
+				{
+				case "-max-input-bytes":   config.MaxInputBytes = limit;
+				case "-max-depth":         config.MaxDepth = limit;
+				case "-max-string-bytes":  config.MaxStringBytes = limit;
+				case "-max-array-items":   config.MaxArrayItems = limit;
+				case "-max-table-entries": config.MaxTableEntries = limit;
+				case "-max-path-segments": config.MaxPathSegments = limit;
+				case "-max-nodes":         config.MaxNodes = limit;
+				default: return UsageError(scope $"Unknown option '{arg}'");
+				}
+			}
+			else
+				return UsageError(scope $"Unknown option '{arg}'");
 		}
-
-		String input = scope String();
-		Console.In.ReadToEnd(input);
 
 		var doc = new TomlDocument();
 		defer delete doc;
+		let writeConfig = TomlWriteConfig() { Version = config.Version };
 
 		// Encoder mode for toml-test: tagged JSON on stdin, TOML on stdout
 		if (fromJson)
 		{
+			String input = scope String();
+			Console.In.ReadToEnd(input);
 			String error = scope String();
 			if (scope JsonToToml().Convert(input, doc, error) case .Err)
 			{
@@ -40,12 +83,14 @@ class Program
 				return 1;
 			}
 			String tomlOut = scope String();
-			doc.Write(tomlOut, .() { Version = version });
+			doc.Write(tomlOut, writeConfig);
 			Console.Write(tomlOut);
 			return 0;
 		}
 
-		if (doc.Read(input, .() { Version = version }) case .Err(let err))
+		// Parse straight from the stdin stream: memory stays bounded by MaxInputBytes and the
+		// stream buffer rather than the whole input being read into a string first
+		if (doc.Read(Console.In.BaseStream, config) case .Err(let err))
 		{
 			defer err.Dispose();
 			Console.Error.Write(scope $"Parse error at line {err.mLine}:{err.mColumn}: ");
@@ -53,19 +98,22 @@ class Program
 			return 1;
 		}
 
+		String output = scope String();
 		if (encode)
-		{
-			String tomlOut = scope String();
-			doc.Write(tomlOut, .() { Version = version });
-			Console.WriteLine(tomlOut);
-		}
+			doc.Write(output, writeConfig);
 		else
 		{
-			var serializer = scope TomlSerializer();
-			String json = scope String();
-			serializer.Serialize(doc, json);
-			Console.WriteLine(json);
+			scope TomlSerializer().Serialize(doc, output);
+			output.Append('\n');
 		}
+		Console.Write(output);
 		return 0;
+	}
+
+	static int UsageError(StringView message)
+	{
+		Console.Error.WriteLine(message);
+		Console.Error.WriteLine("Usage: TomlTester [-encode | -from-json] [-toml 1.0|1.1] [-preserve] [-max-<limit> N ...] < input");
+		return 2;
 	}
 }
