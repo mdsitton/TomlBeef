@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using TomlBeef;
 
 namespace TomlTester;
@@ -23,6 +24,7 @@ class Program
 	{
 		bool encode = false;
 		bool fromJson = false;
+		int benchIterations = 0;
 		var config = TomlReadConfig();
 		for (int i = 0; i < args.Count; i++)
 		{
@@ -33,6 +35,14 @@ class Program
 				fromJson = true;
 			else if (arg == "-preserve")
 				config.MetadataMode = .PreserveStyle;
+			else if (arg == "-bench" && i + 1 < args.Count)
+			{
+				switch (int.Parse(args[++i]))
+				{
+				case .Ok(let parsed) when parsed > 0: benchIterations = parsed;
+				default: return UsageError("-bench needs a positive iteration count");
+				}
+			}
 			else if (arg == "-toml" && i + 1 < args.Count)
 			{
 				let value = args[++i];
@@ -66,6 +76,9 @@ class Program
 			else
 				return UsageError(scope $"Unknown option '{arg}'");
 		}
+
+		if (benchIterations > 0)
+			return Bench(benchIterations, config);
 
 		var doc = new TomlDocument();
 		defer delete doc;
@@ -108,6 +121,49 @@ class Program
 		}
 		Console.Write(output);
 		return 0;
+	}
+
+	/// Times `iterations` parses of stdin through each input path, and writes of the parsed document.
+	/// Build with -config=Release for meaningful numbers.
+	static int Bench(int iterations, TomlReadConfig config)
+	{
+		String input = scope String();
+		Console.In.ReadToEnd(input);
+		let bytes = Span<uint8>((uint8*)input.Ptr, input.Length);
+
+		var doc = scope TomlDocument();
+		if (doc.Read(input, config) case .Err(let err))
+		{
+			defer err.Dispose();
+			Console.Error.WriteLine(scope $"Parse error at line {err.mLine}:{err.mColumn}: {err.mMessage}");
+			return 1;
+		}
+
+		Console.WriteLine(scope $"input: {input.Length} bytes, {iterations} iterations, metadata: {config.MetadataMode}");
+		BenchCase("Read(string)", iterations, input.Length, scope () => { doc.Read(input, config).IgnoreError(); });
+		BenchCase("ReadBytes", iterations, input.Length, scope () => { doc.ReadBytes(bytes, config).IgnoreError(); });
+		BenchCase("Read(Stream)", iterations, input.Length, scope () =>
+		{
+			let ms = scope MemoryStream();
+			ms.TryWrite(bytes);
+			ms.Position = 0;
+			doc.Read(ms, config).IgnoreError();
+		});
+		String output = scope String();
+		BenchCase("Write", iterations, input.Length, scope () => { output.Clear(); doc.Write(output); });
+		return 0;
+	}
+
+	static void BenchCase(StringView name, int iterations, int bytesPerIteration, delegate void() action)
+	{
+		action(); // warm-up
+		let watch = scope System.Diagnostics.Stopwatch(true);
+		for (int i < iterations)
+			action();
+		watch.Stop();
+		double seconds = watch.Elapsed.TotalSeconds;
+		double mbPerSecond = seconds > 0 ? (double)bytesPerIteration * iterations / (1024.0 * 1024.0) / seconds : 0;
+		Console.WriteLine(scope $"  {name,-14} {seconds * 1000.0 / iterations,10:F3} ms/op  {mbPerSecond,8:F1} MB/s");
 	}
 
 	static int UsageError(StringView message)

@@ -567,7 +567,12 @@ is needed.
 `TomlReadConfig` limit (`-max-input-bytes`, `-max-depth`, `-max-string-bytes`, `-max-array-items`,
 `-max-table-entries`, `-max-path-segments`, `-max-nodes`). TOML input is parsed straight from the
 stdin stream (`Read(Stream)`), so the acceptance scripts also run the whole corpus through the
-stream path. Unknown options or bad values exit with 2.
+stream path. Unknown options or bad values exit with 2. `-bench N` reads stdin once and times N
+parses through `Read(string)`, `ReadBytes` and `Read(Stream)`, plus `Write` (combine with
+`-preserve`; build with `-config=Release`). On a generated 736 KB file (Release, Linux64,
+2026-09-27): string and byte input ~59 MB/s, stream ~43 MB/s, write ~257 MB/s; with PreserveStyle
+~33 / 33 / 26 / 160 MB/s. String and byte input cost the same (the byte cursor is zero-copy over
+either); the stream path pays for per-byte buffer checks and refills.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
   `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in
