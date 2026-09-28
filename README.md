@@ -482,7 +482,7 @@ if (doc.ReadFile(path) case .Err(let err))
 | Dotted keys | ✅ | — (emitted as `[header]`) |
 | Basic strings | ✅ | ✅ |
 | Multi-line basic strings | ✅ | — (emitted as basic) |
-| Literal strings | ✅ | — (emitted as basic) |
+| Literal strings | ✅ | ✅ (for values with `\` or `"` that a literal can hold) |
 | Multi-line literal strings | ✅ | — (emitted as basic) |
 | Integers (dec, hex, oct, bin) | ✅ | ✅ (decimal only) |
 | Floats (incl. ±inf, ±nan, −0) | ✅ | ✅ |

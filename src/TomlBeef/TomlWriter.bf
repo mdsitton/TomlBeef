@@ -135,7 +135,11 @@ static class TomlWriterImpl
 	{
 		switch (val)
 		{
-		case .String(let s):      WriteBasicString(s, outStr, version);
+		case .String(let s):
+			if (PrefersLiteral(s))
+				outStr..Append('\'')..Append(s)..Append('\'');
+			else
+				WriteBasicString(s, outStr, version);
 		case .Integer(let v):     v.ToString(outStr);
 		case .Float(let v):
 			if (v.IsInfinity)
@@ -178,6 +182,22 @@ static class TomlWriterImpl
 		case .Array(let arr):     WriteInlineArray(arr, outStr, version);
 		case .Table(let tbl):     WriteInlineTable(tbl, outStr, version);
 		}
+	}
+
+	/// Whether a plain-mode string value reads better as a literal string: it has a backslash or double
+	/// quote that a basic string would escape (a Windows path, a regex), and a literal can hold it
+	/// (no single quote, no control characters; a tab also stays basic, where `\t` is visible).
+	private static bool PrefersLiteral(StringView s)
+	{
+		bool needsEscapes = false;
+		for (let c in s.RawChars)
+		{
+			if (c == '\'' || (uint8)c < 0x20 || (uint8)c == 0x7F)
+				return false;
+			if (c == '\\' || c == '"')
+				needsEscapes = true;
+		}
+		return needsEscapes;
 	}
 
 	private static void WriteBasicString(StringView s, String outStr, TomlVersion version)

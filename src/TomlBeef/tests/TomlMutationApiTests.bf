@@ -354,4 +354,31 @@ static class TomlMutationApiTests
 			Test.Assert(reparsed.TryGetInteger("t.y", var y) && y == 3);
 		}
 	}
+
+	[Test]
+	public static void Write_BackslashHeavyStringsUseLiteralQuotes()
+	{
+		var doc = scope TomlDocument();
+		doc.RootTable.Set("path", "C:\\Users\\x");
+		doc.RootTable.Set("quote", "say \"hi\"");
+		doc.RootTable.Set("plain", "hello");
+		doc.RootTable.Set("apostrophe", "it's C:\\x");
+		doc.RootTable.Set("tabbed", "a\\b\tc");
+		let list = doc.AddArray("regexes");
+		list.Add("\\d+");
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("path = 'C:\\Users\\x'\n"), output);
+		Test.Assert(output.Contains("quote = 'say \"hi\"'\n"), output);
+		Test.Assert(output.Contains("plain = \"hello\"\n"), output);
+		// A literal string cannot hold a single quote or a control character
+		Test.Assert(output.Contains("apostrophe = \"it's C:\\\\x\"\n"), output);
+		Test.Assert(output.Contains("tabbed = \"a\\\\b\\tc\"\n"), output);
+		Test.Assert(output.Contains("regexes = ['\\d+']\n"), output);
+
+		var reparsed = scope TomlDocument();
+		Test.Assert(reparsed.Read(output) case .Ok);
+		Test.Assert(TomlTestSupport.TomlDocumentEquals(doc, reparsed), output);
+	}
 }

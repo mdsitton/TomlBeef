@@ -430,7 +430,9 @@ the normal path. Output is appended to the caller's `String`, and writing never 
   phase 1 as `key = []`.
 - Keys are bare when every character is a bare-key character; otherwise they are written as basic
   quoted strings.
-- Strings are basic, integers decimal, and floats use roundtrip `"R"` formatting (with `.0`
+- Strings are basic, except that a value with a backslash or double quote is written as a literal
+  string when one can hold it (no `'`, no control characters, tab included), so Windows paths and
+  regexes stay readable (`PrefersLiteral`). Integers are decimal, and floats use roundtrip `"R"` formatting (with `.0`
   appended when needed). `inf`/`-inf`/`nan` and `-0.0` are kept. Times always include seconds and
   trim trailing zeros from the fraction. An offset of 0 is written as `Z`. Nested containers are
   written inline.

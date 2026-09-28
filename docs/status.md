@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 281/281 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 281/281 pass |
-| `./test-leaks.sh` | 281/281 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 282/282 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 282/282 pass |
+| `./test-leaks.sh` | 282/282 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -60,7 +60,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Idea | Size |
 |----|------|------|
 | O1 | Writer output limits (deep dotted paths expand into cumulative headers unless `MaxPathSegments` is set) | M |
-| O3 | Plain-mode writer choosing literal strings for backslash- or quote-heavy values | S |
 | O4 | `doc["a.b"]` indexer on `TomlDocument` | S |
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
 | O7 | *Optional.* Metadata text arena instead of `List<String>` for comments and original tokens (PreserveStyle comment capture: `toml_edit` is ~1.8× faster on comment-only input) | S–M |
