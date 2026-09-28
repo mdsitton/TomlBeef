@@ -29,6 +29,11 @@ internal class TomlStreamState
 	public int mMaxInputBytes = 0;
 	public int mBytesRead = 0;
 	public bool mBytesExceeded = false;
+	public int mMaxTokenBytes = 0;
+	public bool mTokenExceeded = false;
+	public int mTokenErrorLine;
+	public int mTokenErrorColumn;
+	public int mTokenErrorOffset;
 }
 
 internal struct TomlBufferedStreamCursor : ITomlCursor
@@ -286,6 +291,7 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 	{
 		StringView result = StringView();
 		int64 start = mark.mOffset;
+		CheckRetainedBytes(start);
 		if (start < mBaseOffset)
 		{
 			// The start was evicted from the buffer: join the spilled prefix with the buffered tail.
@@ -347,6 +353,8 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		int keepStart = mPos;
 		if (mMarkDepth > 0)
 		{
+			if (!CheckRetainedBytes(mRetainStart))
+				return;
 			keepStart = (int)Math.Max(mRetainStart - mBaseOffset, 0);
 			if (mEnd - keepStart + needed > mBuffer.Count)
 			{
@@ -364,6 +372,27 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		mBaseOffset += keepStart;
 		mPos -= keepStart;
 		mEnd = keepLen;
+	}
+
+	/// MaxTokenBytes: fails the stream (like an input-size overflow) once the span retained from
+	/// `start` to the read position is too long. Checked before each refill, which is when a long span
+	/// would grow the spill, and when a span is sliced, which catches spans shorter than the buffer.
+	/// @return False if the limit was exceeded.
+	private bool CheckRetainedBytes(int64 start) mut
+	{
+		if (mState == null || mState.mMaxTokenBytes <= 0 || mBaseOffset + mPos - start <= mState.mMaxTokenBytes)
+			return true;
+		if (!mState.mTokenExceeded)
+		{
+			mState.mTokenExceeded = true;
+			mState.mTokenErrorLine = mLine;
+			mState.mTokenErrorColumn = mColumn;
+			mState.mTokenErrorOffset = Offset;
+		}
+		mState.mError = true;
+		mFailed = true;
+		mStream = null;
+		return false;
 	}
 
 	private void Refill() mut

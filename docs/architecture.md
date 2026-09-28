@@ -268,6 +268,12 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
     spill suffix and the buffered prefix into `scratch`. Releasing the last mark clears the spill.
   - Nesting matters because PreserveStyle marks a whole value (for example an inline table)
     while inner string, key and number parsing take their own marks.
+  - `MaxTokenBytes` bounds the retained span (`CheckRetainedBytes`). It is checked before a refill,
+    against the outermost mark, which is the only time the spill grows, so the spill never exceeds
+    the limit. It is also checked in `Slice`, which catches spans shorter than the buffer. A breach
+    fails the stream like an input-size overflow, recording the position where it was detected.
+    `TryGetStreamError` then reports it instead of the parser's secondary error. In-memory cursors
+    retain nothing, so the limit is stream-only.
 - **UTF-8 validation differs by path:**
   - String, bytes and file input: `TomlChar.ValidateUtf8` checks the whole buffer before parsing
     (lead bytes, continuation bytes, overlongs, surrogates, values above U+10FFFF) and reports

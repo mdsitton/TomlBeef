@@ -88,6 +88,7 @@ if (doc.Read(input, config) case .Err(let err)) { /* ... */ }
 | `MaxTableEntries` | `0` | Keys in any single table: root, `[header]`, inline, and dotted-key implicit tables |
 | `MaxPathSegments` | `0` | Segments in a dotted key or `[table]` / `[[array]]` header path |
 | `MaxNodes` | `0` | Total value nodes: every scalar, array, and table (explicit, implicit, inline, or array element); the root table is not counted. `a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3 nodes |
+| `MaxTokenBytes` | `0` | Streamed reads only (`Read(Stream)`, or `ReadFile` with `StreamBufferBytes`): the longest span the reader keeps in memory at once. That is a bare value such as a number or date, or with `PreserveStyle` a whole value's source text, including inline arrays and tables |
 
 A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set`/`Add`.
 

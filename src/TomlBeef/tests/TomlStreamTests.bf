@@ -457,4 +457,68 @@ static class TomlStreamTests
 		AddBytes(bytes, 0xC0, 0xAF);
 		AssertUtf8ErrorAtBothPaths(bytes, 2, 3, 8);
 	}
+
+	static Result<void, TomlParseError> ReadStreamedWith(TomlDocument doc, StringView input, TomlReadConfig config)
+	{
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>((uint8*)input.Ptr, input.Length));
+		ms.Position = 0;
+		return doc.Read(ms, config);
+	}
+
+	[Test]
+	public static void Stream_MaxTokenBytesBoundsRetainedSpans()
+	{
+		// A 62-byte float: longer than the 16-byte buffer, so without a limit it spills
+		let input = scope String("n = 1\nf = 1.");
+		input.Append('0', 60);
+		input.Append("\nafter = 2\n");
+		let limited = TomlReadConfig() { StreamBufferBytes = 16, MaxTokenBytes = 32 };
+
+		var unlimited = scope TomlDocument();
+		Test.Assert(ReadStreamed(unlimited, input, 16) case .Ok);
+		Test.Assert(unlimited.TryGetFloat("f", var f) && f == 1.0);
+
+		var doc = scope TomlDocument();
+		Test.Assert(ReadStreamedWith(doc, input, limited) case .Err(let err));
+		Test.Assert(err.mKind == .ResourceLimitExceeded && err.mLine == 2, scope $"{err}");
+		Test.Assert(err.mMessage.Contains("Token length exceeds maximum 32"), scope $"{err}");
+		Test.Assert(doc.RootTable.Count == 0, "A failed Replace read leaves the document empty");
+
+		// A token shorter than the buffer is caught when it is sliced
+		var small = scope TomlDocument();
+		Test.Assert(ReadStreamedWith(small, "f = 1.000000000\n", .() { MaxTokenBytes = 8 }) case .Err(let smallErr));
+		Test.Assert(smallErr.mKind == .ResourceLimitExceeded, scope $"{smallErr}");
+		// ...and one within the limit is fine, even across several refills
+		Test.Assert(ReadStreamedWith(small, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 62 }) case .Ok);
+
+		// In-memory input keeps no copy, so the limit does not apply
+		var fromString = scope TomlDocument();
+		Test.Assert(fromString.Read(input, limited) case .Ok);
+
+		// A failed merge leaves existing content unchanged
+		var merged = scope TomlDocument();
+		Test.Assert(merged.Read("keep = true\n") case .Ok);
+		var mergeConfig = limited;
+		mergeConfig.Mode = .Merge;
+		Test.Assert(ReadStreamedWith(merged, input, mergeConfig) case .Err(let mergeErr));
+		Test.Assert(mergeErr.mKind == .ResourceLimitExceeded && merged.RootTable.Count == 1);
+	}
+
+	[Test]
+	public static void Stream_MaxTokenBytesCoversPreserveStyleValues()
+	{
+		// PreserveStyle keeps a value's whole source text, so a long inline array is one span
+		let input = scope String("a = [");
+		for (int i = 0; i < 20; i++)
+			input.AppendF("{}, ", i);
+		input.Append("20]\n");
+		var plain = scope TomlDocument();
+		Test.Assert(ReadStreamedWith(plain, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 32 }) case .Ok);
+
+		var styled = scope TomlDocument();
+		let result = ReadStreamedWith(styled, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 32, MetadataMode = .PreserveStyle });
+		Test.Assert(result case .Err(let err) && err.mKind == .ResourceLimitExceeded);
+		Test.Assert(ReadStreamedWith(styled, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 128, MetadataMode = .PreserveStyle }) case .Ok);
+	}
 }

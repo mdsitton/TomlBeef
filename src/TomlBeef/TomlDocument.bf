@@ -64,6 +64,13 @@ public struct TomlReadConfig
 	/// loading it whole, bounding memory for large files (the parsed document still grows with the
 	/// content). Tokens longer than the buffer are handled, at the cost of an extra copy.
 	public int StreamBufferBytes = 0;
+
+	/// @brief Streamed reads only (Read(Stream), and ReadFile with StreamBufferBytes set): the longest
+	/// span of input the reader may hold in memory at once. That is a bare value (number, date, bool),
+	/// or with PreserveStyle metadata a whole value's source text, including an inline array
+	/// or table. Spans longer than the buffer are otherwise kept in a growing copy, bounded only by
+	/// MaxInputBytes and MaxStringBytes. 0 = unlimited. In-memory input needs no such copy and ignores it.
+	public int MaxTokenBytes = 0;
 }
 
 /// Configuration for writing a document to a TOML string.
@@ -284,6 +291,7 @@ public class TomlDocument
 
 		var state = new TomlStreamState();
 		state.mMaxInputBytes = config.MaxInputBytes;
+		state.mMaxTokenBytes = config.MaxTokenBytes;
 		defer delete state;
 		var cursor = TomlBufferedStreamCursor(stream, buffer, spill, state);
 
@@ -317,26 +325,32 @@ public class TomlDocument
 		if (!ShouldParseDirectly(config))
 			return ReadMergeFromStreamCursor(cursor, config, state);
 
-		if (ReadWithCursor(cursor, config) case .Err(let e))
-		{
-			// A cursor failure surfaces as a secondary parse error; report the cause instead
-			if (state.mBytesExceeded)
-				return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0), config);
-			if (state.mError)
-				return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
-			if (state.mUtf8Error)
-				return ReadFailure(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
-					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset), config);
-			return .Err(e);
-		}
+		let result = ReadWithCursor(cursor, config);
+		if (TryGetStreamError(state, config, var streamError))
+			return ReadFailure(streamError, config);
+		return result;
+	}
+
+	/// The failure that stopped a streamed read, if any. The parser then reports a secondary error
+	/// (or none, when the stream failed at the end of the input), so this cause takes precedence.
+	private static bool TryGetStreamError(TomlStreamState state, TomlReadConfig config, out TomlParseError error)
+	{
 		if (state.mBytesExceeded)
-			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0), config);
-		if (state.mError)
-			return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
-		if (state.mUtf8Error)
-			return ReadFailure(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
-				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset), config);
-		return .Ok;
+			error = TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0);
+		else if (state.mTokenExceeded)
+			error = TomlParseError(.ResourceLimitExceeded, scope $"Token length exceeds maximum {config.MaxTokenBytes}",
+				state.mTokenErrorLine, state.mTokenErrorColumn, state.mTokenErrorOffset);
+		else if (state.mError)
+			error = TomlParseError(.IoError, "Stream read error", 0, 0, 0);
+		else if (state.mUtf8Error)
+			error = TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
+				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset);
+		else
+		{
+			error = default;
+			return false;
+		}
+		return true;
 	}
 
 	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
@@ -357,24 +371,11 @@ public class TomlDocument
 
 		let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
 		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
-		if (parser.Parse(cursor, resolver) case .Err(let e))
-		{
-			if (state.mBytesExceeded)
-				return .Err(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0));
-			if (state.mError)
-				return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
-			if (state.mUtf8Error)
-				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
-					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
+		let parsed = parser.Parse(cursor, resolver);
+		if (TryGetStreamError(state, config, var streamError))
+			return .Err(streamError);
+		if (parsed case .Err(let e))
 			return .Err(e);
-		}
-		if (state.mBytesExceeded)
-			return .Err(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0));
-		if (state.mError)
-			return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
-		if (state.mUtf8Error)
-			return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
-				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
 		return MergeIncoming(incoming, incomingMetadata, config);
 	}
 
