@@ -102,6 +102,11 @@ For large files, set `StreamBufferBytes` (e.g. `65536`): `Read(Stream)` uses a b
 if (doc.Get("fruit.apple.color") case .Ok(let val))
     ...
 
+// The indexer is the same lookup (read-only; write with doc.Set)
+if (doc["fruit.apple.color"] case .Ok(let val))
+    ...
+let port = Try!(doc["server.port"]).AsInteger;
+
 // Access a key whose name contains a dot: use [brackets]
 if (doc.TryGetInteger("servers.[192.168.1.1].port", var port))
     ...

@@ -733,6 +733,18 @@ public class TomlDocument
 		return GetPath(segments);
 	}
 
+	/// @brief Indexer over dotted paths, the same as Get: `Try!(doc["server.port"])` or
+	/// `if (doc["server.port"] case .Ok(let port))`. Read-only; use Set to write.
+	/// @param dottedPath The path to traverse. Supports bracket-delimited segments.
+	/// @return The value (borrowed, like Get), or .Err if any segment is not found or the path is malformed.
+	public Result<TomlValue> this[StringView dottedPath]
+	{
+		get
+		{
+			return Get(dottedPath);
+		}
+	}
+
 	/// @brief Navigate exact path segments and return the value (borrowed, like Get). Accepts individual
 	/// segment strings for ergonomic multi-segment lookups.
 	/// @param segments The path segments to traverse, in order.

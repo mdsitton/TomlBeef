@@ -156,4 +156,27 @@ static class TomlPathTests
 		}
 		Test.Assert(doc.GetPath(segs) case .Ok(let v4) && v4.IsInteger && v4.AsInteger == 99);
 	}
+
+	static Result<int64> ReadPort(TomlDocument doc)
+	{
+		return Try!(doc["server.port"]).AsInteger;
+	}
+
+	[Test]
+	public static void Indexer_ReadsDottedPaths()
+	{
+		var doc = scope TomlDocument();
+		Test.Assert(doc.Read("[server]\nport = 8080\n\"a.b\" = true\n") case .Ok);
+
+		Test.Assert(doc["server.port"] case .Ok(let port) && port.AsInteger == 8080);
+		Test.Assert(doc["server.[a.b]"] case .Ok(let flag) && flag.AsBool);
+		Test.Assert(doc["server"] case .Ok(let server) && server.IsTable);
+		Test.Assert(doc["server.missing"] case .Err);
+		Test.Assert(doc["server.port.deeper"] case .Err);
+		Test.Assert(doc["server..port"] case .Err);
+		Test.Assert(ReadPort(doc) case .Ok(8080));
+
+		var empty = scope TomlDocument();
+		Test.Assert(ReadPort(empty) case .Err);
+	}
 }

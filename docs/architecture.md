@@ -65,7 +65,7 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 |---|---|
 | Read | `Read(StringView[, config])`, `ReadBytes(Span<uint8>[, config])`, `Read(Stream[, config])`, `ReadFile(path[, config])` |
 | Write | `Write(String output[, TomlWriteConfig])` appends and never fails; `WriteFile(path[, config])` returns `IoError` on failure |
-| Lookup | `Get(dottedPath)`, `GetPath(params StringView[])`, `GetPath(List<StringView>)`, `TryGetString/Integer/Float/Bool/Table/Array/OffsetDateTime/LocalDateTime/LocalDate/LocalTime(path, out v)` |
+| Lookup | `Get(dottedPath)`, `this[dottedPath]`, `GetPath(params StringView[])`, `GetPath(List<StringView>)`, `TryGetString/Integer/Float/Bool/Table/Array/OffsetDateTime/LocalDateTime/LocalDate/LocalTime(path, out v)` |
 | Mutation | `Set{String,Integer,Float,Bool,OffsetDateTime,LocalDateTime,LocalDate,LocalTime}(path, v)`, `AddTable(key)`, `AddArray(key)`, `Remove(key)`, `Clear()` |
 | Inspection | `RootTable` (read-only property), `Metadata` (null unless PreserveStyle) |
 
@@ -75,7 +75,8 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
   second copy. With `TomlReadConfig.StreamBufferBytes` set it instead opens a `FileStream` and uses
   `Read(Stream)`, so input memory stays bounded by the buffer. Any BOM goes through the normal BOM
   rules; a missing or unreadable file is `IoError`.
-- `Get`, `GetPath`, `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
+- `Get`, `GetPath`, the document's `this[dottedPath]` (get-only: a Beef indexer's setter takes the
+  getter's `Result` type, and `Set` already writes), `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
   `TomlArray.GetValueAt` return a borrowed `TomlValue` of any type, for generic walking (the
   `TomlTester` serializer uses them). Typed `TryGet*` accessors are preferred when the type is known.
 - Document setters resolve every path segment except the last, and **require the intermediate
