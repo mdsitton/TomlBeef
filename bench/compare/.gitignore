@@ -1,0 +1,6 @@
+deps/
+bin/
+inputs/
+rust/target/
+cs/bin/
+cs/obj/
