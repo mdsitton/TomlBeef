@@ -16,6 +16,8 @@ test-roundtrip.log
 
 test-encoder.log
 
+test-leaks.log
+
 test-roundtrip-baseline.txt
 
 test-official-toml-1.0.log

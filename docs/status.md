@@ -12,6 +12,7 @@ Last reviewed: 2026-09-27.
 |-------|-----------------|
 | `beefbuild -test` (Debug checks) | 258/258 pass |
 | `beefbuild -test -config=TestRelease` (Release settings) | 258/258 pass |
+| `./test-leaks.sh` | 258/258 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -71,7 +72,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| T1 | No automatic leak detection in tests. Beef's realtime leak check (`BF_ENABLE_REALTIME_LEAK_CHECK`) is a workspace config setting; enabling it for the Test config would catch error-path leaks. **Decision needed:** workspace config change | S |
 
 ### Optional / nice to have
 
