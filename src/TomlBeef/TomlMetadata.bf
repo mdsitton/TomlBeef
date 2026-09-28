@@ -140,7 +140,8 @@ public struct TomlNodeStyle
 /// @brief Owned set of comments associated with a node.
 public class TomlCommentSet
 {
-	/// Comments appearing on lines before the node.
+	/// Comments appearing on lines before the node, without the '#'. A null entry is a blank line
+	/// inside or after the comment block (e.g. a comment separated from the node by a blank line).
 	public List<String> mLeading ~ DeleteContainerAndItems!(_);
 	/// Comment text on the same line as the node (after the value). Null if none.
 	public String mTrailing ~ delete _;

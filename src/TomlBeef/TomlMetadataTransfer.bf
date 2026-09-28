@@ -96,8 +96,9 @@ static class TomlMetadataTransfer
 		if (srcComments != null)
 		{
 			let dstComments = dstMeta.GetOrCreateCommentSet(dstId);
+			// A null entry marks a blank line inside the comment block
 			for (let line in srcComments.mLeading)
-				dstComments.mLeading.Add(new String(line));
+				dstComments.mLeading.Add(line != null ? new String(line) : null);
 			if (srcComments.mTrailing != null)
 			{
 				delete dstComments.mTrailing;

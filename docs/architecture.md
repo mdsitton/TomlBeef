@@ -464,7 +464,11 @@ that table to the multi-line layout on 1.1 writes, since only that layout can ho
 3. An **integer, float or date/time** with a captured value format: regenerated from the current
    value using that format (base, digit case and underscore grouping; exponent style, special-value
    sign and `-0.0`; `T`/`t`/space separator, `Z`/`z` vs offset, seconds and fraction precision). The value always
-   comes from the semantic model, so an edited number keeps its original formatting.
+   comes from the semantic model, so an edited number keeps its original formatting. Floats are
+   always written from the exact round-trip representation; a captured fraction precision only
+   pads zeros (`5.50`) and never rounds, because fixed-point formatting keeps only ~15 significant
+   digits and would change the value. Captured tokens are trimmed first, since a bare value's slice
+   can end in the whitespace before a comment.
 4. An **array** with a metadata context: inline or multi-line according to its `TomlArrayFormat`
    (indent, trailing comma, per-element comments). Elements recurse through these rules.
 5. An **inline table**: `TomlTableFormat` spacing, and multi-line layout on v1.1 only.
@@ -472,8 +476,17 @@ that table to the multi-line layout on 1.1 writes, since only that layout can ho
 
 Tables use the same three-phase order as normal mode, with some additions. Leading and trailing
 comments are written around entries and headers. Header blocks are separated by a blank line. A
-sub-table whose entries were written as dotted keys (`HasDottedPreference`) is written back as
-`parent.key = value` lines instead of a `[header]`. Newlines follow the document's newline style.
+sub-table that was created by a dotted key (origin `Implicit`) or whose entries were written as
+dotted keys (`HasDottedPreference`) is written back as `parent.key = value` lines instead of a
+`[header]`; under a `[header]` those keys are relative to it. Newlines follow the document's
+newline style.
+
+**Blank lines** are kept (runs collapse to one). A blank line before a node's comment block (or
+before the node itself) is the comment set's `mSeparatedByBlankLine`; a blank line inside or after
+the comment block is a `null` entry in `mLeading`, so a comment separated from its key by a blank
+line stays detached. File-header comments are always followed by a blank line (that separation is
+what made them file-header comments), and footer comments keep a preceding blank line. The writer
+never emits two blank lines in a row (`WriteBlankLine`).
 Keys keep their captured quoting (`WriteKeyPreserving`): a quoted key stays quoted even if it could be
 bare, and a literal-quoted key stays literal unless its (possibly renamed) text cannot be written
 that way. Dotted keys only captured their first segment's style, so they use normal-mode quoting,

@@ -1475,6 +1475,88 @@ static class TomlPreserveStyleWriterTests
 	}
 
 	[Test]
+	public static void PreserveStyle_BlankLinesAndDetachedCommentsRoundTrip()
+	{
+		// Unedited documents must come back exactly (runs of blank lines collapse to one)
+		for (let input in StringView[](
+			"a = 1\nb = 2\n\nc = 3\n",
+			"a = 1\n\n# detached\n\nb = 2\n",
+			"a = 1\n\n# attached to b\nb = 2\n",
+			"# header\n\n# detached\n\na = 1\n",
+			"# header\n\na = 1\n",
+			"[x]\na = 1\n\n# detached before y\n\n[y]\nb = 2\n",
+			"[x]\n\na = 1\n",
+			"a = 1\n\n# trailing block at end\n",
+			"# only a comment\n",
+			"# one\n\n# two\n",
+			"a = 1\r\n\r\nb = 2\r\n"))
+		{
+			var doc = scope:: TomlDocument();
+			ReadPreserving(doc, input);
+			String output = scope String();
+			doc.Write(output);
+			Test.Assert(output == input, scope $"Round trip changed the document.\nInput:\n{input}\nOutput:\n{output}");
+		}
+
+		var collapsed = scope TomlDocument();
+		ReadPreserving(collapsed, "a = 1\n\n\n\nb = 2\n");
+		String collapsedOut = scope String();
+		collapsed.Write(collapsedOut);
+		Test.Assert(collapsedOut == "a = 1\n\nb = 2\n", scope $"Blank-line runs should collapse:\n{collapsedOut}");
+	}
+
+	[Test]
+	public static void PreserveStyle_DottedKeysMixedWithHeadersKeepData()
+	{
+		for (let input in StringView[](
+			"many.dots.here = {a.b = 1}\n",
+			"[x]\na.b = 1\na.c.d = 2\n",
+			"a.b = 1\n[a.c]\nx = 1\n",
+			"a.b = 1\n[[a.list]]\nn = 1\n[[a.list]]\nn = 2\n",
+			"[x]\na.b = 1\n[[x.a.list]]\nn = 1\n",
+			"[fruit]\napple.color = \"red\"\napple.taste.sweet = true\n\n[fruit.apple.texture]\nsmooth = true\n"))
+		{
+			var doc = scope:: TomlDocument();
+			ReadPreserving(doc, input);
+			String output = scope String();
+			doc.Write(output);
+			var reparsed = scope:: TomlDocument();
+			if (reparsed.Read(output) case .Err(let e))
+			{
+				defer e.Dispose();
+				Test.Assert(false, scope $"Output does not re-parse: {e.mMessage}\nInput:\n{input}\nOutput:\n{output}");
+				continue;
+			}
+			Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Data changed.\nInput:\n{input}\nOutput:\n{output}");
+		}
+
+		// A single dotted key stays a single dotted key (no synthesized [header] tables)
+		var single = scope TomlDocument();
+		ReadPreserving(single, "many.dots.here = 1\n");
+		String singleOut = scope String();
+		single.Write(singleOut);
+		Test.Assert(singleOut == "many.dots.here = 1\n", scope $"Unexpected output:\n{singleOut}");
+	}
+
+	[Test]
+	public static void PreserveStyle_BlankLineMarkersInCommentApiAndMerge()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "a = 1\n\n# about b\n\nb = 2\n");
+		// The blank line is layout, not comment text
+		String comment = scope String();
+		Test.Assert(doc.RootTable.TryGetComment("b", comment) && comment == "about b", scope $"Got '{comment}'");
+
+		// A merged key carries its comment block, including the blank line after it
+		var merged = scope TomlDocument();
+		ReadPreserving(merged, "x = 0\n");
+		ReadPreserving(merged, "a = 1\n\n# about b\n\nb = 2\n", .Merge);
+		String output = scope String();
+		merged.Write(output);
+		AssertContains(output, "# about b\n\nb = 2\n");
+	}
+
+	[Test]
 	public static void PreserveStyle_TabIndentationKept()
 	{
 		var doc = scope TomlDocument();

@@ -17,13 +17,25 @@ static class TomlWriterImpl
 	/// Metadata-aware write path that can reuse original tokens for clean string values.
 	private static void WritePreserving(TomlDocument doc, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
 	{
-		// Emit file header comments
+		// Emit file header comments. They are separated from the content by a blank line (that separation
+		// is what made them file-header comments rather than a key's leading comments).
 		if (metadata.mRootComments != null && metadata.mRootComments.mLeading.Count > 0)
+		{
 			EmitCommentSet(metadata.mRootComments, outStr, metadata);
+			WriteBlankLine(outStr, metadata);
+		}
+		int headerEnd = outStr.Length;
 		WriteTablePreserving(doc.RootTable, "", outStr, version, metadata);
+		// No content: drop the separator written after the header comments
+		if (outStr.Length == headerEnd && EndsWithBlankLine(outStr))
+			TrimLastNewline(outStr);
 		// Emit footer/EOF comments after content
 		if (metadata.mFooterComments != null && metadata.mFooterComments.mLeading.Count > 0)
+		{
+			if (metadata.mFooterComments.mSeparatedByBlankLine)
+				WriteBlankLine(outStr, metadata);
 			EmitCommentSet(metadata.mFooterComments, outStr, metadata);
+		}
 	}
 
 	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)
@@ -206,10 +218,11 @@ static class TomlWriterImpl
 							{
 								// Emit leading comments
 								if (sub.MetadataContext != null && sub.MetadataContext.TryGetEntryNodeId(sk, let nid) && nid.IsValid)
-									EmitLeadingComments(nid, outStr, metadata);
-								// Write dotted key = value
+									EmitLeadingBlock(nid, outStr, metadata);
+								// Write dotted key = value. Under a [header] keys are relative to it; only an
+								// enclosing dotted context contributes a prefix.
 								String dk = scope String();
-								if (!pathPrefix.IsEmpty)
+								if (dottedContext && !pathPrefix.IsEmpty)
 								{
 									dk.Append(pathPrefix);
 									dk.Append('.');
@@ -226,7 +239,7 @@ static class TomlWriterImpl
 							{
 								// Non-inline sub-table: recurse with dotted path prefix
 								String dp = scope String();
-								if (!pathPrefix.IsEmpty)
+								if (dottedContext && !pathPrefix.IsEmpty)
 								{
 									dp.Append(pathPrefix);
 									dp.Append('.');
@@ -249,8 +262,7 @@ static class TomlWriterImpl
 						AppendKey(key, fullPath, version);
 
 						// Emit separator newline before header (only if not at start)
-						if (outStr.Length > 0)
-							WriteNewline(outStr, metadata);
+						WriteBlankLine(outStr, metadata);
 
 						// Emit leading comments for the table header
 						if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
@@ -305,8 +317,7 @@ static class TomlWriterImpl
 			AppendKey(key, fullPath, version);
 
 			// Emit separator newline before comments (only if not at start)
-			if (outStr.Length > 0)
-				WriteNewline(outStr, metadata);
+			WriteBlankLine(outStr, metadata);
 
 			// Emit leading comments for the array element header
 			if (sub.MetadataContext != null && sub.MetadataContext.mNodeId.IsValid)
@@ -333,9 +344,9 @@ static class TomlWriterImpl
 		if (parentTable.MetadataContext != null)
 			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
 
-		// Emit leading comments
+		// Emit the blank line that preceded this entry in the source, then its leading comments
 		if (nodeId.IsValid)
-			EmitLeadingComments(nodeId, outStr, metadata);
+			EmitLeadingBlock(nodeId, outStr, metadata);
 
 		WriteKeyPreserving(key, parentTable, metadata, outStr, version);
 		outStr.Append(" = ");
@@ -472,6 +483,28 @@ static class TomlWriterImpl
 	}
 
 	/// Write a float value using format metadata for style preservation.
+	/// Appends zeros to the fraction of the number written from `start` until it has `digits` fraction
+	/// digits (adding a '.' if needed). Leaves exponent forms alone.
+	private static void PadFractionDigits(String outStr, int start, int digits)
+	{
+		int dot = -1;
+		for (int i = start; i < outStr.Length; i++)
+		{
+			char8 c = outStr[i];
+			if (c == 'e' || c == 'E')
+				return;
+			if (c == '.')
+				dot = i;
+		}
+		if (dot < 0)
+		{
+			dot = outStr.Length;
+			outStr.Append('.');
+		}
+		for (int fraction = outStr.Length - dot - 1; fraction < digits; fraction++)
+			outStr.Append('0');
+	}
+
 	private static void WriteFloatWithFormat(double val, TomlFloatFormat fmt, String outStr)
 	{
 		// Special values — use captured sign style
@@ -506,16 +539,12 @@ static class TomlWriterImpl
 				return;
 			}
 			int before = outStr.Length;
-			if (fmt.mPrecision >= 0)
-			{
-				String format = scope String("F");
-				fmt.mPrecision.ToString(format);
-				val.ToString(outStr, format, null);
-			}
-			else
-			{
-				val.ToString(outStr, "R", null);
-			}
+			// Start from the exact round-trip form, then only pad fraction zeros up to the captured
+			// precision ("5.50" stays "5.50"). Never round to it: fixed-point "F<n>" formatting keeps
+			// only ~15 significant digits and would change the value (3.141592653589793 → ...790).
+			val.ToString(outStr, "R", null);
+			if (fmt.mPrecision > 0)
+				PadFractionDigits(outStr, before, fmt.mPrecision);
 			// Apply underscore grouping to decimal floats
 			if (fmt.mUseUnderscores && (fmt.mIntGroupSize > 0 || fmt.mFracGroupSize > 0))
 			{
@@ -1556,6 +1585,16 @@ static class TomlWriterImpl
 	// ================================================================
 
 	/// @brief Emit leading comments for a node (one # comment per line).
+	/// Emits the blank line that separated a key/value from the preceding content in the source (if any),
+	/// then its leading comments.
+	private static void EmitLeadingBlock(TomlNodeId nodeId, String outStr, TomlDocumentMetadata metadata)
+	{
+		let commentSet = metadata.GetCommentSet(nodeId);
+		if (commentSet != null && commentSet.mSeparatedByBlankLine)
+			WriteBlankLine(outStr, metadata);
+		EmitLeadingComments(nodeId, outStr, metadata);
+	}
+
 	private static void EmitLeadingComments(TomlNodeId nodeId, String outStr, TomlDocumentMetadata metadata)
 	{
 		let commentSet = metadata.GetCommentSet(nodeId);
@@ -1573,8 +1612,13 @@ static class TomlWriterImpl
 
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
-			outStr.Append('#');
 			let text = commentSet.mLeading[i];
+			if (text == null)
+			{
+				WriteBlankLine(outStr, metadata);
+				continue;
+			}
+			outStr.Append('#');
 			if (!text.IsEmpty)
 			{
 				outStr.Append(' ');
@@ -1582,6 +1626,34 @@ static class TomlWriterImpl
 			}
 			WriteNewline(outStr, metadata);
 		}
+	}
+
+	private static void TrimLastNewline(String outStr)
+	{
+		if (outStr.EndsWith("\r\n"))
+			outStr.RemoveFromEnd(2);
+		else if (outStr.EndsWith('\n'))
+			outStr.RemoveFromEnd(1);
+	}
+
+	/// Whether the output ends with an empty line (so another blank line would double it).
+	private static bool EndsWithBlankLine(String outStr)
+	{
+		StringView view = outStr;
+		if (view.EndsWith("\r\n"))
+			view.RemoveFromEnd(2);
+		else if (view.EndsWith('\n'))
+			view.RemoveFromEnd(1);
+		else
+			return false;
+		return view.IsEmpty || view.EndsWith('\n');
+	}
+
+	/// Writes a blank line, unless the output is empty or already ends with one.
+	private static void WriteBlankLine(String outStr, TomlDocumentMetadata metadata)
+	{
+		if (!outStr.IsEmpty && !EndsWithBlankLine(outStr))
+			WriteNewline(outStr, metadata);
 	}
 
 	/// @brief Emit all leading comments from a comment set, indented to the given level.
@@ -1593,9 +1665,14 @@ static class TomlWriterImpl
 
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
+			let text = commentSet.mLeading[i];
+			if (text == null)
+			{
+				WriteBlankLine(outStr, metadata);
+				continue;
+			}
 			AppendIndent(outStr, indentSize, metadata);
 			outStr.Append('#');
-			let text = commentSet.mLeading[i];
 			if (!text.IsEmpty)
 			{
 				outStr.Append(' ');

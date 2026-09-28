@@ -60,6 +60,47 @@ static class TomlCorpusTests
 		Test.Assert(compared >= 266, scope $"Expected >= 266 fixtures compared, got {compared}");
 	}
 
+	/// Every valid fixture written in PreserveStyle must re-read to the same data (the style-preserving
+	/// writer's functional-equivalence invariant), and writing again must be stable.
+	[Test]
+	public static void PreserveStyleRoundTripValid()
+	{
+		let validDir = scope $"{TestBaseDir}/valid";
+		Test.Assert(Directory.Exists(validDir), scope $"Test directory not found: {validDir}");
+		int compared = 0;
+		WalkTomlFiles(validDir, null, scope [&] (path) =>
+		{
+			let name = GetRelativePath(path);
+			let original = scope TomlDocument();
+			if (original.ReadFile(path, .() { MetadataMode = .PreserveStyle }) case .Err(let e))
+			{
+				defer e.Dispose();
+				Test.Assert(false, scope $"Read failed [{name}]: {e.mMessage}");
+				return;
+			}
+			String written = scope String();
+			original.Write(written);
+
+			let reparsed = scope TomlDocument();
+			if (reparsed.Read(written, .() { MetadataMode = .PreserveStyle }) case .Err(let e2))
+			{
+				defer e2.Dispose();
+				Test.Assert(false, scope $"PreserveStyle output does not re-parse [{name}]: {e2.mMessage}\n{written}");
+				return;
+			}
+			if (!TomlDocumentEquals(original, reparsed))
+			{
+				Test.Assert(false, scope $"PreserveStyle output changed the data [{name}]:\n{written}");
+				return;
+			}
+			String rewritten = scope String();
+			reparsed.Write(rewritten);
+			Test.Assert(rewritten == written, scope $"PreserveStyle output is not stable [{name}]\n1:\n{written}\n2:\n{rewritten}");
+			compared++;
+		});
+		Test.Assert(compared >= 266, scope $"Expected >= 266 fixtures compared, got {compared}");
+	}
+
 	/// Every valid fixture must produce identical PreserveStyle output whether read from bytes or from a
 	/// stream with a tiny buffer, which forces refills and spills inside nested marked tokens.
 	[Test]

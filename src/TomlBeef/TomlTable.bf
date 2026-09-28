@@ -303,6 +303,10 @@ public class TomlTable
 	/// @brief Check if entries in this table prefer dotted-key emission.
 	public bool HasDottedPreference(TomlDocumentMetadata metadata)
 	{
+		// A table created by a dotted key (`a.b.c = 1` creates `a` and `b`) had no header in the source.
+		// Checked first: intermediate tables created during the parse may have no metadata context.
+		if (mOrigin == .Implicit)
+			return true;
 		if (mMetadataContext == null || metadata == null)
 			return false;
 		for (int i = 0; i < mKeyOrder.Count; i++)
@@ -901,13 +905,18 @@ public class TomlTable
 		let commentSet = metadata?.GetCommentSet(nodeId);
 		if (commentSet == null || commentSet.mLeading.IsEmpty)
 			return false;
-		for (int i = 0; i < commentSet.mLeading.Count; i++)
+		// Null entries are blank lines inside the comment block; they are layout, not comment text
+		bool first = true;
+		for (let line in commentSet.mLeading)
 		{
-			if (i > 0)
+			if (line == null)
+				continue;
+			if (!first)
 				outComment.Append('\n');
-			outComment.Append(commentSet.mLeading[i]);
+			outComment.Append(line);
+			first = false;
 		}
-		return true;
+		return !first;
 	}
 
 	private bool TryGetTrailing(TomlNodeId nodeId, String outComment)

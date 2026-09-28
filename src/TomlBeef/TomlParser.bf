@@ -128,11 +128,20 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			if (b == '\r' || b == '\n')
 			{
-				// Track blank lines for comment classification and section spacing
-				if (mMetadata != null && mPendingComments.Count > 0)
-					mBlankLineSinceComment = true;
+				// Track blank lines: before any pending comment they separate the next node from what came
+				// before (mSeparatedByBlankLine); after a comment they are kept inside the comment block as a
+				// null entry (consecutive blank lines collapse to one)
 				if (mMetadata != null)
-					mBlankLineCount++;
+				{
+					if (mPendingComments.Count > 0)
+					{
+						mBlankLineSinceComment = true;
+						if (mPendingComments.Back != null)
+							mPendingComments.Add(null);
+					}
+					else
+						mBlankLineCount++;
+				}
 				CountAndSkipNewline();
 				continue;
 			}
@@ -2147,8 +2156,11 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// Detect numeric format metadata from a raw token string.
-	private void CaptureNumericFormat(TomlNodeId nodeId, StringView rawToken)
+	private void CaptureNumericFormat(TomlNodeId nodeId, StringView rawTokenIn)
 	{
+		// A bare value is scanned up to a delimiter such as '#', so the slice can end in whitespace
+		StringView rawToken = rawTokenIn;
+		rawToken.Trim();
 		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
@@ -2602,7 +2614,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mMetadata == null || mPendingComments.Count == 0)
 			return;
 
+		// The writer always separates file-header comments from content, so a trailing blank marker is implied
+		TrimTrailingBlankMarkers();
 		let commentSet = mMetadata.GetOrCreateRootComments();
+		// A second block reaches the root only after a blank line, so keep that separation
+		if (!commentSet.mLeading.IsEmpty && !mPendingComments.IsEmpty)
+			commentSet.mLeading.Add(null);
 		for (int i = 0; i < mPendingComments.Count; i++)
 			commentSet.mLeading.Add(mPendingComments[i]);
 		mPendingComments.Clear();
@@ -2614,10 +2631,21 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mMetadata == null || mPendingComments.Count == 0)
 			return;
 
+		// Blank lines at the very end of the file are not kept
+		TrimTrailingBlankMarkers();
 		let commentSet = mMetadata.GetOrCreateFooterComments();
 		for (int i = 0; i < mPendingComments.Count; i++)
 			commentSet.mLeading.Add(mPendingComments[i]);
+		if (mBlankLineCount > 0)
+			commentSet.mSeparatedByBlankLine = true;
 		mPendingComments.Clear();
+	}
+
+	/// Drops blank-line markers (null entries) from the end of the pending comment block.
+	private void TrimTrailingBlankMarkers()
+	{
+		while (!mPendingComments.IsEmpty && mPendingComments.Back == null)
+			mPendingComments.PopBack();
 	}
 
 	/// Count and skip a newline for document-level style inference.
@@ -2657,8 +2685,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// Detect date-time format metadata from a raw token.
-	private void CaptureDateTimeFormat(TomlNodeId nodeId, StringView rawToken)
+	private void CaptureDateTimeFormat(TomlNodeId nodeId, StringView rawTokenIn)
 	{
+		// A bare value is scanned up to a delimiter such as '#', so the slice can end in whitespace
+		// (which would otherwise be mistaken for a space date-time separator)
+		StringView rawToken = rawTokenIn;
+		rawToken.Trim();
 		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
