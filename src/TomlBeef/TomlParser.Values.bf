@@ -476,15 +476,19 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (TryParsePlainInteger(token, var plain))
 			return TomlValue.Integer(plain);
 
-		if (token == "true") return TomlValue.Bool(true);
-		if (token == "false") return TomlValue.Bool(false);
+		// Keywords never start with a digit, while dates and most numbers do
+		if (!TomlChar.IsDigit(token[0]))
+		{
+			if (token == "true") return TomlValue.Bool(true);
+			if (token == "false") return TomlValue.Bool(false);
 
-		if (token == "inf" || token == "+inf")
-			return TomlValue.Float(double.PositiveInfinity);
-		if (token == "-inf")
-			return TomlValue.Float(double.NegativeInfinity);
-		if (token == "nan" || token == "+nan" || token == "-nan")
-			return TomlValue.Float(double.NaN);
+			if (token == "inf" || token == "+inf")
+				return TomlValue.Float(double.PositiveInfinity);
+			if (token == "-inf")
+				return TomlValue.Float(double.NegativeInfinity);
+			if (token == "nan" || token == "+nan" || token == "-nan")
+				return TomlValue.Float(double.NaN);
+		}
 
 		if (LooksLikeDateTime(token))
 		{

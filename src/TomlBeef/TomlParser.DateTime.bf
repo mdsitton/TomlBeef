@@ -123,7 +123,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		if (pos != token.Length)
 			return .Err(Error(.InvalidDateTime, "Trailing characters after offset date-time"));
-		return TomlValue.OffsetDateTime(TomlOffsetDateTime(year, month, day, hour, minute, second, ns, offsetMinutes));
+		return TomlValue.OffsetDateTime(TomlOffsetDateTime.Validated(year, month, day, hour, minute, second, ns, offsetMinutes));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalDateTime(StringView token)
@@ -147,7 +147,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		if (pos != token.Length)
 			return .Err(Error(.InvalidDateTime, "Trailing characters after local date-time"));
-		return TomlValue.LocalDateTime(TomlLocalDateTime(year, month, day, hour, minute, second, ns));
+		return TomlValue.LocalDateTime(TomlLocalDateTime.Validated(year, month, day, hour, minute, second, ns));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalDate(StringView token)
@@ -157,7 +157,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (!ParseDatePart(token, ref pos, out year, out month, out day))
 			return .Err(Error(.InvalidDate, "Invalid date"));
 		if (pos != token.Length) return .Err(Error(.InvalidDate, "Trailing characters in date"));
-		return TomlValue.LocalDate(TomlLocalDate(year, month, day));
+		return TomlValue.LocalDate(TomlLocalDate.Validated(year, month, day));
 	}
 
 	private Result<TomlValue, TomlParseError> TryParseLocalTime(StringView token)
@@ -170,7 +170,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mVersion == .V1_0 && secondsOmitted)
 			return .Err(Error(.InvalidTime, "Seconds are required in TOML v1.0"));
 		if (pos != token.Length) return .Err(Error(.InvalidTime, "Trailing characters in time"));
-		return TomlValue.LocalTime(TomlLocalTime(hour, minute, second, ns));
+		return TomlValue.LocalTime(TomlLocalTime.Validated(hour, minute, second, ns));
 	}
 
 	private bool ParseDatePart(StringView token, ref int pos, out int32 year, out int32 month, out int32 day)

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -127,6 +128,25 @@ public struct TomlOffsetDateTime
 		Try!(TomlDateRules.CheckOffset(offsetMinutes));
 		return TomlOffsetDateTime(year, month, day, hour, minute, second, nanosecond, offsetMinutes);
 	}
+
+	/// For components the parser has already checked against TomlDateRules: skips the constructor's
+	/// Release-mode asserts (checked again in Debug).
+	internal static Self Validated(int32 year, int32 month, int32 day,
+		int32 hour, int32 minute, int32 second, int32 nanosecond, int32 offsetMinutes)
+	{
+		Debug.Assert(TomlDateRules.IsValidDate(year, month, day) && TomlDateRules.IsValidTime(hour, minute, second, nanosecond)
+			&& TomlDateRules.IsValidOffset(offsetMinutes));
+		Self value = default;
+		value.mYear = year;
+		value.mMonth = month;
+		value.mDay = day;
+		value.mHour = hour;
+		value.mMinute = minute;
+		value.mSecond = second;
+		value.mNanosecond = nanosecond;
+		value.mOffsetMinutes = offsetMinutes;
+		return value;
+	}
 }
 
 /// Local Date-Time: date + time without timezone info.
@@ -172,6 +192,22 @@ public struct TomlLocalDateTime
 		Try!(TomlDateRules.CheckTime(hour, minute, second, nanosecond));
 		return TomlLocalDateTime(year, month, day, hour, minute, second, nanosecond);
 	}
+
+	/// For components the parser has already checked (see TomlOffsetDateTime.Validated).
+	internal static Self Validated(int32 year, int32 month, int32 day,
+		int32 hour, int32 minute, int32 second, int32 nanosecond)
+	{
+		Debug.Assert(TomlDateRules.IsValidDate(year, month, day) && TomlDateRules.IsValidTime(hour, minute, second, nanosecond));
+		Self value = default;
+		value.mYear = year;
+		value.mMonth = month;
+		value.mDay = day;
+		value.mHour = hour;
+		value.mMinute = minute;
+		value.mSecond = second;
+		value.mNanosecond = nanosecond;
+		return value;
+	}
 }
 
 /// Local Date: date only (year-month-day).
@@ -200,6 +236,17 @@ public struct TomlLocalDate
 	{
 		Try!(TomlDateRules.CheckDate(year, month, day));
 		return TomlLocalDate(year, month, day);
+	}
+
+	/// For components the parser has already checked (see TomlOffsetDateTime.Validated).
+	internal static Self Validated(int32 year, int32 month, int32 day)
+	{
+		Debug.Assert(TomlDateRules.IsValidDate(year, month, day));
+		Self value = default;
+		value.mYear = year;
+		value.mMonth = month;
+		value.mDay = day;
+		return value;
 	}
 }
 
@@ -232,5 +279,17 @@ public struct TomlLocalTime
 	{
 		Try!(TomlDateRules.CheckTime(hour, minute, second, nanosecond));
 		return TomlLocalTime(hour, minute, second, nanosecond);
+	}
+
+	/// For components the parser has already checked (see TomlOffsetDateTime.Validated).
+	internal static Self Validated(int32 hour, int32 minute, int32 second, int32 nanosecond)
+	{
+		Debug.Assert(TomlDateRules.IsValidTime(hour, minute, second, nanosecond));
+		Self value = default;
+		value.mHour = hour;
+		value.mMinute = minute;
+		value.mSecond = second;
+		value.mNanosecond = nanosecond;
+		return value;
 	}
 }
