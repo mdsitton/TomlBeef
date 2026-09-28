@@ -329,6 +329,35 @@ static class TomlStreamTests
 	}
 
 	[Test]
+	public static void Utf8_ErrorsAroundTheAsciiFastPath()
+	{
+		// The validator skips ASCII 8 bytes at a time: put bad bytes before, on and after those
+		// boundaries, and valid multi-byte text between ASCII runs, and check the reported position
+		for (int prefix = 0; prefix <= 17; prefix++)
+		{
+			List<uint8> bytes = scope List<uint8>();
+			AddAscii(bytes, "# ");
+			AddRepeat(bytes, 'x', prefix);
+			AddBytes(bytes, 0xC3, 0xA9); // é, valid
+			AddAscii(bytes, "yyyyyyyyy");
+			AddByte(bytes, 0xFF);
+			AddAscii(bytes, "\n");
+			// '#', ' ', the x's, é (one column), nine y's, then the bad byte
+			AssertUtf8ErrorAtBothPaths(bytes, 1, 2 + prefix + 1 + 9 + 1, 2 + prefix + 2 + 9);
+		}
+
+		// Valid input of every length around the boundaries still parses
+		for (int length = 0; length <= 17; length++)
+		{
+			let input = scope String("# ");
+			input.Append('z', length);
+			input.Append("é\na = 1\n");
+			var doc = scope TomlDocument();
+			Test.Assert(doc.Read(input) case .Ok, input);
+		}
+	}
+
+	[Test]
 	public static void Utf8_InvalidLeadByteAfterLfReportsLine2()
 	{
 		List<uint8> bytes = scope List<uint8>();

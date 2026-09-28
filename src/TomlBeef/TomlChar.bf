@@ -198,6 +198,65 @@ internal static class TomlChar
 	/// @return .Ok on success, or .Err with line/column info on invalid UTF-8 or double BOM.
 	public static Result<void, TomlParseError> ValidateUtf8(StringView input, out int start)
 	{
+		// Fast pass without the line and column tracking that only an error needs. On any problem,
+		// including a second BOM, LocateUtf8Error re-scans to report it, so errors are unchanged.
+		bool hasBom = input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF;
+		start = hasBom ? 3 : 0;
+		if (hasBom && input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+			return LocateUtf8Error(input, out start);
+		if (IsValidUtf8(input, start))
+			return .Ok;
+		return LocateUtf8Error(input, out start);
+	}
+
+	/// Whether `input` from `from` on is valid UTF-8: the same rules as LocateUtf8Error (lead and
+	/// continuation bytes, truncation, overlongs, surrogates, the U+10FFFF limit). Runs of ASCII are
+	/// skipped 8 bytes at a time, which makes comment- and key-heavy input nearly free to check.
+	static bool IsValidUtf8(StringView input, int from)
+	{
+		char8* ptr = input.Ptr;
+		int length = input.Length;
+		int i = from;
+		while (i < length)
+		{
+			while (i + 8 <= length)
+			{
+				uint64 word = ?;
+				Internal.MemCpy(&word, ptr + i, 8);
+				if ((word & 0x8080808080808080UL) != 0)
+					break;
+				i += 8;
+			}
+			if (i >= length)
+				break;
+			uint8 b = (uint8)ptr[i];
+			if (b < 0x80)
+			{
+				i++;
+				continue;
+			}
+			int seqLen = Utf8SequenceLength((char8)b);
+			if (seqLen == 0 || i + seqLen > length)
+				return false;
+			for (int j = 1; j < seqLen; j++)
+			{
+				if (((uint8)ptr[i + j] & 0xC0) != 0x80)
+					return false;
+			}
+			uint32 ucp = (uint32)DecodeAt(input, i, seqLen);
+			if (seqLen == 2 ? ucp < 0x80 : seqLen == 3 ? ucp < 0x800 : ucp < 0x10000)
+				return false;
+			if ((ucp >= 0xD800 && ucp <= 0xDFFF) || ucp > 0x10FFFF)
+				return false;
+			i += seqLen;
+		}
+		return true;
+	}
+
+	/// The position-tracking validation: finds the first UTF-8 (or double BOM) error with its line,
+	/// column and offset. Only run when IsValidUtf8 has found a problem.
+	static Result<void, TomlParseError> LocateUtf8Error(StringView input, out int start)
+	{
 		start = 0;
 
 		int i = 0;

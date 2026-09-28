@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 287/287 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 287/287 pass |
-| `./test-leaks.sh` | 287/287 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 288/288 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 288/288 pass |
+| `./test-leaks.sh` | 288/288 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -58,8 +58,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Idea | Size |
 |----|------|------|
-| O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
-| O8 | *Optional, perf.* Parsing is ~77 MB/s on the mixed bench and fastest in the comparison (architecture.md "TomlTester"); judged good enough (2026-09-28). Remaining ideas by profile: multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
+| O8 | *Optional, perf.* Parsing is ~85 MB/s on the mixed bench and fastest in the comparison (architecture.md "TomlTester"); judged good enough (2026-09-28). Remaining ideas by profile: multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
 
 ## Suggested order
 

@@ -278,7 +278,13 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
 - **UTF-8 validation differs by path:**
   - String, bytes and file input: `TomlChar.ValidateUtf8` checks the whole buffer before parsing
     (lead bytes, continuation bytes, overlongs, surrogates, values above U+10FFFF) and reports
-    `InvalidUtf8` with its line, column and offset.
+    `InvalidUtf8` with its line, column and offset. The check itself (`IsValidUtf8`) tracks no
+    position and skips ASCII 8 bytes at a time. Only when it fails does `LocateUtf8Error` re-scan
+    with line and column tracking to build the error, so errors are unchanged. The per-byte position
+    tracking had made this pass 12–34% of a parse on comment-heavy input (it ran over every byte).
+    With the fast pass it is under 5%, and on string input comment-only files parse ~2.4× faster
+    plain (~490 → ~1190 MB/s) and ~1.6× with PreserveStyle (~316 → ~502). A single-pass validator
+    inside the cursor (formerly O5) would now save little.
   - Stream input: `TomlStreamState` validates bytes incrementally as each `Refill` brings them in,
     including sequences split across refills and a sequence truncated at EOF. It records the first
     error position (the lead byte of a bad sequence).
