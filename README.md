@@ -485,7 +485,7 @@ if (doc.ReadFile(path) case .Err(let err))
 |---------|-------|-------|
 | Bare keys | ✅ | ✅ |
 | Quoted keys (basic, literal) | ✅ | ✅ (basic only) |
-| Dotted keys | ✅ | — (emitted as `[header]`) |
+| Dotted keys | ✅ | ✅ (tables the source defined with dotted keys) |
 | Basic strings | ✅ | ✅ |
 | Multi-line basic strings | ✅ | — (emitted as basic) |
 | Literal strings | ✅ | ✅ (for values with `\` or `"` that a literal can hold) |

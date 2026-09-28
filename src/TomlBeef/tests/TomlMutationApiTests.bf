@@ -381,4 +381,65 @@ static class TomlMutationApiTests
 		Test.Assert(reparsed.Read(output) case .Ok);
 		Test.Assert(TomlTestSupport.TomlDocumentEquals(doc, reparsed), output);
 	}
+
+	static void AssertWritesAs(TomlDocument doc, StringView expected)
+	{
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output == expected, scope $"Expected:\n{expected}\nGot:\n{output}");
+		var reparsed = scope TomlDocument();
+		Test.Assert(reparsed.Read(output) case .Ok, output);
+		Test.Assert(TomlTestSupport.TomlDocumentEquals(doc, reparsed), output);
+	}
+
+	[Test]
+	public static void Write_DottedKeysAndImpliedHeaders()
+	{
+		// Dotted-key tables stay dotted; header-only descendants get full-path headers
+		var fruit = scope TomlDocument();
+		Test.Assert(fruit.Read("[fruit]\napple.color = \"red\"\napple.taste.sweet = true\n[fruit.apple.texture]\nsmooth = true\n[[fruit.apple.seeds]]\nn = 1\n") case .Ok);
+		AssertWritesAs(fruit, "\n[fruit]\napple.color = \"red\"\napple.taste.sweet = true\n\n[fruit.apple.texture]\nsmooth = true\n\n[[fruit.apple.seeds]]\nn = 1\n");
+
+		// Parents that only hold sub-table headers get no header of their own; an empty table keeps one
+		var headers = scope TomlDocument();
+		Test.Assert(headers.Read("[a]\n[a.b]\n[a.b.c]\nx = 1\n[empty]\n[d]\n[[d.t]]\n") case .Ok);
+		AssertWritesAs(headers, "\n[a.b.c]\nx = 1\n\n[empty]\n\n[[d.t]]\n");
+
+		// A dotted-key table emptied in code is kept as an empty inline table
+		var emptied = scope TomlDocument();
+		Test.Assert(emptied.Read("a.b.c = 1\na.d = 2\n") case .Ok);
+		Test.Assert(emptied.Remove("a.b.c"));
+		AssertWritesAs(emptied, "a.b = {}\na.d = 2\n");
+
+		// Tables made in code are written with headers as before
+		var built = scope TomlDocument();
+		built.Set("server.port", 8080);
+		AssertWritesAs(built, "\n[server]\nport = 8080\n");
+	}
+
+	[Test]
+	public static void Write_OutputStaysLinearForDeepPaths()
+	{
+		// Each of these wrote output quadratic in its input (cumulative [k], [k.k], ... headers, or the
+		// long header repeated once per dotted sub-table)
+		let deep = scope String();
+		for (int i = 0; i < 2000; i++)
+			deep.Append(i == 0 ? "k" : ".k");
+		deep.Append(" = 1\n");
+		let wide = scope String();
+		wide.Append('[');
+		wide.Append('k', 2000);
+		wide.Append("]\n");
+		for (int i = 0; i < 2000; i++)
+			wide.AppendF("x{}.v = 1\n", i);
+
+		for (let input in StringView[](deep, wide))
+		{
+			var doc = scope:: TomlDocument();
+			Test.Assert(doc.Read(input) case .Ok);
+			String output = scope:: String();
+			doc.Write(output);
+			Test.Assert(output.Length <= input.Length + 2, scope $"{input.Length} bytes wrote {output.Length}");
+		}
+	}
 }

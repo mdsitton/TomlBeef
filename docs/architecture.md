@@ -429,10 +429,25 @@ the normal path. Output is appended to the caller's `String`, and writing never 
 ### Normal mode (canonical)
 
 - Each table is written in **three phases**: (1) scalars, inline-origin tables and static arrays
-  as `key = value`; (2) other sub-tables as `[full.path]` headers, recursively; (3) arrays of
+  as `key = value`, and tables created by dotted keys (`Implicit` origin) as dotted lines
+  (`WriteLines`); (2) other sub-tables as `[full.path]` headers, recursively; (3) arrays of
   tables as `[[full.path]]` blocks. Array-of-tables output comes last so that its elements do not
   absorb the parent's keys. As a result, output can be reordered compared with the source, even
   though every table keeps insertion order.
+- **Output stays linear in the input.** Two rules keep it that way; before them, 8 KB of dotted
+  keys wrote 16 MB:
+  - Dotted-key tables are written back as dotted lines. Their `[header]` descendants still get
+    full-path headers in phase 2 (`WriteTable` with `writeLines: false`). Writing them as headers
+    would repeat the enclosing header's path once per table, so a long header followed by N dotted
+    sub-tables would cost path length × N. Only the parser creates `Implicit` tables (API tables
+    are `ExplicitHeader`), so documents built in code keep their headers. A dotted-key table emptied
+    in code is written as `a.b = {}`, so it does not disappear.
+  - A table's header is left out when it has no lines of its own and a sub-table header defines
+    it implicitly (`IsHeaderImplied`: `[a.b.c]` defines `a` and `a.b`). Otherwise a deep key writes
+    cumulative `[k]`, `[k.k]`, … headers. A table with no content and no sub-table headers keeps its
+    header.
+  - The header path is one shared buffer, appended and truncated per level, so deep documents
+    need no per-level copies.
 - An empty array of tables (non-static, `Count == 0`) has no `[[header]]` form, so it is written in
   phase 1 as `key = []`.
 - Keys are bare when every character is a bare-key character; otherwise they are written as basic

@@ -12,35 +12,17 @@ static class TomlWriterImpl
 		if (doc.PreservesStyle)
 			WritePreserving(doc, outStr, version, doc.Metadata);
 		else
-			WriteTable(doc.RootTable, "", outStr, version);
+			WriteTable(doc.RootTable, scope String(), outStr, version);
 	}
 
-	private static void WriteTable(TomlTable tbl, StringView pathPrefix, String outStr, TomlVersion version)
+	/// @param path The table's header path. Shared by the whole walk: each level appends its key and
+	/// truncates it again, so deep documents need no per-level copies.
+	/// @param writeLines False for a dotted-key table, whose lines its parent already wrote.
+	private static void WriteTable(TomlTable tbl, String path, String outStr, TomlVersion version, bool writeLines = true)
 	{
-		// Phase 1: scalar keys, inline tables, static arrays
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
-		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
-
-			if (val.IsTable)
-			{
-				TomlTable sub = val.AsTable;
-				if (sub.Origin == .InlineTable)
-					WriteKeyValLine(key, val, outStr, version);
-			}
-			else if (val.IsArray)
-			{
-				TomlArray arr = val.AsArray;
-				// An empty array of tables has no [[header]] form, so write it as `key = []`
-				if (arr.IsStatic || arr.Count == 0)
-					WriteKeyValLine(key, val, outStr, version);
-			}
-			else
-			{
-				WriteKeyValLine(key, val, outStr, version);
-			}
-		}
+		// Phase 1: scalar keys, inline tables, static arrays, and dotted-key tables as dotted lines
+		if (writeLines)
+			WriteLines(tbl, scope String(), outStr, version);
 
 		// Phase 2: non-inline, non-array-element sub-tables as [header]
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
@@ -51,20 +33,26 @@ static class TomlWriterImpl
 			if (val.IsTable)
 			{
 				TomlTable sub = val.AsTable;
-				if (sub.Origin != .ArrayElement && sub.Origin != .InlineTable)
+				if (sub.Origin == .Implicit)
 				{
-					String fullPath = scope String();
-					if (!pathPrefix.IsEmpty)
+					// Written as dotted lines in phase 1; only its [header] descendants remain
+					int pathLength = path.Length;
+					AppendPathSegment(key, path, version);
+					WriteTable(sub, path, outStr, version, false);
+					path.Length = pathLength;
+				}
+				else if (sub.Origin != .ArrayElement && sub.Origin != .InlineTable)
+				{
+					int pathLength = path.Length;
+					AppendPathSegment(key, path, version);
+					if (!IsHeaderImplied(sub))
 					{
-						fullPath.Append(pathPrefix);
-						fullPath.Append(".");
+						outStr.Append("\n[");
+						outStr.Append(path);
+						outStr.Append("]\n");
 					}
-					AppendKey(key, fullPath, version);
-
-					outStr.Append("\n[");
-					outStr.Append(fullPath);
-					outStr.Append("]\n");
-					WriteTable(sub, fullPath, outStr, version);
+					WriteTable(sub, path, outStr, version);
+					path.Length = pathLength;
 				}
 			}
 		}
@@ -79,12 +67,95 @@ static class TomlWriterImpl
 			{
 				TomlArray arr = val.AsArray;
 				if (!arr.IsStatic && arr.Count > 0)
-					EmitArrayOfTables(key, arr, pathPrefix, outStr, version);
+				{
+					int pathLength = path.Length;
+					AppendPathSegment(key, path, version);
+					EmitArrayOfTables(arr, path, outStr, version);
+					path.Length = pathLength;
+				}
 			}
 		}
 	}
 
-	private static void EmitArrayOfTables(StringView key, TomlArray arr, StringView pathPrefix, String outStr, TomlVersion version)
+	/// Phase 1 lines of `tbl`: scalars, inline tables and static arrays as `key = value`, and tables
+	/// created by dotted keys (Implicit origin, which only the parser produces) as dotted lines, as the
+	/// source wrote them. Writing those as headers instead would repeat the enclosing header's full
+	/// path once per table, output that grows with path length times table count.
+	/// @param keyPrefix The dotted key path from the enclosing header to `tbl` (empty for its own lines).
+	private static void WriteLines(TomlTable tbl, String keyPrefix, String outStr, TomlVersion version)
+	{
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			String key = tbl.KeyOrder[i];
+			TomlValue val = tbl.Entries[key].mValue;
+			switch (val)
+			{
+			case .Table(let sub):
+				if (sub.Origin == .InlineTable)
+					WritePrefixedKeyValLine(keyPrefix, key, val, outStr, version);
+				else if (sub.Origin == .Implicit)
+				{
+					int prefixLength = keyPrefix.Length;
+					AppendPathSegment(key, keyPrefix, version);
+					// A dotted-key table emptied in code still exists: keep it as `a.b = {}`
+					if (sub.Count == 0)
+						outStr..Append(keyPrefix)..Append(" = {}\n");
+					else
+						WriteLines(sub, keyPrefix, outStr, version);
+					keyPrefix.Length = prefixLength;
+				}
+			case .Array(let arr):
+				// An empty array of tables has no [[header]] form, so write it as `key = []`
+				if (arr.IsStatic || arr.Count == 0)
+					WritePrefixedKeyValLine(keyPrefix, key, val, outStr, version);
+			default:
+				WritePrefixedKeyValLine(keyPrefix, key, val, outStr, version);
+			}
+		}
+	}
+
+	private static void WritePrefixedKeyValLine(StringView keyPrefix, StringView key, TomlValue val, String outStr, TomlVersion version)
+	{
+		if (!keyPrefix.IsEmpty)
+			outStr..Append(keyPrefix)..Append('.');
+		WriteKeyValLine(key, val, outStr, version);
+	}
+
+	/// Whether a sub-table's [header] can be left out: it has no key/value lines of its own and a
+	/// header below it defines it implicitly (`[a.b.c]` or `[[a.b.c]]` defines `a` and `a.b`). Without
+	/// this, a 4000-segment dotted key writes 4000 cumulative headers, output quadratic in the input.
+	/// A table with no content and no sub-table headers keeps its header, or it would disappear.
+	private static bool IsHeaderImplied(TomlTable tbl)
+	{
+		bool hasSubHeader = false;
+		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		{
+			switch (tbl.Entries[tbl.KeyOrder[i]].mValue)
+			{
+			case .Table(let sub):
+				// Inline and dotted-key tables are written as lines under this header
+				if (sub.Origin == .InlineTable || sub.Origin == .Implicit)
+					return false;
+				hasSubHeader = true;
+			case .Array(let arr):
+				if (arr.IsStatic || arr.Count == 0)
+					return false;
+				hasSubHeader = true;
+			default:
+				return false;
+			}
+		}
+		return hasSubHeader;
+	}
+
+	private static void AppendPathSegment(StringView key, String path, TomlVersion version)
+	{
+		if (!path.IsEmpty)
+			path.Append('.');
+		AppendKey(key, path, version);
+	}
+
+	private static void EmitArrayOfTables(TomlArray arr, String path, String outStr, TomlVersion version)
 	{
 		for (int i = 0; i < arr.Count; i++)
 		{
@@ -92,21 +163,11 @@ static class TomlWriterImpl
 			if (!elem.IsTable)
 				continue;
 
-			TomlTable sub = elem.AsTable;
-
-			String fullPath = scope String();
-			if (!pathPrefix.IsEmpty)
-			{
-				fullPath.Append(pathPrefix);
-				fullPath.Append(".");
-			}
-			AppendKey(key, fullPath, version);
-
 			outStr.Append("\n[[");
-			outStr.Append(fullPath);
+			outStr.Append(path);
 			outStr.Append("]]\n");
 
-			WriteTable(sub, fullPath, outStr, version);
+			WriteTable(elem.AsTable, path, outStr, version);
 		}
 	}
 
