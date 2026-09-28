@@ -408,7 +408,10 @@ the normal path. Output is appended to the caller's `String`, and writing never 
 
 ### PreserveStyle mode
 
-The metadata is a **sidecar**, so normal mode pays nothing for it. `TomlDocumentMetadata` holds:
+The metadata is a **sidecar**, so normal mode pays nothing for it. It is entirely `internal`: callers
+see only `doc.PreservesStyle` and the comment/style/source-range methods, whose public types are
+`TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange`. Tests reach the
+sidecar through `using internal TomlBeef;`. `TomlDocumentMetadata` holds:
 
 - `TomlNodeStyle` records indexed by `TomlNodeId`. Each has a source range (start line, column and
   offset of the key, header `[`, or array element, and the length through the value or header;

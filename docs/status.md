@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 254/254 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 254/254 pass |
+| `beefbuild -test` (Debug checks) | 256/256 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 256/256 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -31,7 +31,8 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Encoding | `TomlTester -from-json` builds documents from toml-test tagged JSON through the public API; passes the upstream encoder suite for both versions |
 | Input paths | `Read(StringView)`, `ReadBytes`, `Read(Stream)`, `ReadFile`, all decoding identically |
 | Read modes | `Replace` and deep `Merge` (`Error`/`Skip`/`Overwrite` on conflicting leaves), transactional on failure; PreserveStyle metadata is kept and carried across merges |
-| Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
+| Ownership model | Document-owned arena; non-owning `TomlValue`; `Set`/`Add` (taking `TomlInputValue`) and typed getters are the public API |
+| Public surface | Metadata sidecar, parser, cursors and path resolver are `internal`. PreserveStyle is reached only through `doc.PreservesStyle` and the comment/style/source-range methods, with `TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange` as the public types |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
 | Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base, and to query source positions |
@@ -59,7 +60,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
 | I3 | *Deferred (2026-09-27).* No streaming writer: `WriteFile` builds the whole output `String` first. A `Write(Stream)` that also builds a full string adds nothing, so this is only worth doing as a real chunked output sink (every writer helper takes an output object instead of `String`; tail checks read a kept tail). Revisit if large outputs matter | M–L |
-| A8 | *API decision.* `doc.Metadata` is public, which makes the whole sidecar's types public (`TomlDocumentMetadata`, `TomlNodeStyle`, node/style refs, format structs). The supported surface is now the comment/style/source-range methods plus `TomlStringStyle`, `TomlIntegerBase`, `TomlSourceRange`, `TomlMetadataMode`; the rest could become internal (tests use `using internal`) | S |
 | I4 | *Optional.* Parse throughput (~59 MB/s bytes, ~51 MB/s stream; `TomlTester -bench`) is limited by the parser handling one byte per call. Cursor methods that scan runs (whitespace, comments, bare keys, escape-free string text) directly over the buffer would speed up both paths; it touches the parser's hottest loops | M |
 
 ### API surface

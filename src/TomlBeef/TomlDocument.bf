@@ -92,12 +92,15 @@ public class TomlDocument
 	/// because containers the caller removed earlier stay alive in the arena and may still reference it.
 	private TomlDocumentMetadata mMetadata ~ delete _;
 
-	/// @brief The document's root table (read-only). Use typed setters (SetString, SetInteger, etc.)
-	/// or document-level methods (AddTable, AddArray) to modify content.
+	/// @brief The document's root table (read-only). Use Set, AddTable and AddArray to modify content.
 	public TomlTable RootTable => mRootTable;
 
+	/// @brief True when the document carries style metadata (it was last read with
+	/// MetadataMode = PreserveStyle). Comment and style setters only work in this mode.
+	public bool PreservesStyle => mMetadata != null;
+
 	/// @brief Style metadata sidecar, or null if MetadataMode is None.
-	public TomlDocumentMetadata Metadata => mMetadata;
+	internal TomlDocumentMetadata Metadata => mMetadata;
 
 	/// @brief Remove all content from this document.
 	public void Clear()
@@ -122,6 +125,54 @@ public class TomlDocument
 	{
 		mStore = new TomlDocumentStore();
 		mRootTable = mStore.RootTable;
+	}
+
+	/// @brief Parse a TOML string into a new document with the default configuration.
+	/// @param input The TOML text to parse. Must be valid UTF-8.
+	/// @return A new document the caller owns (delete it), or the parse error.
+	public static Result<TomlDocument, TomlParseError> Parse(StringView input)
+	{
+		return Parse(input, .());
+	}
+
+	/// @brief Parse a TOML string into a new document.
+	/// @param input The TOML text to parse. Must be valid UTF-8.
+	/// @param config Read options. Also stored as the new document's ReadConfig.
+	/// @return A new document the caller owns (delete it), or the parse error.
+	public static Result<TomlDocument, TomlParseError> Parse(StringView input, TomlReadConfig config)
+	{
+		let doc = new TomlDocument();
+		doc.ReadConfig = config;
+		if (doc.Read(input, config) case .Err(let err))
+		{
+			delete doc;
+			return .Err(err);
+		}
+		return doc;
+	}
+
+	/// @brief Parse a TOML file into a new document with the default configuration.
+	/// @param path File path to read from.
+	/// @return A new document the caller owns (delete it), or the file or parse error.
+	public static Result<TomlDocument, TomlParseError> ParseFile(StringView path)
+	{
+		return ParseFile(path, .());
+	}
+
+	/// @brief Parse a TOML file into a new document.
+	/// @param path File path to read from.
+	/// @param config Read options. Also stored as the new document's ReadConfig.
+	/// @return A new document the caller owns (delete it), or the file or parse error.
+	public static Result<TomlDocument, TomlParseError> ParseFile(StringView path, TomlReadConfig config)
+	{
+		let doc = new TomlDocument();
+		doc.ReadConfig = config;
+		if (doc.ReadFile(path, config) case .Err(let err))
+		{
+			delete doc;
+			return .Err(err);
+		}
+		return doc;
 	}
 
 	/// @brief Parse a TOML string into this document using this document's ReadConfig.
@@ -822,6 +873,42 @@ public class TomlDocument
 			return true;
 		value = default;
 		return false;
+	}
+
+	/// @brief Get a String at a dotted path, or a fallback when it is missing or not a String.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param defaultValue Returned when the path is missing or holds another type.
+	/// @return The stored string (borrowed from this document) or defaultValue.
+	public StringView GetString(StringView dottedPath, StringView defaultValue)
+	{
+		return TryGetString(dottedPath, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get an Integer at a dotted path, or a fallback when it is missing or not an Integer.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param defaultValue Returned when the path is missing or holds another type.
+	/// @return The stored integer or defaultValue.
+	public int64 GetInteger(StringView dottedPath, int64 defaultValue)
+	{
+		return TryGetInteger(dottedPath, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get a Float at a dotted path, or a fallback when it is missing or not a Float.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param defaultValue Returned when the path is missing or holds another type.
+	/// @return The stored float or defaultValue.
+	public double GetFloat(StringView dottedPath, double defaultValue)
+	{
+		return TryGetFloat(dottedPath, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get a Bool at a dotted path, or a fallback when it is missing or not a Bool.
+	/// @param dottedPath The dotted path to traverse.
+	/// @param defaultValue Returned when the path is missing or holds another type.
+	/// @return The stored bool or defaultValue.
+	public bool GetBool(StringView dottedPath, bool defaultValue)
+	{
+		return TryGetBool(dottedPath, let value) ? value : defaultValue;
 	}
 
 	/// @brief Parse a TOML file into this document. Convenience wrapper around Read().

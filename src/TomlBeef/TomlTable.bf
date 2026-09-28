@@ -437,6 +437,42 @@ public class TomlTable
 		return false;
 	}
 
+	/// @brief Get a String value for a key, or a fallback when it is missing or not a String.
+	/// @param key The key to look up.
+	/// @param defaultValue Returned when the key is missing or holds another type.
+	/// @return The stored string (borrowed from the document) or defaultValue.
+	public StringView GetString(StringView key, StringView defaultValue)
+	{
+		return TryGetString(key, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get an Integer value for a key, or a fallback when it is missing or not an Integer.
+	/// @param key The key to look up.
+	/// @param defaultValue Returned when the key is missing or holds another type.
+	/// @return The stored integer or defaultValue.
+	public int64 GetInteger(StringView key, int64 defaultValue)
+	{
+		return TryGetInteger(key, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get a Float value for a key, or a fallback when it is missing or not a Float.
+	/// @param key The key to look up.
+	/// @param defaultValue Returned when the key is missing or holds another type.
+	/// @return The stored float or defaultValue.
+	public double GetFloat(StringView key, double defaultValue)
+	{
+		return TryGetFloat(key, let value) ? value : defaultValue;
+	}
+
+	/// @brief Get a Bool value for a key, or a fallback when it is missing or not a Bool.
+	/// @param key The key to look up.
+	/// @param defaultValue Returned when the key is missing or holds another type.
+	/// @return The stored bool or defaultValue.
+	public bool GetBool(StringView key, bool defaultValue)
+	{
+		return TryGetBool(key, let value) ? value : defaultValue;
+	}
+
 	/// @brief Remove all entries from this table. Removed payloads stay allocated in the document store until the document is cleared or destroyed.
 	public void Clear()
 	{

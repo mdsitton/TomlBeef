@@ -90,7 +90,7 @@ public static class TomlTestSupport
 
 	/// Node ID of the value at `dottedPath` (split on the last '.'), looked up by key through the
 	/// parent table's metadata context rather than by allocation order.
-	public static TomlNodeId NodeIdFor(TomlDocument doc, StringView dottedPath)
+	internal static TomlNodeId NodeIdFor(TomlDocument doc, StringView dottedPath)
 	{
 		TomlTable parent = doc.RootTable;
 		StringView key = dottedPath;
@@ -108,19 +108,19 @@ public static class TomlTestSupport
 	}
 
 	/// Style record for the value at `dottedPath`.
-	public static TomlNodeStyle* StyleFor(TomlDocument doc, StringView dottedPath)
+	internal static TomlNodeStyle* StyleFor(TomlDocument doc, StringView dottedPath)
 	{
 		return doc.Metadata.GetNodeStyle(NodeIdFor(doc, dottedPath));
 	}
 
 	/// Comment set attached to the value at `dottedPath`, or null if it has none.
-	public static TomlCommentSet CommentsFor(TomlDocument doc, StringView dottedPath)
+	internal static TomlCommentSet CommentsFor(TomlDocument doc, StringView dottedPath)
 	{
 		return doc.Metadata.GetCommentSet(NodeIdFor(doc, dottedPath));
 	}
 
 	/// Captured value format for the value at `dottedPath`.
-	public static TomlValueFormat ValueFormatFor(TomlDocument doc, StringView dottedPath)
+	internal static TomlValueFormat ValueFormatFor(TomlDocument doc, StringView dottedPath)
 	{
 		let formatRef = StyleFor(doc, dottedPath).mValueFormatRef;
 		Test.Assert(formatRef.IsValid, scope $"No value format captured for '{dottedPath}'");
@@ -128,7 +128,7 @@ public static class TomlTestSupport
 	}
 
 	/// Captured key format for the value at `dottedPath`.
-	public static TomlKeyFormat KeyFormatFor(TomlDocument doc, StringView dottedPath)
+	internal static TomlKeyFormat KeyFormatFor(TomlDocument doc, StringView dottedPath)
 	{
 		let formatRef = StyleFor(doc, dottedPath).mKeyFormatRef;
 		Test.Assert(formatRef.IsValid, scope $"No key format captured for '{dottedPath}'");

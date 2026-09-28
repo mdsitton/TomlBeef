@@ -1,8 +1,9 @@
 using System;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
-interface ITomlCursor
+internal interface ITomlCursor
 {
 	int Offset { get; }
 	int Line { get; }
@@ -28,12 +29,12 @@ interface ITomlCursor
 	void ReleaseMark(TomlCursorMark mark) mut;
 }
 
-struct TomlCursorMark
+internal struct TomlCursorMark
 {
 	public int mOffset;
 }
 
-struct TomlByteCursor : ITomlCursor
+internal struct TomlByteCursor : ITomlCursor
 {
 	private Span<uint8> mData;
 	private int mOffset;

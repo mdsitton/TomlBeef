@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -15,7 +16,7 @@ public enum TomlMetadataMode : uint8
 
 /// @brief Flags indicating which aspects of a node have been modified since parsing.
 [AllowDuplicates]
-public enum TomlDirtyFlags : uint8
+internal enum TomlDirtyFlags : uint8
 {
 	None = 0,
 	/// @brief The node's semantic scalar value changed. Do not reuse original token.
@@ -28,7 +29,7 @@ public enum TomlDirtyFlags : uint8
 
 /// @brief Identifies a style-preserved semantic slot in the metadata sidecar.
 /// Used as an index into the metadata's node-style, comment, and token lists.
-public struct TomlNodeId
+internal struct TomlNodeId
 {
 	public int mIndex;
 
@@ -49,7 +50,7 @@ public struct TomlNodeId
 }
 
 /// @brief Reference to an owned original token copy stored in TomlDocumentMetadata.mOriginalTokens.
-public struct TomlOriginalTokenRef
+internal struct TomlOriginalTokenRef
 {
 	public int mIndex;
 
@@ -70,7 +71,7 @@ public struct TomlOriginalTokenRef
 }
 
 /// @brief Reference to a sparse style record stored in TomlDocumentMetadata style pools.
-public struct TomlStyleRef
+internal struct TomlStyleRef
 {
 	public int mIndex;
 
@@ -109,7 +110,7 @@ public struct TomlSourceRange
 
 /// @brief Style metadata for a single node in the document tree.
 /// Stored in TomlDocumentMetadata.mNodeStyles, indexed by TomlNodeId.
-public struct TomlNodeStyle
+internal struct TomlNodeStyle
 {
 	public TomlNodeId mNodeId;
 
@@ -138,7 +139,7 @@ public struct TomlNodeStyle
 }
 
 /// @brief Owned set of comments associated with a node.
-public class TomlCommentSet
+internal class TomlCommentSet
 {
 	/// Comments appearing on lines before the node, without the '#'. A null entry is a blank line
 	/// inside or after the comment block (e.g. a comment separated from the node by a blank line).
@@ -160,7 +161,7 @@ public class TomlCommentSet
 // ================================================================
 
 /// @brief Newline style detected or configured for a document.
-public enum TomlNewlineStyle : uint8
+internal enum TomlNewlineStyle : uint8
 {
 	LF,
 	CRLF
@@ -168,7 +169,7 @@ public enum TomlNewlineStyle : uint8
 
 /// @brief Broad fallback style choices for newly generated content.
 /// Inferred during parsing; used when a node has no more-specific style metadata.
-public struct TomlDocumentStyle
+internal struct TomlDocumentStyle
 {
 	public TomlNewlineStyle mNewlineStyle = .LF;
 	public uint8 mIndentSize = 4;
@@ -192,7 +193,7 @@ public enum TomlStringStyle : uint8
 }
 
 /// @brief Format metadata for a string value, used to regenerate changed strings.
-public struct TomlStringFormat
+internal struct TomlStringFormat
 {
 	public TomlStringStyle mStyle = .Basic;
 	/// Hint: the original multiline string started with a newline after the opening quotes.
@@ -217,7 +218,7 @@ public enum TomlIntegerBase : uint8
 }
 
 /// @brief Format metadata for an integer value.
-public struct TomlIntegerFormat
+internal struct TomlIntegerFormat
 {
 	public TomlIntegerBase mBase = .Decimal;
 	/// Whether hex digits used uppercase (0xDEAD vs 0xdead).
@@ -231,7 +232,7 @@ public struct TomlIntegerFormat
 }
 
 /// @brief Float presentation style.
-public enum TomlFloatStyle : uint8
+internal enum TomlFloatStyle : uint8
 {
 	/// Standard decimal notation (1.0, 3.14).
 	Decimal,
@@ -242,7 +243,7 @@ public enum TomlFloatStyle : uint8
 }
 
 /// @brief Sign style for special float values (inf, nan).
-public enum TomlFloatSpecialSign : uint8
+internal enum TomlFloatSpecialSign : uint8
 {
 	/// No sign prefix (inf, nan).
 	None,
@@ -253,7 +254,7 @@ public enum TomlFloatSpecialSign : uint8
 }
 
 /// @brief Format metadata for a float value.
-public struct TomlFloatFormat
+internal struct TomlFloatFormat
 {
 	public TomlFloatStyle mStyle = .Decimal;
 	/// Whether exponent marker was uppercase (E vs e).
@@ -279,7 +280,7 @@ public struct TomlFloatFormat
 // ================================================================
 
 /// @brief Format metadata for a date-time value.
-public struct TomlDateTimeFormat
+internal struct TomlDateTimeFormat
 {
 	/// Whether seconds were present (some times omit seconds).
 	public bool mHasSeconds = false;
@@ -300,7 +301,7 @@ public struct TomlDateTimeFormat
 // ================================================================
 
 /// @brief TOML key presentation style.
-public enum TomlKeyStyle : uint8
+internal enum TomlKeyStyle : uint8
 {
 	/// Unquoted key (server, port).
 	Bare,
@@ -313,7 +314,7 @@ public enum TomlKeyStyle : uint8
 }
 
 /// @brief Format metadata for a key or key path.
-public struct TomlKeyFormat
+internal struct TomlKeyFormat
 {
 	public TomlKeyStyle mStyle = .Bare;
 	/// Whether to prefer dotted path syntax for new entries in this context.
@@ -325,7 +326,7 @@ public struct TomlKeyFormat
 // ================================================================
 
 /// @brief Container presentation style.
-public enum TomlContainerStyle : uint8
+internal enum TomlContainerStyle : uint8
 {
 	/// Single-line container (["a", "b"]).
 	Inline,
@@ -334,7 +335,7 @@ public enum TomlContainerStyle : uint8
 }
 
 /// @brief Format metadata for an array value.
-public struct TomlArrayFormat
+internal struct TomlArrayFormat
 {
 	public TomlContainerStyle mStyle = .Inline;
 	/// Whether a trailing comma was present after the last element.
@@ -344,7 +345,7 @@ public struct TomlArrayFormat
 }
 
 /// @brief Format metadata for a table value.
-public struct TomlTableFormat
+internal struct TomlTableFormat
 {
 	/// Whether the table was written as an inline table ({ key = value }).
 	public bool mInline = false;
@@ -371,7 +372,7 @@ public struct TomlTableFormat
 // ================================================================
 
 /// @brief Union of all possible value format types. Stored in sparse style pools.
-public enum TomlValueFormat
+internal enum TomlValueFormat
 {
 	case None;
 	case String(TomlStringFormat format);
@@ -502,7 +503,7 @@ internal class TomlContainerMetadataContext
 
 /// @brief Optional metadata sidecar attached to a TomlDocument when PreserveStyle mode is enabled.
 /// Owns all style records, comment strings, and original token copies.
-public class TomlDocumentMetadata
+internal class TomlDocumentMetadata
 {
 	internal TomlMetadataMode mMode;
 

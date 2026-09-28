@@ -304,7 +304,7 @@ static class TomlReadTests
 			defer readErr.Dispose();
 			Test.Assert(false, scope $"Parse failed: {readErr.mMessage}");
 		}
-		Test.Assert(doc.Metadata != null, "ReadConfig applies to Read(input)");
+		Test.Assert(doc.PreservesStyle, "ReadConfig applies to Read(input)");
 
 		// A 1.1-only escape is rejected under the document's 1.0 read config
 		var strict = scope TomlDocument();
@@ -477,5 +477,75 @@ static class TomlReadTests
 		AssertErrorAt("[t]\nk = 1\n[t]\n", .DuplicateTable, 3, 1, 10);
 		AssertErrorAt("a = { b = 1 }\na.c = 2", .InlineTableSealed, 2, 1, 14);
 		AssertErrorAt("x.y = 1\n  x = 2", .DuplicateKey, 2, 3, 10);
+	}
+
+	[Test]
+	public static void Parse_FactoriesReturnOwnedDocumentOrError()
+	{
+		switch (TomlDocument.Parse("[server]\nport = 8080", .() { MetadataMode = .PreserveStyle }))
+		{
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		case .Ok(let doc):
+			defer delete doc;
+			Test.Assert(doc.GetInteger("server.port", 0) == 8080);
+			Test.Assert(doc.PreservesStyle, "config is applied");
+			Test.Assert(doc.ReadConfig.MetadataMode == .PreserveStyle, "config is kept as ReadConfig");
+		}
+
+		switch (TomlDocument.Parse("a = 1\na = 2"))
+		{
+		case .Ok(let doc):
+			delete doc;
+			Test.Assert(false, "expected DuplicateKey");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .DuplicateKey);
+		}
+
+		switch (TomlDocument.ParseFile("tests/valid/bool/bool.toml"))
+		{
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(false, scope $"ParseFile failed: {e.mMessage}");
+		case .Ok(let doc):
+			defer delete doc;
+			Test.Assert(doc.GetBool("t", false) && !doc.GetBool("f", true));
+		}
+
+		switch (TomlDocument.ParseFile("tests/does-not-exist.toml"))
+		{
+		case .Ok(let doc):
+			delete doc;
+			Test.Assert(false, "expected IoError");
+		case .Err(let e):
+			defer e.Dispose();
+			Test.Assert(e.mKind == .IoError);
+		}
+	}
+
+	[Test]
+	public static void GetWithDefault_FallsBackOnMissingOrMismatchedType()
+	{
+		var doc = scope TomlDocument();
+		Test.Assert(doc.Read("name = \"app\"\nratio = 0.5\n[server]\nport = 8080\ntls = true") case .Ok);
+
+		Test.Assert(doc.GetString("name", "none") == "app");
+		Test.Assert(doc.GetString("missing", "none") == "none");
+		Test.Assert(doc.GetString("server.port", "none") == "none", "type mismatch falls back");
+		Test.Assert(doc.GetInteger("server.port", 80) == 8080);
+		Test.Assert(doc.GetInteger("server.missing", 80) == 80);
+		Test.Assert(doc.GetInteger("nosuch.port", 80) == 80, "missing parent falls back");
+		Test.Assert(doc.GetFloat("ratio", 1.0) == 0.5);
+		Test.Assert(doc.GetFloat("server.port", 1.0) == 1.0, "integers are not widened");
+		Test.Assert(doc.GetBool("server.tls", false));
+
+		Test.Assert(doc.TryGetTable("server", let server));
+		Test.Assert(server.GetInteger("port", 80) == 8080);
+		Test.Assert(server.GetInteger("missing", 80) == 80);
+		Test.Assert(server.GetBool("tls", false));
+		Test.Assert(server.GetString("host", "localhost") == "localhost");
+		Test.Assert(server.GetFloat("port", 2.5) == 2.5);
 	}
 }

@@ -5,7 +5,7 @@ using internal TomlBeef;
 namespace TomlBeef;
 
 /// Recursive descent parser for TOML v1.1.0.
-class TomlParserImpl<TCursor> where TCursor : ITomlCursor
+internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 {
 	private TCursor mCursor;
 	private TomlPathResolver mPathResolver;

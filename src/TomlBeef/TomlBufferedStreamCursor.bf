@@ -1,9 +1,10 @@
 using System;
 using System.IO;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
-class TomlStreamState
+internal class TomlStreamState
 {
 	public bool mError;
 	public bool mUtf8Error;
@@ -30,7 +31,7 @@ class TomlStreamState
 	public bool mBytesExceeded = false;
 }
 
-struct TomlBufferedStreamCursor : ITomlCursor
+internal struct TomlBufferedStreamCursor : ITomlCursor
 {
 	private Stream mStream;
 	private uint8[] mBuffer;
