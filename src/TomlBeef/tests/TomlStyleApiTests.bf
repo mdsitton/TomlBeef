@@ -333,6 +333,11 @@ static class TomlStyleApiTests
 		TomlSourceRange range;
 		Test.Assert(doc.TryGetSourceRange("a", out range) && range.mLine == 1, "Earlier positions survive the upgrade");
 
+		// A rejected merge (conflicting leaf) leaves the document, including its mode, unchanged
+		let rejected = ReadWithMode(scope .(), "a = 1\n", .Positions);
+		Test.Assert(rejected.Read("# x\na = 2\n", .() { Mode = .Merge, MetadataMode = .PreserveStyle }) case .Err);
+		Test.Assert(!rejected.PreservesStyle && rejected.HasSourcePositions);
+
 		// A lesser mode never downgrades a sidecar
 		let preserving = ReadPreserving(scope .(), "a = 1\n");
 		Test.Assert(preserving.Read("b = 2\n", .() { Mode = .Merge, MetadataMode = .Positions }) case .Ok);

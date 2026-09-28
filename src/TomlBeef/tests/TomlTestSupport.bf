@@ -58,7 +58,7 @@ public static class TomlTestSupport
 		{
 			String key = a.KeyOrder[i];
 			if (!b.ContainsKey(key)) return false;
-			if (!TomlValueEquals(a.Entries[key], b.Entries[key])) return false;
+			if (!TomlValueEquals(a.Entries[key].mValue, b.Entries[key].mValue)) return false;
 		}
 		return true;
 	}
@@ -101,8 +101,7 @@ public static class TomlTestSupport
 			key = dottedPath.Substring(lastDot + 1);
 		}
 		TomlNodeId nodeId = .Invalid;
-		if (parent.MetadataContext != null)
-			parent.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+		parent.TryGetEntryNodeId(key, out nodeId);
 		Test.Assert(nodeId.IsValid, scope $"No metadata node ID for '{dottedPath}'");
 		return nodeId;
 	}

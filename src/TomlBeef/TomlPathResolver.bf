@@ -254,7 +254,8 @@ internal class TomlPathResolver
 					if (!ctx.mNodeId.IsValid)
 						ctx.mNodeId = mMetadata.AllocateNodeId();
 					*outNodeId = ctx.mNodeId;
-					EnsureTableContext(mCurrentTable).SetEntryNodeId(mCurrentTable.GetOwnedKey(key), ctx.mNodeId);
+					EnsureTableContext(mCurrentTable);
+					mCurrentTable.SetEntryNodeId(key, ctx.mNodeId);
 				}
 				mCurrentTable = existingTable;
 				return .Ok;

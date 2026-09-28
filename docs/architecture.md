@@ -214,8 +214,8 @@ containing `]` cannot be reached with a path string. Use `GetPath(segments...)` 
   - The library never builds an error it then discards, apart from the stream paths that replace
     a secondary parse error with the cursor's own cause, so an error seen by the caller is always
     the most recent one on its thread.
-- PreserveStyle metadata (`TomlDocumentMetadata`, per-container `TomlContainerMetadataContext`)
-  lives on the normal heap, not in the arena. The document owns it and deletes it on `Clear`, on
+- Positions/PreserveStyle metadata (`TomlDocumentMetadata`, per-container
+  `TomlContainerMetadataContext`) lives on the normal heap, not in the arena. The document owns it and deletes it on `Clear`, on
   Replace, and after a non-empty merge.
 
 ## 5. Parsing pipeline
@@ -431,18 +431,24 @@ document style, so style code keeps its plain null checks and Positions skips th
 slices too. The writer's preserving path and the comment/style setters require `CapturesStyle`;
 `TryGetSourceRange` accepts any sidecar. A sidecar's mode only upgrades (`Upgrade`): reading or
 merging with a more capable mode raises it, a lesser one never lowers it.
-  - *Cost:* on a 5 MB synthetic file (`TomlTester -bench`), None reads at ~46 MB/s, Positions ~35,
-    PreserveStyle ~28. Most of the metadata cost is the shared node machinery (a context with a
-    key → node ID dictionary per table, one `TomlNodeStyle` per node), not comments or tokens.
-    Contexts borrow the table's own store-owned key strings instead of copying each key.
+  - *Cost:* on a 5 MB synthetic file (`TomlTester -bench`, one Release run) a plain read takes
+    ~109 ms / 81 MB peak RSS, Positions ~121 ms / 96 MB, PreserveStyle ~156 ms / 121 MB. Node
+    storage is laid out for this (below): the node ID lives in the table's entry slot, ranges are a
+    compact array, and style records exist only in PreserveStyle. Before that layout the shared
+    per-node machinery dominated both modes (Positions ~140 ms / 146 MB).
 
 `TomlDocumentMetadata` holds:
 
-- `TomlNodeStyle` records indexed by `TomlNodeId`. Each has a source range (start line, column and
-  offset of the key, header `[`, or array element, and the length through the value or header;
-  exposed through `TryGetSourceRange`/`TryGetHeaderSourceRange`, and left unset for values added or
-  merged in code), an original-token
-  reference, dirty flags, and key-format and value-format references.
+- Source ranges (`mRanges`, `TomlPackedRange`: 32-bit line, column, offset, length) indexed by
+  `TomlNodeId`, one per allocated node in every mode: the start of the key, header `[`, or array
+  element, and the length through the value or header. Exposed through
+  `TryGetSourceRange`/`TryGetHeaderSourceRange`, and left unset for values added or merged in code.
+- `TomlNodeStyle` records, also indexed by `TomlNodeId`, only while capturing style: an
+  original-token reference, dirty flags, and key-format and value-format references (16 bytes).
+  `GetNodeStyle` returns null without style capture; after an upgrade from Positions it creates the
+  missing records for earlier nodes on first access. A document merged from a PreserveStyle read is
+  upgraded *before* the merge so the copied styles have records to land in (and restored if the
+  merge is rejected).
 - Owned copies of original string tokens (`mOriginalTokens`). **Source spans are never used to
   recover text**, because the input buffer or stream is gone after the parse.
 - Pools of key formats and value formats. `TomlValueFormat` is a union of the string, integer,
@@ -462,17 +468,23 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   the source did. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
   headers into dotted keys: one dotted key anywhere would otherwise restyle every new table.
 
-Node identity is stored **beside the slots, not in `TomlValue`**. Each table and array has a
-`TomlContainerMetadataContext` (only in PreserveStyle) that maps entry key or item index to a
-`TomlNodeId` and holds the container's own node ID. This keeps `TomlValue` small and lets style
-follow the slot or path. New entries inserted after the parse get node IDs automatically, and
-`Rename` moves the ID to the new key. The root table's context is attached before parsing, so every
+Node identity is stored **beside the values, not in `TomlValue`**. A table's entries are
+`TomlTableSlot`s (value plus `TomlNodeId`), so one hash lookup finds both, and removal, `Rename`
+and `Clear` carry the ID with the entry; an array keeps its elements' IDs in a list. Each table and
+array with metadata also has a small `TomlContainerMetadataContext` holding the sidecar and the
+container's own node ID. This keeps `TomlValue` small and lets style follow the slot or path. New
+entries inserted after the parse get node IDs automatically.
+  - *Layout:* `TomlNodeId` and the metadata references are 32-bit, and `mNanosecond` in the
+    date/time structs is `int32` (0–999,999,999), which keeps `TomlOffsetDateTime` (the largest
+    `TomlValue` payload) at 32 bytes, `TomlValue` at 40 and a `TomlTableSlot` at 48: the node ID
+    fits in the value's alignment padding, so documents without metadata pay nothing for it.
+    `Layout_ValueAndTableSlotStayCompact` guards these sizes. The root table's context is attached before parsing, so every
 table created during the parse (including intermediate tables of dotted keys) inherits one. A
 `[header]` table is a single node: the parent's entry ID and the table's own context ID are the same
-(the resolver registers it before inserting). Inline tables get their context as soon as the parser opens
+(the resolver passes the ID to `Insert`). Inline tables get their context as soon as the parser opens
 them, so every field (including dotted sub-tables inside the braces) is captured like a top-level
 key/value (`CaptureValueMetadata`). `TomlTable.Clear()` keeps the table's own context (node ID,
-header comments) and only drops the entry mappings. The root table is not an entry of anything, so
+header comments); the entries' IDs go with the entries. The root table is not an entry of anything, so
 its dirty flags live in `TomlDocumentMetadata.mRootDirtyFlags`, next to `mRootComments`.
 
 The sidecar is only deleted together with a store reset (`Clear`, Replace, destruction). Tables the

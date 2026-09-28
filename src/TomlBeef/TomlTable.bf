@@ -4,6 +4,20 @@ using internal TomlBeef;
 
 namespace TomlBeef;
 
+/// A table entry: its value and, with Positions/PreserveStyle metadata, its node ID. Keeping the ID with
+/// the value means one hash lookup finds both, and removal, renaming and clearing carry it along.
+internal struct TomlTableSlot
+{
+	public TomlValue mValue;
+	public TomlNodeId mNodeId;
+
+	public this(TomlValue value, TomlNodeId nodeId)
+	{
+		mValue = value;
+		mNodeId = nodeId;
+	}
+}
+
 /// A TOML table: an ordered map from key to TomlValue, with metadata for conflict detection.
 public class TomlTable
 {
@@ -11,7 +25,7 @@ public class TomlTable
 	private bool mIsInlineSealed;
 	/// @brief Set by parser after detecting a trailing comma before the closing brace.
 	internal bool mHasTrailingComma;
-	private Dictionary<String, TomlValue> mEntries;
+	private Dictionary<String, TomlTableSlot> mEntries;
 	private List<String> mKeyOrder;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
@@ -38,7 +52,7 @@ public class TomlTable
 	{
 		mOrigin = origin;
 		mIsInlineSealed = false;
-		mEntries = new Dictionary<String, TomlValue>();
+		mEntries = new Dictionary<String, TomlTableSlot>();
 		mKeyOrder = new List<String>();
 		mMetadataContext = null;
 		mSuppressAutoDirty = suppressAutoDirty;
@@ -66,7 +80,7 @@ public class TomlTable
 	public int Count => mEntries.Count;
 
 	/// @brief Read-only access to entries. Modifying this directly desyncs ordering and dirty tracking.
-	internal Dictionary<String, TomlValue> Entries => mEntries;
+	internal Dictionary<String, TomlTableSlot> Entries => mEntries;
 
 	/// @brief Read-only access to key ordering. Modifying this directly desyncs the table state.
 	internal List<String> KeyOrder => mKeyOrder;
@@ -84,7 +98,7 @@ public class TomlTable
 	/// @return The entry value.
 	public TomlValue GetValueAt(int index)
 	{
-		return mEntries[mKeyOrder[index]];
+		return mEntries[mKeyOrder[index]].mValue;
 	}
 
 	/// @brief Get an entry proxy at the given index for typed access, safe assignment, and mutations.
@@ -116,52 +130,70 @@ public class TomlTable
 	/// @return True if the key exists.
 	public bool TryGetValue(StringView key, out TomlValue value)
 	{
-		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
+		if (mEntries != null && mEntries.TryGetValueAlt(key, let slot))
 		{
-			value = val;
+			value = slot.mValue;
 			return true;
 		}
 		value = default;
 		return false;
 	}
 
-	/// The table's own key string for `key` (store-owned, stable until the document is cleared), or null.
-	internal String GetOwnedKey(StringView key)
+	/// The metadata node ID of the entry for `key`.
+	/// @return False if the key is missing or the entry has no node ID.
+	internal bool TryGetEntryNodeId(StringView key, out TomlNodeId nodeId)
 	{
-		return mEntries.TryGetAlt(key, let ownedKey, let _) ? ownedKey : null;
+		if (mEntries.TryGetValueAlt(key, let slot) && slot.mNodeId.IsValid)
+		{
+			nodeId = slot.mNodeId;
+			return true;
+		}
+		nodeId = .Invalid;
+		return false;
+	}
+
+	/// The metadata node ID of the entry at `index` (Invalid if it has none).
+	internal TomlNodeId GetEntryNodeIdAt(int index)
+	{
+		return mEntries[mKeyOrder[index]].mNodeId;
+	}
+
+	/// Sets the metadata node ID of the existing entry for `key`.
+	internal void SetEntryNodeId(StringView key, TomlNodeId nodeId)
+	{
+		if (mEntries.TryGetRefAlt(key, let _, let slot))
+			slot.mNodeId = nodeId;
 	}
 
 	/// Insert or replace an entry. A new entry gets `presetNodeId` as its metadata node ID when valid (the
 	/// parser allocates IDs up front); otherwise one is allocated and the table is marked Children-dirty.
 	internal void Insert(StringView key, TomlValue value, TomlNodeId presetNodeId = .Invalid)
 	{
-		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
+		if (mEntries.TryGetRefAlt(key, let _, let existing))
 		{
-			if (existingVal.IsSemanticallyEqualTo(value))
+			if (existing.mValue.IsSemanticallyEqualTo(value))
 				return;
-			mEntries[existingKey] = value;
+			existing.mValue = value;
 			MarkEntryDirty(key);
 			BindContainerMetadata(value);
 			return;
 		}
 
-		String ownedKey = mStore.NewString(key);
-		mEntries[ownedKey] = value;
-		mKeyOrder.Add(ownedKey);
-
 		// Node-ID registration for new entries when a metadata context exists. Parser-inserted entries
 		// arrive with their ID; only genuinely new entries allocate one and mark the table dirty.
-		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
+		bool hasMetadata = mMetadataContext != null && mMetadataContext.mMetadata != null;
+		TomlNodeId nodeId = .Invalid;
+		if (hasMetadata)
+			nodeId = presetNodeId.IsValid ? presetNodeId : mMetadataContext.mMetadata.AllocateNodeId();
+
+		String ownedKey = mStore.NewString(key);
+		mEntries[ownedKey] = .(value, nodeId);
+		mKeyOrder.Add(ownedKey);
+
+		if (hasMetadata)
 		{
-			if (presetNodeId.IsValid)
-				mMetadataContext.SetEntryNodeId(ownedKey, presetNodeId);
-			else if (!mMetadataContext.TryGetEntryNodeId(key, let _))
-			{
-				let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
-				mMetadataContext.SetEntryNodeId(ownedKey, nodeId);
-				if (!mSuppressAutoDirty)
-					MarkChildrenDirty();
-			}
+			if (!presetNodeId.IsValid && !mSuppressAutoDirty)
+				MarkChildrenDirty();
 			BindContainerMetadata(value);
 		}
 	}
@@ -195,12 +227,12 @@ public class TomlTable
 	/// @return True if the key was found and replaced.
 	internal bool ReplaceValue(StringView key, TomlValue value)
 	{
-		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
+		if (mEntries.TryGetRefAlt(key, let _, let existing))
 		{
 			// If semantically equal, keep clean and discard the incoming value
-			if (existingVal.IsSemanticallyEqualTo(value))
+			if (existing.mValue.IsSemanticallyEqualTo(value))
 				return true;
-			mEntries[existingKey] = value;
+			existing.mValue = value;
 			MarkEntryDirty(key);
 			BindContainerMetadata(value);
 			return true;
@@ -263,8 +295,8 @@ public class TomlTable
 			return false;
 		for (int i = 0; i < mKeyOrder.Count; i++)
 		{
-			String key = mKeyOrder[i];
-			if (mMetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			let nodeId = GetEntryNodeIdAt(i);
+			if (nodeId.IsValid)
 			{
 				let style = metadata.GetNodeStyle(nodeId);
 				if (style != null && style.mKeyFormatRef.IsValid)
@@ -283,12 +315,8 @@ public class TomlTable
 	/// @return True if the key was found and removed.
 	public bool Remove(StringView key)
 	{
-		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
+		if (mEntries.TryGetAlt(key, let existingKey, let _))
 		{
-			// Remove node-ID mapping
-			if (mMetadataContext != null)
-				mMetadataContext.RemoveEntryNodeId(key);
-
 			mEntries.Remove(existingKey);
 			for (int i = 0; i < mKeyOrder.Count; i++)
 			{
@@ -309,8 +337,8 @@ public class TomlTable
 	/// @return The value, or .Err if the key is missing.
 	public Result<TomlValue> Get(StringView key)
 	{
-		if (mEntries != null && mEntries.TryGetValueAlt(key, let val))
-			return val;
+		if (mEntries != null && mEntries.TryGetValueAlt(key, let slot))
+			return slot.mValue;
 		return .Err;
 	}
 
@@ -491,13 +519,9 @@ public class TomlTable
 		if (mKeyOrder != null)
 			mKeyOrder.Clear();
 		// Keep the table's own metadata (node ID, header comments) so it is still written with its style
-		// and later insertions get node IDs; only the per-entry mappings go.
-		if (mMetadataContext != null)
-		{
-			mMetadataContext.ClearEntryNodeIds();
-			if (hadEntries)
-				MarkChildrenDirty();
-		}
+		// and later insertions get node IDs; the entries' IDs went with the entries.
+		if (mMetadataContext != null && hadEntries)
+			MarkChildrenDirty();
 		mSuppressAutoDirty = false;
 	}
 
@@ -530,8 +554,9 @@ public class TomlTable
 
 			int pathLen = path.Length;
 			AppendMergePathSegment(path, key);
-			if (existing.IsTable && source.mEntries[key].IsTable)
-				Try!(existing.AsTable.ValidateMerge(source.mEntries[key].AsTable, path));
+			let incoming = source.mEntries[key].mValue;
+			if (existing.IsTable && incoming.IsTable)
+				Try!(existing.AsTable.ValidateMerge(incoming.AsTable, path));
 			else
 				return .Err(TomlParseError(.DuplicateKey, scope $"Duplicate key '{path}' during merge", 0, 0, 0));
 			path.Length = pathLen;
@@ -548,7 +573,7 @@ public class TomlTable
 		for (int i = 0; i < source.mKeyOrder.Count; i++)
 		{
 			String key = source.mKeyOrder[i];
-			TomlValue incoming = source.mEntries[key];
+			TomlValue incoming = source.mEntries[key].mValue;
 			if (!TryGetValue(key, let existing))
 			{
 				TomlValue copy = incoming.CloneInto(mStore);
@@ -586,7 +611,7 @@ public class TomlTable
 	{
 		if (srcMeta == null || source.mMetadataContext == null)
 			return;
-		if (source.mMetadataContext.TryGetEntryNodeId(key, let srcId) && mMetadataContext.TryGetEntryNodeId(key, let dstId))
+		if (source.TryGetEntryNodeId(key, let srcId) && TryGetEntryNodeId(key, let dstId))
 			TomlMetadataTransfer.CopyNodeStyle(srcMeta, srcId, dstMeta, dstId, includeSlotStyle);
 	}
 
@@ -612,7 +637,7 @@ public class TomlTable
 		for (int i = 0; i < mKeyOrder.Count; i++)
 		{
 			String key = mKeyOrder[i];
-			switch (mEntries[key])
+			switch (mEntries[key].mValue)
 			{
 			case .Table(let tbl):
 				if (tbl != null && tbl.mOrigin == .InlineTable)
@@ -661,9 +686,10 @@ public class TomlTable
 		}
 		for (int i = 0; i < mKeyOrder.Count; i++)
 		{
-			String key = mKeyOrder[i];
-			TomlValue val = mEntries[key];
-			ClearMetadataContextsFromValue(val);
+			// The entries' node IDs referred to the sidecar that is going away
+			ref TomlTableSlot slot = ref mEntries[mKeyOrder[i]];
+			slot.mNodeId = .Invalid;
+			ClearMetadataContextsFromValue(slot.mValue);
 		}
 	}
 
@@ -686,7 +712,7 @@ public class TomlTable
 		for (int i = 0; i < mKeyOrder.Count; i++)
 		{
 			String key = mKeyOrder[i];
-			switch (mEntries[key])
+			switch (mEntries[key].mValue)
 			{
 			case .Array(let arr):
 				if (arr != null) arr.ClearAutoDirtySuppression();
@@ -702,7 +728,7 @@ public class TomlTable
 	{
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
 		{
-			if (mMetadataContext.TryGetEntryNodeId(key, let nodeId) && nodeId.IsValid)
+			if (TryGetEntryNodeId(key, let nodeId))
 			{
 				let style = mMetadataContext.mMetadata.GetNodeStyle(nodeId);
 				if (style != null)
@@ -851,13 +877,8 @@ public class TomlTable
 	{
 		range = default;
 		// Positions are recorded in both Positions and PreserveStyle mode, so any sidecar will do
-		let metadata = nodeId.IsValid ? mMetadataContext?.mMetadata : null;
-		let style = metadata?.GetNodeStyle(nodeId);
-		// Lines are 1-based, so an unset range has line 0
-		if (style == null || style.mRange.mLine <= 0)
-			return false;
-		range = style.mRange;
-		return true;
+		let metadata = mMetadataContext?.mMetadata;
+		return metadata != null && metadata.TryGetSourceRange(nodeId, out range);
 	}
 
 	/// The node that holds `key`'s entry style (value format, key format).
@@ -865,7 +886,7 @@ public class TomlTable
 	{
 		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
 			return .Invalid;
-		mMetadataContext.TryGetEntryNodeId(key, let nodeId);
+		TryGetEntryNodeId(key, let nodeId);
 		return nodeId;
 	}
 
@@ -993,9 +1014,6 @@ public class TomlTable
 	/// @brief Remove the entry at the given insertion index.
 	internal void RemoveAt(int index)
 	{
-		StringView key = mKeyOrder[index];
-		if (mMetadataContext != null)
-			mMetadataContext.RemoveEntryNodeId(key);
 		mEntries.Remove(mKeyOrder[index]);
 		mKeyOrder.RemoveAt(index);
 		MarkChildrenDirty();
@@ -1008,12 +1026,12 @@ public class TomlTable
 		if (!slot.IsValid)
 			Runtime.FatalError("Invalid TomlInputValue");
 		// Assigning an equal value keeps the entry clean (and its original token reusable)
-		if (slot.Matches(mEntries[mKeyOrder[index]]))
+		if (slot.Matches(mEntries[mKeyOrder[index]].mValue))
 			return;
 		TomlValue stored = slot.Materialize(mStore);
 		StringView key = mKeyOrder[index];
 		MarkEntryDirty(key);
-		mEntries[mKeyOrder[index]] = stored;
+		mEntries[mKeyOrder[index]].mValue = stored;
 		BindContainerMetadata(stored);
 	}
 
@@ -1022,7 +1040,7 @@ public class TomlTable
 	{
 		TomlTable tbl = mStore.NewTable(.InlineTable);
 		TomlValue val = .Table(tbl);
-		mEntries[mKeyOrder[index]] = val;
+		mEntries[mKeyOrder[index]].mValue = val;
 		MarkEntryDirty(mKeyOrder[index]);
 		BindContainerMetadata(val);
 		return tbl;
@@ -1034,7 +1052,7 @@ public class TomlTable
 		TomlArray arr = mStore.NewArray();
 		arr.IsStatic = true;
 		TomlValue val = .Array(arr);
-		mEntries[mKeyOrder[index]] = val;
+		mEntries[mKeyOrder[index]].mValue = val;
 		MarkEntryDirty(mKeyOrder[index]);
 		BindContainerMetadata(val);
 		return arr;
@@ -1046,27 +1064,14 @@ public class TomlTable
 	{
 		if (ContainsKey(newKey))
 			return .Err(TomlParseError(.DuplicateKey, scope $"Key '{newKey}' already exists", 0, 0, 0));
-		StringView oldKey = mKeyOrder[index];
-		TomlValue val = mEntries[mKeyOrder[index]];
-		if (mEntries.TryGetAlt(oldKey, let existingKey, let _))
-		{
-			// Preserve metadata node ID: move it from oldKey to newKey
-			TomlNodeId nodeId = .Invalid;
-			if (mMetadataContext != null)
-				mMetadataContext.TryGetEntryNodeId(oldKey, out nodeId);
-
-			mEntries.Remove(existingKey);
-			if (mMetadataContext != null)
-				mMetadataContext.RemoveEntryNodeId(oldKey);
-
-			// Insert the value with the new key, preserving position, and re-register the node ID under it
-			String ownedKey = mStore.NewString(newKey);
-			mEntries[ownedKey] = val;
-			mKeyOrder[index] = ownedKey;
-			if (mMetadataContext != null && nodeId.IsValid)
-				mMetadataContext.SetEntryNodeId(ownedKey, nodeId);
-			MarkEntryDirty(ownedKey);
-		}
+		// Move the slot (value and metadata node ID) to the new key, keeping the entry's position
+		String oldKey = mKeyOrder[index];
+		TomlTableSlot slot = mEntries[oldKey];
+		mEntries.Remove(oldKey);
+		String ownedKey = mStore.NewString(newKey);
+		mEntries[ownedKey] = slot;
+		mKeyOrder[index] = ownedKey;
+		MarkEntryDirty(ownedKey);
 		return .Ok;
 	}
 }

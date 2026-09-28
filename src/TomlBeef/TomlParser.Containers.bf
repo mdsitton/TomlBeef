@@ -351,8 +351,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			TomlNodeId fieldNodeId = .Invalid;
 			if (mMetadata != null)
 			{
-				if (target.MetadataContext != null)
-					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out fieldNodeId);
+				target.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out fieldNodeId);
 				RecordSourceRange(fieldNodeId, fieldLine, fieldColumn, fieldOffset, mCursor.Offset);
 			}
 			if (mStyle != null)

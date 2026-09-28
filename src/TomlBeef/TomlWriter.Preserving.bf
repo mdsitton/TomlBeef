@@ -47,7 +47,7 @@ extension TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (dottedContext)
 			{
@@ -89,7 +89,7 @@ extension TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (val.IsTable)
 			{
@@ -103,11 +103,11 @@ extension TomlWriterImpl
 						for (int j = 0; j < sub.KeyOrder.Count; j++)
 						{
 							String sk = sub.KeyOrder[j];
-							TomlValue sv = sub.Entries[sk];
+							TomlValue sv = sub.Entries[sk].mValue;
 							if (!sv.IsTable || sv.AsTable.Origin == .InlineTable)
 							{
 								// Emit leading comments
-								if (sub.MetadataContext != null && sub.MetadataContext.TryGetEntryNodeId(sk, let nid) && nid.IsValid)
+								if (sub.MetadataContext != null && sub.TryGetEntryNodeId(sk, let nid))
 									EmitLeadingBlock(nid, outStr, metadata);
 								// Write dotted key = value. Under a [header] keys are relative to it; only an
 								// enclosing dotted context contributes a prefix.
@@ -177,7 +177,7 @@ extension TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (val.IsArray)
 			{
@@ -232,7 +232,7 @@ extension TomlWriterImpl
 		// Look up node ID for this entry
 		TomlNodeId nodeId = .Invalid;
 		if (parentTable.MetadataContext != null)
-			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+			parentTable.TryGetEntryNodeId(key, out nodeId);
 
 		// Emit the blank line that preceded this entry in the source, then its leading comments
 		if (nodeId.IsValid)
@@ -255,7 +255,7 @@ extension TomlWriterImpl
 		// Look up node ID for this entry
 		TomlNodeId nodeId = .Invalid;
 		if (parentTable != null && parentTable.MetadataContext != null)
-			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+			parentTable.TryGetEntryNodeId(key, out nodeId);
 
 		// Try to reuse original token for string values
 		if (val.IsString && nodeId.IsValid)
@@ -291,7 +291,7 @@ extension TomlWriterImpl
 		// Look up node ID for leading comments
 		TomlNodeId nodeId = .Invalid;
 		if (parentTable.MetadataContext != null)
-			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+			parentTable.TryGetEntryNodeId(key, out nodeId);
 		if (nodeId.IsValid)
 			EmitLeadingComments(nodeId, outStr, metadata);
 
@@ -437,7 +437,7 @@ extension TomlWriterImpl
 	{
 		TomlNodeId nodeId = .Invalid;
 		if (parentTable != null && parentTable.MetadataContext != null)
-			parentTable.MetadataContext.TryGetEntryNodeId(key, out nodeId);
+			parentTable.TryGetEntryNodeId(key, out nodeId);
 		let style = nodeId.IsValid ? metadata.GetNodeStyle(nodeId) : null;
 		if (style != null && style.mKeyFormatRef.IsValid)
 		{
@@ -594,7 +594,7 @@ extension TomlWriterImpl
 			return true;
 		for (int i = 0; i < tbl.Count; i++)
 		{
-			if (ctx.TryGetEntryNodeId(tbl.GetKeyAt(i), let fieldId) && HasComments(metadata.GetCommentSet(fieldId)))
+			if (tbl.TryGetEntryNodeId(tbl.GetKeyAt(i), let fieldId) && HasComments(metadata.GetCommentSet(fieldId)))
 				return true;
 		}
 		return false;
@@ -641,7 +641,7 @@ extension TomlWriterImpl
 					outStr.Append(' ');
 			}
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			// Without a captured format (e.g. a sub-table created by a dotted key), match the normal writer
 			if (!hasFormat || fmt.mEqualsSpacing > 0)
@@ -670,10 +670,10 @@ extension TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 			TomlNodeId fieldId = .Invalid;
 			if (tbl.MetadataContext != null)
-				tbl.MetadataContext.TryGetEntryNodeId(key, out fieldId);
+				tbl.TryGetEntryNodeId(key, out fieldId);
 			if (fieldId.IsValid)
 				EmitIndentedCommentSet(metadata.GetCommentSet(fieldId), entryIndent, outStr, metadata);
 

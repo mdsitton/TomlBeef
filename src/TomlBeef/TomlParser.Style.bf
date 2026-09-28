@@ -11,11 +11,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// and the length through the end of its value or header.
 	private void RecordSourceRange(TomlNodeId nodeId, int line, int column, int offset, int endOffset)
 	{
-		if (mMetadata == null || !nodeId.IsValid)
-			return;
-		let style = mMetadata.GetNodeStyle(nodeId);
-		if (style != null)
-			style.mRange = TomlSourceRange(line, column, offset, Math.Max(endOffset - offset, 0));
+		if (mMetadata != null)
+			mMetadata.SetSourceRange(nodeId, line, column, offset, Math.Max(endOffset - offset, 0));
 	}
 
 	/// Record PreserveStyle metadata for a parsed key/value: the original token for strings, the value

@@ -21,7 +21,7 @@ static class TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (val.IsTable)
 			{
@@ -46,7 +46,7 @@ static class TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (val.IsTable)
 			{
@@ -73,7 +73,7 @@ static class TomlWriterImpl
 		for (int i = 0; i < tbl.KeyOrder.Count; i++)
 		{
 			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key];
+			TomlValue val = tbl.Entries[key].mValue;
 
 			if (val.IsArray)
 			{
@@ -356,7 +356,7 @@ static class TomlWriterImpl
 			String key = tbl.KeyOrder[i];
 			WriteKey(key, outStr, version);
 			outStr.Append(" = ");
-			WriteValue(tbl.Entries[key], outStr, version);
+			WriteValue(tbl.Entries[key].mValue, outStr, version);
 		}
 		outStr.Append('}');
 	}

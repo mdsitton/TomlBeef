@@ -86,7 +86,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (sep == 'T' || sep == 't' || sep == ' ') pos++;
 		else return .Err(Error(.InvalidDateTime, "Expected date-time separator"));
 
-		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
+		int32 hour = ?; int32 minute = ?; int32 second = 0; int32 ns = 0;
 		bool secondsOmitted = false;
 		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time in datetime"));
@@ -138,7 +138,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (sep == 'T' || sep == 't' || sep == ' ') pos++;
 		else return .Err(Error(.InvalidDateTime, "Expected date-time separator"));
 
-		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
+		int32 hour = ?; int32 minute = ?; int32 second = 0; int32 ns = 0;
 		bool secondsOmitted = false;
 		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time"));
@@ -163,7 +163,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> TryParseLocalTime(StringView token)
 	{
 		int pos = 0;
-		int32 hour = ?; int32 minute = ?; int32 second = 0; int64 ns = 0;
+		int32 hour = ?; int32 minute = ?; int32 second = 0; int32 ns = 0;
 		bool secondsOmitted = false;
 		if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted))
 			return .Err(Error(.InvalidTime, "Invalid time"));
@@ -200,7 +200,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	private bool ParseTimePart(StringView token, ref int pos,
-		out int32 hour, out int32 minute, out int32 second, out int64 nanosecond,
+		out int32 hour, out int32 minute, out int32 second, out int32 nanosecond,
 		out bool secondsOmitted)
 	{
 		hour = 0; minute = 0; second = 0; nanosecond = 0;
@@ -235,9 +235,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					String fracStr = scope String(token.Substring(fracStart, fracLen));
 					while (fracStr.Length < 9) fracStr.Append('0');
 					if (fracStr.Length > 9) fracStr.Remove(9, fracStr.Length - 9);
+					// At most 9 digits, so the value fits int32
 					nanosecond = 0;
 					for (int i = 0; i < fracStr.Length; i++)
-						nanosecond = nanosecond * 10 + (fracStr[i] - '0');
+						nanosecond = nanosecond * 10 + (int32)(fracStr[i] - '0');
 				}
 			}
 		}

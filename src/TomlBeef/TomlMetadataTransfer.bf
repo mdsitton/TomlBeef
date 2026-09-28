@@ -33,13 +33,13 @@ static class TomlMetadataTransfer
 		for (int i = 0; i < dst.Count; i++)
 		{
 			StringView key = dst.GetKeyAt(i);
-			TomlNodeId dstId;
-			if (!dstCtx.TryGetEntryNodeId(key, out dstId))
+			TomlNodeId dstId = dst.GetEntryNodeIdAt(i);
+			if (!dstId.IsValid)
 			{
 				dstId = dstMeta.AllocateNodeId();
-				dstCtx.SetEntryNodeId(dst.GetOwnedKey(key), dstId);
+				dst.SetEntryNodeId(key, dstId);
 			}
-			if (srcCtx != null && srcCtx.TryGetEntryNodeId(key, let srcId))
+			if (srcCtx != null && src.TryGetEntryNodeId(key, let srcId))
 				CopyNodeStyle(srcMeta, srcId, dstMeta, dstId, true);
 			if (src.TryGetValue(key, let srcValue))
 				AdoptValue(dst.GetValueAt(i), srcValue, dstMeta, srcMeta);

@@ -385,7 +385,7 @@ If both documents were read with `PreserveStyle`, the copied values keep their c
 | local-date | `TomlLocalDate` | `.(2024, 7, 15)` |
 | local-time | `TomlLocalTime` | `.(14, 30, 0, 0)` |
 
-All date/time structs have public fields (`mYear`, `mMonth`, `mDay`, `mHour`, `mMinute`, `mSecond`, `mNanosecond`). `TomlOffsetDateTime` also has `mOffsetMinutes` (UTC offset in minutes, e.g. 330 for +05:30, 0 for Z).
+All date/time structs have public `int32` fields (`mYear`, `mMonth`, `mDay`, `mHour`, `mMinute`, `mSecond`, `mNanosecond` with 0–999,999,999). `TomlOffsetDateTime` also has `mOffsetMinutes` (UTC offset in minutes, e.g. 330 for +05:30, 0 for Z).
 
 Assertions in debug builds validate field ranges. Release builds trust the caller.
 

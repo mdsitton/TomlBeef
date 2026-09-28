@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 261/261 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 261/261 pass |
-| `./test-leaks.sh` | 261/261 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 262/262 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 262/262 pass |
+| `./test-leaks.sh` | 262/262 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -53,7 +53,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | P3 | Style editing covers string style and integer base only. Possible additions: float style (decimal/scientific), date-time separator/`Z`, array layout (inline/multi-line), inline-table layout, key quoting; and comments on array elements (`TomlArray.SetComment(index, ...)`) | S–M |
 | P4 | *Optional.* "Nearby style" for new values: a new key could copy the format of its siblings (e.g. hex like its neighbours) instead of the document-wide default. New multi-line arrays always get a trailing comma rather than following the document's habit | S |
-| P6 | *Optional, perf.* Metadata node storage: every table with metadata gets a context object with a key → node ID dictionary, and every node a `TomlNodeStyle` record. This shared machinery is most of the cost of both modes (5 MB bench: None ~46 MB/s, Positions ~35, PreserveStyle ~28; peak RSS 82 / 147 / 163 MB). Storing node IDs inline in tables/arrays (parallel to the key order) and ranges in a compact array would cut both | M |
 
 ### Streaming and I/O
 
@@ -87,5 +86,5 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 ## Suggested order
 
 1. I1–I4 (streaming and writer output) as needed.
-2. P3, P4, P6 as needed.
+2. P3, P4 as needed.
 3. Optional items.

@@ -319,11 +319,7 @@ public class TomlArray
 		TomlNodeId nodeId;
 		if (!mMetadataContext.TryGetItemNodeId(index, out nodeId))
 			return false;
-		let style = mMetadataContext.mMetadata?.GetNodeStyle(nodeId);
-		if (style == null || style.mRange.mLine <= 0)
-			return false;
-		range = style.mRange;
-		return true;
+		return mMetadataContext.mMetadata != null && mMetadataContext.mMetadata.TryGetSourceRange(nodeId, out range);
 	}
 
 	/// @brief Read a String value at the given index.

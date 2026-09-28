@@ -356,10 +356,17 @@ public class TomlDocument
 		if (incomingMetadata != null && incoming.MetadataContext == null)
 			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
 		incoming.ClearAutoDirtySuppression();
-		Try!(mRootTable.MergeFrom(incoming, config.OnConflict));
-		// Styles and comments merged from a PreserveStyle read make a Positions document preserve style
+		// Styles and comments merged from a PreserveStyle read make a Positions document preserve style.
+		// Upgrade first so the merge has style records to copy into; a rejected merge changes nothing.
+		let previousMode = mMetadata?.mMode ?? .None;
 		if (mMetadata != null && incomingMetadata != null)
 			mMetadata.Upgrade(incomingMetadata.mMode);
+		if (mRootTable.MergeFrom(incoming, config.OnConflict) case .Err(let e))
+		{
+			if (mMetadata != null)
+				mMetadata.mMode = previousMode;
+			return .Err(e);
+		}
 		return .Ok;
 	}
 

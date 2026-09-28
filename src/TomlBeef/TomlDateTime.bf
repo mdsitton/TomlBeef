@@ -12,11 +12,12 @@ public struct TomlOffsetDateTime
 	public int32 mHour;
 	public int32 mMinute;
 	public int32 mSecond;
-	public int64 mNanosecond; // Fractional seconds in nanoseconds (0-999999999)
+	// int32 is enough for 0-999999999 and keeps this struct (TomlValue's largest payload) at 32 bytes
+	public int32 mNanosecond; // Fractional seconds in nanoseconds (0-999999999)
 	public int32 mOffsetMinutes; // UTC offset in minutes (e.g., Z = 0, +05:30 = 330)
 
 	public this(int32 year, int32 month, int32 day,
-		int32 hour, int32 minute, int32 second, int64 nanosecond,
+		int32 hour, int32 minute, int32 second, int32 nanosecond,
 		int32 offsetMinutes)
 	{
 		Runtime.Assert(month >= 1 && month <= 12);
@@ -46,10 +47,10 @@ public struct TomlLocalDateTime
 	public int32 mHour;
 	public int32 mMinute;
 	public int32 mSecond;
-	public int64 mNanosecond;
+	public int32 mNanosecond;
 
 	public this(int32 year, int32 month, int32 day,
-		int32 hour, int32 minute, int32 second, int64 nanosecond)
+		int32 hour, int32 minute, int32 second, int32 nanosecond)
 	{
 		Runtime.Assert(month >= 1 && month <= 12);
 		Runtime.Assert(day >= 1 && day <= 31);
@@ -90,9 +91,9 @@ public struct TomlLocalTime
 	public int32 mHour;
 	public int32 mMinute;
 	public int32 mSecond;
-	public int64 mNanosecond;
+	public int32 mNanosecond;
 
-	public this(int32 hour, int32 minute, int32 second, int64 nanosecond)
+	public this(int32 hour, int32 minute, int32 second, int32 nanosecond)
 	{
 		Runtime.Assert(hour >= 0 && hour <= 23);
 		Runtime.Assert(minute >= 0 && minute <= 59);

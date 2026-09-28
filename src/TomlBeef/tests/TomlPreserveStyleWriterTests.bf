@@ -426,7 +426,7 @@ static class TomlPreserveStyleWriterTests
 		// Verify indent size was captured. The array format is on the key-value entry node.
 		TomlNodeId arrNodeId = .Invalid;
 		if (doc.RootTable.MetadataContext != null)
-			doc.RootTable.MetadataContext.TryGetEntryNodeId("arr", out arrNodeId);
+			doc.RootTable.TryGetEntryNodeId("arr", out arrNodeId);
 		Test.Assert(arrNodeId.IsValid, "Expected arr entry node ID");
 		let nodeStyle = doc.Metadata.GetNodeStyle(arrNodeId);
 		Test.Assert(nodeStyle != null && nodeStyle.mValueFormatRef.IsValid, "Expected value format ref to be valid");
@@ -633,7 +633,7 @@ static class TomlPreserveStyleWriterTests
 		// Verify trailing comma format was captured
 		TomlNodeId arrNodeId = .Invalid;
 		if (doc.RootTable.MetadataContext != null)
-			doc.RootTable.MetadataContext.TryGetEntryNodeId("arr", out arrNodeId);
+			doc.RootTable.TryGetEntryNodeId("arr", out arrNodeId);
 		Test.Assert(arrNodeId.IsValid);
 		let nodeStyle = doc.Metadata.GetNodeStyle(arrNodeId);
 		Test.Assert(nodeStyle != null && nodeStyle.mValueFormatRef.IsValid);
@@ -676,7 +676,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Verify compact spacing was captured
 		TomlNodeId nodeId = .Invalid;
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out nodeId);
+		doc.RootTable.TryGetEntryNodeId("t", out nodeId);
 		let style = doc.Metadata.GetNodeStyle(nodeId);
 		let fmt = doc.Metadata.mValueFormats[style.mValueFormatRef.mIndex];
 		if (fmt case .Table(let tFmt))
@@ -844,8 +844,8 @@ static class TomlPreserveStyleWriterTests
 		// Get original tokens
 		let meta = doc.Metadata;
 		TomlNodeId aNodeId = .Invalid, bNodeId = .Invalid;
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("a", out aNodeId);
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("b", out bNodeId);
+		doc.RootTable.TryGetEntryNodeId("a", out aNodeId);
+		doc.RootTable.TryGetEntryNodeId("b", out bNodeId);
 		Test.Assert(aNodeId.IsValid && bNodeId.IsValid);
 
 		let aStyle = meta.GetNodeStyle(aNodeId);
@@ -883,7 +883,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Get node IDs
 		TomlNodeId tNodeId = .Invalid;
-		doc.RootTable.MetadataContext.TryGetEntryNodeId("t", out tNodeId);
+		doc.RootTable.TryGetEntryNodeId("t", out tNodeId);
 		Test.Assert(tNodeId.IsValid);
 
 		doc.RootTable.TryGetTable("t", var tbl);

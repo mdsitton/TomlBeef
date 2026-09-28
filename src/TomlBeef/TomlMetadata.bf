@@ -34,11 +34,13 @@ internal enum TomlDirtyFlags : uint8
 /// Used as an index into the metadata's node-style, comment, and token lists.
 internal struct TomlNodeId
 {
-	public int mIndex;
+	// int32 keeps a table entry slot (TomlValue + node ID) at the size of the value's own padding
+	public int32 mIndex;
 
 	public this(int index)
 	{
-		mIndex = index;
+		Runtime.Assert(index <= int32.MaxValue);
+		mIndex = (int32)index;
 	}
 
 	public bool IsValid
@@ -55,11 +57,11 @@ internal struct TomlNodeId
 /// @brief Reference to an owned original token copy stored in TomlDocumentMetadata.mOriginalTokens.
 internal struct TomlOriginalTokenRef
 {
-	public int mIndex;
+	public int32 mIndex;
 
 	public this(int index)
 	{
-		mIndex = index;
+		mIndex = (int32)index;
 	}
 
 	public bool IsValid
@@ -76,11 +78,11 @@ internal struct TomlOriginalTokenRef
 /// @brief Reference to a sparse style record stored in TomlDocumentMetadata style pools.
 internal struct TomlStyleRef
 {
-	public int mIndex;
+	public int32 mIndex;
 
 	public this(int index)
 	{
-		mIndex = index;
+		mIndex = (int32)index;
 	}
 
 	public bool IsValid
@@ -111,15 +113,21 @@ public struct TomlSourceRange
 	}
 }
 
-/// @brief Style metadata for a single node in the document tree.
-/// Stored in TomlDocumentMetadata.mNodeStyles, indexed by TomlNodeId.
+/// @brief A node's source range as stored in the sidecar: TomlSourceRange with 32-bit fields.
+/// Recorded for every node in both Positions and PreserveStyle mode, so it is kept compact.
+internal struct TomlPackedRange
+{
+	public int32 mLine;
+	public int32 mColumn;
+	public int32 mOffset;
+	public int32 mLength;
+}
+
+/// @brief Style metadata for a single node in the document tree (PreserveStyle only).
+/// Stored in TomlDocumentMetadata.mNodeStyles, indexed by TomlNodeId. The node's source range is kept
+/// separately in mRanges, which Positions mode also fills.
 internal struct TomlNodeStyle
 {
-	public TomlNodeId mNodeId;
-
-	/// Coordinate for diagnostics/debugging. Does NOT recover source text.
-	public TomlSourceRange mRange;
-
 	/// Index into mOriginalTokens for value reuse. Invalid if not captured.
 	public TomlOriginalTokenRef mOriginalValueToken;
 
@@ -130,10 +138,8 @@ internal struct TomlNodeStyle
 	/// Invalid means default/inferred style.
 	public TomlStyleRef mValueFormatRef;
 
-	public this(TomlNodeId nodeId)
+	public this()
 	{
-		mNodeId = nodeId;
-		mRange = TomlSourceRange(0, 0, 0, 0);
 		mOriginalValueToken = .Invalid;
 		mDirtyFlags = .None;
 		mKeyFormatRef = .Invalid;
@@ -398,58 +404,15 @@ internal class TomlContainerMetadataContext
 	internal TomlDocumentMetadata mMetadata; // borrowed document-owned sidecar
 	internal TomlNodeId mNodeId;
 
-	// Exactly one is populated, depending on container kind.
-	// Entry keys are borrowed: they are the table's own key strings, which live in the document store
-	// and are never freed individually, so they outlive this context (cleared before any store reset).
-	internal Dictionary<String, TomlNodeId> mEntryNodeIds ~ delete _;
+	// Array element node IDs, by index (arrays only). A table keeps its entries' node IDs in its own
+	// entry slots (TomlTableSlot), so a table context holds just the sidecar and the table's own node.
 	internal List<TomlNodeId> mItemNodeIds ~ delete _;
 
 	internal this(TomlDocumentMetadata metadata, TomlNodeId nodeId, bool isArray)
 	{
 		mMetadata = metadata;
 		mNodeId = nodeId;
-		if (isArray)
-		{
-			mItemNodeIds = new List<TomlNodeId>();
-			mEntryNodeIds = null;
-		}
-		else
-		{
-			mEntryNodeIds = new Dictionary<String, TomlNodeId>();
-			mItemNodeIds = null;
-		}
-	}
-
-	/// @brief Look up the node ID for a table entry key.
-	internal bool TryGetEntryNodeId(StringView key, out TomlNodeId nodeId)
-	{
-		if (mEntryNodeIds != null && mEntryNodeIds.TryGetValueAlt(key, let id))
-		{
-			nodeId = id;
-			return true;
-		}
-		nodeId = default;
-		return false;
-	}
-
-	/// Remove a node ID mapping for a table entry key.
-	internal void RemoveEntryNodeId(StringView key)
-	{
-		if (mEntryNodeIds != null && mEntryNodeIds.TryGetAlt(key, let existingKey, let _))
-			mEntryNodeIds.Remove(existingKey);
-	}
-
-	/// @brief Register (or replace) the node ID for a table entry.
-	/// @param tableKey The table's own key string for the entry (see TomlTable.GetOwnedKey). It is borrowed.
-	/// @param nodeId The node ID to register.
-	internal void SetEntryNodeId(String tableKey, TomlNodeId nodeId)
-	{
-		if (mEntryNodeIds == null)
-			return;
-		if (mEntryNodeIds.TryGetAlt(tableKey, let existingKey, let _))
-			mEntryNodeIds[existingKey] = nodeId;
-		else
-			mEntryNodeIds[tableKey] = nodeId;
+		mItemNodeIds = isArray ? new List<TomlNodeId>() : null;
 	}
 
 	/// @brief Get the node ID for an array element by index.
@@ -484,13 +447,6 @@ internal class TomlContainerMetadataContext
 	{
 		if (mItemNodeIds != null)
 			mItemNodeIds.Clear();
-	}
-
-	/// Remove every table entry node ID mapping. Deletes the owned keys.
-	internal void ClearEntryNodeIds()
-	{
-		if (mEntryNodeIds != null)
-			mEntryNodeIds.Clear();
 	}
 }
 
@@ -532,7 +488,11 @@ internal class TomlDocumentMetadata
 	/// @brief Document-level style defaults.
 	internal TomlDocumentStyle mDocumentStyle;
 
-	/// Per-node style records, indexed by TomlNodeId.mIndex.
+	/// Per-node source ranges, indexed by TomlNodeId.mIndex. One per allocated node in every mode, so its
+	/// count is the node count.
+	internal List<TomlPackedRange> mRanges ~ delete _;
+	/// Per-node style records, indexed by TomlNodeId.mIndex. Filled only while capturing style; a sidecar
+	/// upgraded from Positions gets records for its earlier nodes on first access (GetNodeStyle).
 	internal List<TomlNodeStyle> mNodeStyles ~ delete _;
 	/// Per-node comment sets.
 	internal List<TomlCommentSet> mComments ~ DeleteContainerAndItems!(_);
@@ -551,6 +511,7 @@ internal class TomlDocumentMetadata
 		mRootComments = null;
 		mFooterComments = null;
 		mDocumentStyle = .();
+		mRanges = new List<TomlPackedRange>();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
 		mOriginalTokens = new List<String>();
@@ -558,20 +519,51 @@ internal class TomlDocumentMetadata
 		mValueFormats = new List<TomlValueFormat>();
 	}
 
-	/// @brief Allocate a new node ID and return it. The node style record is initialized to defaults.
+	/// @brief Allocate a new node ID and return it, with an unset range and (when capturing style) a
+	/// default style record.
 	internal TomlNodeId AllocateNodeId()
 	{
-		int index = mNodeStyles.Count;
-		mNodeStyles.Add(TomlNodeStyle(TomlNodeId(index)));
+		int index = mRanges.Count;
+		mRanges.Add(default);
+		if (CapturesStyle)
+			mNodeStyles.Add(.());
 		return TomlNodeId(index);
 	}
 
-	/// @brief Get the style record for a node, or null if the ID is invalid.
+	/// @brief Get the style record for a node: null if the ID is invalid or style is not captured.
+	/// The pointer is invalidated by the next node allocation.
 	internal TomlNodeStyle* GetNodeStyle(TomlNodeId nodeId)
 	{
-		if (!nodeId.IsValid || nodeId.mIndex >= mNodeStyles.Count)
+		if (!nodeId.IsValid || nodeId.mIndex >= mRanges.Count || !CapturesStyle)
 			return null;
+		// Nodes allocated before an upgrade from Positions have no record yet
+		while (mNodeStyles.Count <= nodeId.mIndex)
+			mNodeStyles.Add(.());
 		return &mNodeStyles[nodeId.mIndex];
+	}
+
+	/// @brief Record where a node appeared in the source.
+	internal void SetSourceRange(TomlNodeId nodeId, int line, int column, int offset, int length)
+	{
+		if (!nodeId.IsValid || nodeId.mIndex >= mRanges.Count)
+			return;
+		// Inputs are far below 2 GB (and MaxInputBytes can enforce it), so 32 bits per field suffice
+		mRanges[nodeId.mIndex] = .() { mLine = (int32)line, mColumn = (int32)column, mOffset = (int32)offset, mLength = (int32)length };
+	}
+
+	/// @brief Where a node appeared in the source.
+	/// @return False if the ID is invalid or no range was recorded (values added or merged in code).
+	internal bool TryGetSourceRange(TomlNodeId nodeId, out TomlSourceRange range)
+	{
+		range = default;
+		if (!nodeId.IsValid || nodeId.mIndex >= mRanges.Count)
+			return false;
+		let packed = mRanges[nodeId.mIndex];
+		// Lines are 1-based, so an unset range has line 0
+		if (packed.mLine <= 0)
+			return false;
+		range = .(packed.mLine, packed.mColumn, packed.mOffset, packed.mLength);
+		return true;
 	}
 
 	/// @brief Add an original token copy and return a reference to it.
