@@ -31,6 +31,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mSavedBlankLineCount;
 	// Whether we've inferred the indentation style from the first key/header.
 	private bool mInferredIndent;
+	/// The document indent size was taken from an indented top-level line (not the default).
+	private bool mInferredIndentFromContent;
+	/// The indentation character (space or tab) has been recorded in the document style.
+	private bool mIndentCharKnown;
+	/// The indent size has been taken from an indented container line.
+	private bool mIndentSizeKnown;
 	// String style usage counts for detecting the dominant style.
 	private int mStringStyleCount_Basic;
 	private int mStringStyleCount_Literal;
@@ -58,6 +64,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mBlankLineCount = 0;
 		mSavedBlankLineCount = 0;
 		mInferredIndent = false;
+		mInferredIndentFromContent = false;
+		mIndentCharKnown = false;
+		mIndentSizeKnown = false;
 		mStringStyleCount_Basic = 0;
 		mStringStyleCount_Literal = 0;
 		mStringStyleCount_MultilineBasic = 0;
@@ -147,7 +156,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					// SkipWhitespace was already called at loop top.
 					// Use cursor column as indent depth. Only update if indented.
 					if (mCursor.Column > 1)
+					{
 						mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+						mInferredIndentFromContent = true;
+					}
 					mInferredIndent = true;
 				}
 
@@ -169,7 +181,10 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (!mInferredIndent && mMetadata != null)
 			{
 				if (mCursor.Column > 1)
+				{
 					mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+					mInferredIndentFromContent = true;
+				}
 				mInferredIndent = true;
 			}
 
@@ -2745,6 +2760,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 				else if (foundNewline && (c == ' ' || c == '\t'))
 				{
+					if (indentCount == 0)
+						NoteIndentChar(c);
 					indentCount++;
 				}
 				else if (foundNewline && c != ' ' && c != '\t')
@@ -2752,6 +2769,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					// Found first non-whitespace after newline
 					if (indentCount > 0 && indentCount <= 255)
 						fmt.mIndentSize = (uint8)indentCount;
+					NoteIndentSize(indentCount);
 					break;
 				}
 			}
@@ -2841,7 +2859,12 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				for (int j = i + 1; j < rawToken.Length; j++)
 				{
 					char8 nc = rawToken[j];
-					if (nc == ' ' || nc == '\t') indentCount++;
+					if (nc == ' ' || nc == '\t')
+					{
+						if (indentCount == 0)
+							NoteIndentChar(nc);
+						indentCount++;
+					}
 					else if (nc == '#' || nc == '}' || TomlChar.IsBareKeyChar(nc)) break;
 					else break;
 				}
@@ -2850,6 +2873,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 		if (maxIndent > 0 && maxIndent <= 255)
 			fmt.mEntryIndent = (uint8)maxIndent;
+		NoteIndentSize(maxIndent);
 
 		let fmtRef = mMetadata.AddValueFormat(.Table(fmt));
 		let style = mMetadata.GetNodeStyle(nodeId);
@@ -3017,6 +3041,26 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Infer document-level style from accumulated parsing state.
 	/// Called once at the end of ParseDocument.
+	/// Records the document's indentation character from the first indented container line seen.
+	private void NoteIndentChar(char8 c)
+	{
+		if (mIndentCharKnown || mMetadata == null)
+			return;
+		mIndentCharKnown = true;
+		mMetadata.mDocumentStyle.mUseTabs = c == '\t';
+	}
+
+	/// Records the document's indent size (in characters: with tabs, 1 means one tab) from the first
+	/// indented array or inline-table entry, unless an indented top-level line already set it. New
+	/// containers are indented with it.
+	private void NoteIndentSize(int count)
+	{
+		if (mIndentSizeKnown || mInferredIndentFromContent || mMetadata == null || count <= 0 || count > 255)
+			return;
+		mIndentSizeKnown = true;
+		mMetadata.mDocumentStyle.mIndentSize = (uint8)count;
+	}
+
 	private void InferDocumentStyle()
 	{
 		if (mMetadata == null)

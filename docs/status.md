@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 239/239 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 239/239 pass |
+| `beefbuild -test` (Debug checks) | 241/241 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 241/241 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -51,7 +51,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | P2 | No "detached comment" placement: a comment block separated from the next node by a blank line is attached to that node (or the root/footer) rather than kept free-standing where it was | M |
 | P3 | Style editing covers string style and integer base only. Possible additions: float style (decimal/scientific), date-time separator/`Z`, array layout (inline/multi-line), inline-table layout, key quoting; and comments on array elements (`TomlArray.SetComment(index, ...)`) | S–M |
-| P4 | Document-style defaults: `mUseTabs` never inferred; `mDefaultArrayStyle` and `mPreferDottedKeys` inferred but unused for new values; no "nearby style" fallback | S |
+| P4 | *Optional.* "Nearby style" for new values: a new key could copy the format of its siblings (e.g. hex like its neighbours) instead of the document-wide default. New multi-line arrays always get a trailing comma rather than following the document's habit | S |
 | P5 | `TomlNodeStyle.mRange` source locations are never populated | S |
 
 ### Streaming and I/O
@@ -92,6 +92,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. P4 (document defaults for new values), P5, P2 (detached comments), and P3 additions as needed.
+1. P5 (source locations), P2 (detached comments), then P3/P4 additions as needed.
 2. I1–I4 and A2, A5–A7 as needed.
 3. Optional items.

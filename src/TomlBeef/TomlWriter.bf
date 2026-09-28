@@ -941,6 +941,14 @@ static class TomlWriterImpl
 						}
 					}
 				}
+				// A new array (no captured format) follows the document's dominant array layout
+				if (!hasArrayFmt && arr.Count > 0 && metadata.mDocumentStyle.mDefaultArrayStyle == .Multiline)
+				{
+					arrayFmt.mStyle = .Multiline;
+					arrayFmt.mIndentSize = metadata.mDocumentStyle.mIndentSize;
+					arrayFmt.mTrailingComma = true;
+					hasArrayFmt = true;
+				}
 				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt);
 				return;
 			}
@@ -1302,7 +1310,7 @@ static class TomlWriterImpl
 				}
 			}
 
-			AppendIndent(outStr, indentSize);
+			AppendIndent(outStr, indentSize, metadata);
 			TomlValue elem = arr.GetValueAt(i);
 			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
 
@@ -1463,7 +1471,7 @@ static class TomlWriterImpl
 			if (fieldId.IsValid)
 				EmitIndentedCommentSet(metadata.GetCommentSet(fieldId), entryIndent, outStr, metadata);
 
-			AppendIndent(outStr, entryIndent);
+			AppendIndent(outStr, entryIndent, metadata);
 			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			if (fmt.mEqualsSpacing > 0)
 				outStr.Append(" = ");
@@ -1516,10 +1524,12 @@ static class TomlWriterImpl
 		val.ToString(outStr);
 	}
 
-	private static void AppendIndent(String outStr, int count)
+	/// Indent by `count` characters, using tabs when the source document indented with tabs.
+	private static void AppendIndent(String outStr, int count, TomlDocumentMetadata metadata)
 	{
+		char8 c = (metadata != null && metadata.mDocumentStyle.mUseTabs) ? '\t' : ' ';
 		for (int i = 0; i < count; i++)
-			outStr.Append(' ');
+			outStr.Append(c);
 	}
 
 	private static void Pad4(int32 val, String outStr)
@@ -1583,7 +1593,7 @@ static class TomlWriterImpl
 
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
-			AppendIndent(outStr, indentSize);
+			AppendIndent(outStr, indentSize, metadata);
 			outStr.Append('#');
 			let text = commentSet.mLeading[i];
 			if (!text.IsEmpty)

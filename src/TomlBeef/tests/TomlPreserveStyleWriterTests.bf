@@ -1475,6 +1475,54 @@ static class TomlPreserveStyleWriterTests
 	}
 
 	[Test]
+	public static void PreserveStyle_TabIndentationKept()
+	{
+		var doc = scope TomlDocument();
+		ReadPreserving(doc, "a = [\n\t1,\n\t2,\n]\nt = {\n\tx = 1,\n}\n");
+		Test.Assert(doc.Metadata.mDocumentStyle.mUseTabs);
+
+		Test.Assert(doc.TryGetArray("a", var a));
+		a[0] = 10;
+		String output = scope String();
+		doc.Write(output);
+		AssertContains(output, "a = [\n\t10,\n\t2,\n]");
+		AssertContains(output, "t = {\n\tx = 1,\n}");
+
+		// A new array in a tab-indented document is indented with one tab, not four
+		var added = doc.AddArray("b");
+		added.Add(1);
+		String withNew = scope String();
+		doc.Write(withNew);
+		AssertContains(withNew, "b = [\n\t1,\n]");
+		var reparsed = scope TomlDocument();
+		ReadPreserving(reparsed, withNew, .Replace, .Error, .None);
+		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Output changed on re-read:\n{withNew}");
+	}
+
+	[Test]
+	public static void PreserveStyle_NewArraysFollowDominantLayout()
+	{
+		var multiline = scope TomlDocument();
+		ReadPreserving(multiline, "a = [\n  1,\n  2,\n]\nb = [\n  3,\n]\nc = [4]\n");
+		var added = multiline.AddArray("n");
+		added.Add(5);
+		added.Add(6);
+		String output = scope String();
+		multiline.Write(output);
+		AssertContains(output, "n = [\n  5,\n  6,\n]");
+		AssertContains(output, "c = [4]");
+
+		var singleLine = scope TomlDocument();
+		ReadPreserving(singleLine, "a = [1, 2]\nb = [3]\n");
+		var added2 = singleLine.AddArray("n");
+		added2.Add(5);
+		added2.Add(6);
+		String output2 = scope String();
+		singleLine.Write(output2);
+		AssertContains(output2, "n = [5, 6]");
+	}
+
+	[Test]
 	public static void PreserveStyle_CommentsInsideMultilineInlineTableKept()
 	{
 		let input = "t = {\n  # about a\n  a = 1, # trailing a\n  # about b\n  b = 2 # trailing b\n  ,\n  # closing\n}\n";

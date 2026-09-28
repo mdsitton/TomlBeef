@@ -403,9 +403,15 @@ The metadata is a **sidecar**, so normal mode pays nothing for it. `TomlDocument
   are its leading comments, a comment on its line (before or after the comma) its trailing comment,
   and comments before `}` are stored on the inline table's own node and written before the brace.
   A 1.0 write puts the table on one line, where comments cannot be kept.
-- `TomlDocumentStyle`, inferred once at the end of the parse: newline style (CRLF if CRLF lines
-  are at least as common as LF-only lines), indent size, dotted-key preference, the dominant
-  string style and the dominant array style.
+- `TomlDocumentStyle`, inferred during the parse: newline style (CRLF if CRLF lines are at least
+  as common as LF-only lines), the dominant string style and the dominant array layout, dotted-key
+  use, and indentation. Indentation (character and size, counted in characters so one tab is size
+  1) comes from an indented top-level line if there is one, otherwise from the first indented array
+  element or inline-table entry. It drives values that have no captured format of their own: new
+  strings use the dominant string style, new non-empty arrays the dominant layout (multi-line with
+  the document indent and a trailing comma), and all preserving-writer indentation uses tabs when
+  the source did. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
+  headers into dotted keys: one dotted key anywhere would otherwise restyle every new table.
 
 Node identity is stored **beside the slots, not in `TomlValue`**. Each table and array has a
 `TomlContainerMetadataContext` (only in PreserveStyle) that maps entry key or item index to a
