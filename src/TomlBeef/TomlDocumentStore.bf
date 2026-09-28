@@ -11,6 +11,9 @@ internal class TomlDocumentStore
 {
 	private BumpAllocator mAlloc ~ delete _;
 	private TomlTable mRootTable;
+	/// @brief Set while the parser fills this store: containers and entries it creates start clean
+	/// instead of being marked dirty. One flag for the whole store, so ending a parse needs no tree walk.
+	internal bool mSuppressAutoDirty;
 
 	public this()
 	{
@@ -31,32 +34,29 @@ internal class TomlDocumentStore
 
 	/// @brief Allocate a TomlTable in the store arena, bound to this store.
 	/// @param origin The table origin for conflict detection.
-	/// @param suppressAutoDirty Whether to suppress dirty marking during parse.
 	/// @return A store-owned TomlTable with mStore set to this store.
-	internal TomlTable NewTable(TomlTableOrigin origin, bool suppressAutoDirty = false)
+	internal TomlTable NewTable(TomlTableOrigin origin)
 	{
-		let tbl = new:mAlloc TomlTable(origin, suppressAutoDirty);
+		let tbl = new:mAlloc TomlTable(origin);
 		tbl.mStore = this;
 		return tbl;
 	}
 
 	/// @brief Allocate a TomlArray in the store arena, bound to this store.
-	/// @param suppressAutoDirty Whether to suppress dirty marking during parse.
 	/// @return A store-owned TomlArray with mStore set to this store.
-	internal TomlArray NewArray(bool suppressAutoDirty = false)
+	internal TomlArray NewArray()
 	{
-		let arr = new:mAlloc TomlArray(suppressAutoDirty);
+		let arr = new:mAlloc TomlArray();
 		arr.mStore = this;
 		return arr;
 	}
 
 	/// @brief Allocate a TomlArray with capacity in the store arena, bound to this store.
 	/// @param capacity Initial capacity hint.
-	/// @param suppressAutoDirty Whether to suppress dirty marking during parse.
 	/// @return A store-owned TomlArray with mStore set to this store.
-	internal TomlArray NewArray(int capacity, bool suppressAutoDirty = false)
+	internal TomlArray NewArray(int capacity)
 	{
-		let arr = new:mAlloc TomlArray(capacity, suppressAutoDirty);
+		let arr = new:mAlloc TomlArray(capacity);
 		arr.mStore = this;
 		return arr;
 	}
@@ -67,5 +67,7 @@ internal class TomlDocumentStore
 		delete mAlloc;
 		mAlloc = new BumpAllocator(.Allow);
 		mRootTable = NewTable(.Root);
+		// A parse that failed (and cleared the document) must not leave suppression on
+		mSuppressAutoDirty = false;
 	}
 }

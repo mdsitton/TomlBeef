@@ -110,8 +110,7 @@ public class TomlArray
 	private List<TomlValue> mItems;
 	private bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
-	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
-	/// @brief The owning document store.
+	/// @brief The owning document store. Its mSuppressAutoDirty is set while the parser fills it.
 	internal TomlDocumentStore mStore;
 	/// @brief Set by parser after detecting a trailing comma before the closing bracket.
 	internal bool mHasTrailingComma;
@@ -142,30 +141,19 @@ public class TomlArray
 
 	internal this()
 	{
-		Init(0, false);
-	}
-
-	internal this(bool suppressAutoDirty)
-	{
-		Init(0, suppressAutoDirty);
+		Init(0);
 	}
 
 	internal this(int capacity)
 	{
-		Init(capacity, false);
+		Init(capacity);
 	}
 
-	internal this(int capacity, bool suppressAutoDirty)
-	{
-		Init(capacity, suppressAutoDirty);
-	}
-
-	private void Init(int capacity, bool suppressAutoDirty)
+	private void Init(int capacity)
 	{
 		mItems = capacity > 0 ? new List<TomlValue>(capacity) : new List<TomlValue>();
 		mIsStatic = false;
 		mMetadataContext = null;
-		mSuppressAutoDirty = suppressAutoDirty;
 	}
 
 	internal void Add(TomlValue value)
@@ -173,12 +161,12 @@ public class TomlArray
 		mItems.Add(value);
 
 		// Auto node-ID allocation when metadata context exists.
-		// During parsing, mSuppressAutoDirty is set to keep entries clean.
+		// During parsing, the store suppresses dirty marking to keep entries clean.
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
 		{
 			let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
 			mMetadataContext.AddItemNodeId(nodeId);
-			if (!mSuppressAutoDirty)
+			if (!mStore.mSuppressAutoDirty)
 				MarkChildrenDirty();
 			BindContainerMetadata(value);
 		}
@@ -492,49 +480,9 @@ public class TomlArray
 		return result;
 	}
 
-
-
 	// ================================================================
 	// Dirty tracking helpers
 	// ================================================================
-
-	/// Recursively clear metadata contexts from this array and all descendant tables/arrays.
-	internal void ClearMetadataContexts()
-	{
-		if (mMetadataContext != null)
-		{
-			delete mMetadataContext;
-			mMetadataContext = null;
-		}
-		for (int i = 0; i < mItems.Count; i++)
-		{
-			switch (mItems[i])
-			{
-			case .Array(let arr):
-				if (arr != null) arr.ClearMetadataContexts();
-			case .Table(let tbl):
-				if (tbl != null) tbl.ClearMetadataContexts();
-			default:
-			}
-		}
-	}
-
-	/// Recursively re-enable automatic dirty tracking after parser construction completes.
-	internal void ClearAutoDirtySuppression()
-	{
-		mSuppressAutoDirty = false;
-		for (int i = 0; i < mItems.Count; i++)
-		{
-			switch (mItems[i])
-			{
-			case .Array(let arr):
-				if (arr != null) arr.ClearAutoDirtySuppression();
-			case .Table(let tbl):
-				if (tbl != null) tbl.ClearAutoDirtySuppression();
-			default:
-			}
-		}
-	}
 
 	/// Mark a specific array element as dirty in the metadata context.
 	internal void MarkItemDirty(int index)

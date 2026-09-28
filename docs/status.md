@@ -61,7 +61,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
 | I3 | *Deferred (2026-09-27).* No streaming writer: `WriteFile` builds the whole output `String` first. A `Write(Stream)` that also builds a full string adds nothing, so this is only worth doing as a real chunked output sink (every writer helper takes an output object instead of `String`; tail checks read a kept tail). Revisit if large outputs matter | M–L |
-| I4 | *Optional, in progress.* Byte scanning is done (`ScanRun`; key-path and string-buffer reuse). What remains is per-value and per-table overhead: small arrays and dotted keys that create a table per line parse at ~25–28 MB/s. Candidates: cheaper value dispatch for bare values, fewer allocations per table (dictionary and key list), multi-line strings through `ScanRun` | M |
+| I4 | *Optional.* Parse speed is ~77 MB/s on the mixed bench (from ~40; see architecture.md "TomlTester"). Remaining ideas, by profile: comment capture in PreserveStyle (one String per comment; `toml_edit` is ~1.8× faster on comment-only input), multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads | S–M |
 
 ### API surface
 

@@ -205,7 +205,7 @@ internal class TomlPathResolver
 
 			Try!(CheckNodeCount());
 			TomlTable newTable = 
-				mStore.NewTable(implicitOrigin, true);
+				mStore.NewTable(implicitOrigin);
 			TomlValue tableVal = TomlValue.Table(newTable);
 			Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 			mCurrentTable.Insert(key, tableVal);
@@ -279,7 +279,7 @@ internal class TomlPathResolver
 
 		Try!(CheckNodeCount());
 		TomlTable newTable =
-			mStore.NewTable(origin, true);
+			mStore.NewTable(origin);
 		TomlValue tableVal = TomlValue.Table(newTable);
 		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 
@@ -312,7 +312,7 @@ internal class TomlPathResolver
 
 				Try!(CheckNodeCount());
 				TomlTable newElement = 
-				mStore.NewTable(.ArrayElement, true);
+				mStore.NewTable(.ArrayElement);
 				Try!(CheckArrayItem(arr, mCurrentOffset));
 				arr.Add(TomlValue.Table(newElement));
 				mCurrentTable = newElement;
@@ -344,10 +344,10 @@ internal class TomlPathResolver
 
 		Try!(CheckNodeCount()); // the array itself
 		TomlArray newArray = 
-			mStore.NewArray(true);
+			mStore.NewArray();
 		Try!(CheckNodeCount()); // first element
 		TomlTable firstElement = 
-			mStore.NewTable(.ArrayElement, true);
+			mStore.NewTable(.ArrayElement);
 		newArray.Add(.Table(firstElement));
 		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
@@ -368,11 +368,17 @@ internal class TomlPathResolver
 
 	private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value, TomlNodeId* outNodeId)
 	{
-		if (mCurrentTable.TryGetValue(key, let existing))
-			return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
-
-		if (mCurrentTable.IsInlineSealed)
-			return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
+		// A duplicate key is reported ahead of the sealed-table and entry-limit errors. Those checks are
+		// cheap and rarely fail, so they run first; only then is the key looked up separately, keeping
+		// the common path to the single hash lookup of TryInsertNew.
+		if (mCurrentTable.IsInlineSealed || CheckTableEntry(mCurrentTable, mCurrentOffset) case .Err)
+		{
+			if (mCurrentTable.ContainsKey(key))
+				return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
+			if (mCurrentTable.IsInlineSealed)
+				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
+			Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
+		}
 
 		TomlNodeId nodeId = .Invalid;
 		if (mMetadata != null && outNodeId != null)
@@ -383,8 +389,8 @@ internal class TomlPathResolver
 			EnsureTableContext(mCurrentTable);
 		}
 
-		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
-		mCurrentTable.Insert(key, value, nodeId);
+		if (!mCurrentTable.TryInsertNew(key, value, nodeId))
+			return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
 		return .Ok;
 	}
 

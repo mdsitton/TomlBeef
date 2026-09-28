@@ -28,8 +28,7 @@ public class TomlTable
 	private Dictionary<String, TomlTableSlot> mEntries;
 	private List<String> mKeyOrder;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
-	internal bool mSuppressAutoDirty; // set by parser to suppress dirty marking during parse
-	/// @brief The owning document store.
+	/// @brief The owning document store. Its mSuppressAutoDirty is set while the parser fills it.
 	internal TomlDocumentStore mStore;
 
 	public ~this()
@@ -40,22 +39,11 @@ public class TomlTable
 
 	internal this(TomlTableOrigin origin)
 	{
-		Init(origin, false);
-	}
-
-	internal this(TomlTableOrigin origin, bool suppressAutoDirty)
-	{
-		Init(origin, suppressAutoDirty);
-	}
-
-	private void Init(TomlTableOrigin origin, bool suppressAutoDirty)
-	{
 		mOrigin = origin;
 		mIsInlineSealed = false;
 		mEntries = new Dictionary<String, TomlTableSlot>();
 		mKeyOrder = new List<String>();
 		mMetadataContext = null;
-		mSuppressAutoDirty = suppressAutoDirty;
 	}
 
 	public TomlTableOrigin Origin
@@ -169,15 +157,23 @@ public class TomlTable
 	/// parser allocates IDs up front); otherwise one is allocated and the table is marked Children-dirty.
 	internal void Insert(StringView key, TomlValue value, TomlNodeId presetNodeId = .Invalid)
 	{
-		if (mEntries.TryGetRefAlt(key, let _, let existing))
-		{
-			if (existing.mValue.IsSemanticallyEqualTo(value))
-				return;
-			existing.mValue = value;
-			MarkEntryDirty(key);
-			BindContainerMetadata(value);
+		if (TryInsertNew(key, value, presetNodeId))
 			return;
-		}
+
+		ref TomlTableSlot existing = ref mEntries[GetOwnedKey(key)];
+		if (existing.mValue.IsSemanticallyEqualTo(value))
+			return;
+		existing.mValue = value;
+		MarkEntryDirty(key);
+		BindContainerMetadata(value);
+	}
+
+	/// Adds a new entry with a single hash lookup (the parser's path for every key).
+	/// @return False, changing nothing, if `key` already exists.
+	internal bool TryInsertNew(StringView key, TomlValue value, TomlNodeId presetNodeId = .Invalid)
+	{
+		if (!mEntries.TryAddAlt(key, let keyPtr, let slotPtr))
+			return false;
 
 		// Node-ID registration for new entries when a metadata context exists. Parser-inserted entries
 		// arrive with their ID; only genuinely new entries allocate one and mark the table dirty.
@@ -187,15 +183,23 @@ public class TomlTable
 			nodeId = presetNodeId.IsValid ? presetNodeId : mMetadataContext.mMetadata.AllocateNodeId();
 
 		String ownedKey = mStore.NewString(key);
-		mEntries[ownedKey] = .(value, nodeId);
+		*keyPtr = ownedKey;
+		*slotPtr = .(value, nodeId);
 		mKeyOrder.Add(ownedKey);
 
 		if (hasMetadata)
 		{
-			if (!presetNodeId.IsValid && !mSuppressAutoDirty)
+			if (!presetNodeId.IsValid && !mStore.mSuppressAutoDirty)
 				MarkChildrenDirty();
 			BindContainerMetadata(value);
 		}
+		return true;
+	}
+
+	/// The table's own key string for `key`, or null if the key is missing.
+	private String GetOwnedKey(StringView key)
+	{
+		return mEntries.TryGetAlt(key, let ownedKey, let _) ? ownedKey : null;
 	}
 
 	/// Bind metadata context to inserted container values (tables/arrays).
@@ -522,7 +526,6 @@ public class TomlTable
 		// and later insertions get node IDs; the entries' IDs went with the entries.
 		if (mMetadataContext != null && hadEntries)
 			MarkChildrenDirty();
-		mSuppressAutoDirty = false;
 	}
 
 	/// @brief Deep-merge another table into this one.
@@ -560,17 +563,8 @@ public class TomlTable
 			else
 			{
 				// With positions on the incoming side (a merge read with metadata), point at its key
-				var error = TomlParseError(.DuplicateKey, scope $"Duplicate key '{path}' during merge", 0, 0, 0);
-				if (source.TryGetNodeRange(source.mEntries[key].mNodeId, let range))
-				{
-					error.mLine = range.mLine;
-					error.mColumn = range.mColumn;
-					error.mOffset = range.mOffset;
-					error.mLength = range.mLength;
-					if (!range.mSource.IsEmpty)
-						error.SetSource(range.mSource);
-				}
-				return .Err(error);
+				source.TryGetNodeRange(source.mEntries[key].mNodeId, var range);
+				return .Err(TomlParseError.Located(.DuplicateKey, scope $"Duplicate key '{path}' during merge", range));
 			}
 			path.Length = pathLen;
 		}
@@ -688,53 +682,6 @@ public class TomlTable
 	// ================================================================
 	// Dirty tracking helpers
 	// ================================================================
-
-	/// Recursively clear metadata contexts from this table and all descendant tables/arrays.
-	internal void ClearMetadataContexts()
-	{
-		if (mMetadataContext != null)
-		{
-			delete mMetadataContext;
-			mMetadataContext = null;
-		}
-		for (int i = 0; i < mKeyOrder.Count; i++)
-		{
-			// The entries' node IDs referred to the sidecar that is going away
-			ref TomlTableSlot slot = ref mEntries[mKeyOrder[i]];
-			slot.mNodeId = .Invalid;
-			ClearMetadataContextsFromValue(slot.mValue);
-		}
-	}
-
-	private static void ClearMetadataContextsFromValue(TomlValue val)
-	{
-		switch (val)
-		{
-		case .Array(let arr):
-			if (arr != null) arr.ClearMetadataContexts();
-		case .Table(let tbl):
-			if (tbl != null) tbl.ClearMetadataContexts();
-		default:
-		}
-	}
-
-	/// Recursively re-enable automatic dirty tracking after parser construction completes.
-	internal void ClearAutoDirtySuppression()
-	{
-		mSuppressAutoDirty = false;
-		for (int i = 0; i < mKeyOrder.Count; i++)
-		{
-			String key = mKeyOrder[i];
-			switch (mEntries[key].mValue)
-			{
-			case .Array(let arr):
-				if (arr != null) arr.ClearAutoDirtySuppression();
-			case .Table(let tbl):
-				if (tbl != null) tbl.ClearAutoDirtySuppression();
-			default:
-			}
-		}
-	}
 
 	/// Mark a specific entry as dirty. Call after programmatic value changes.
 	internal void MarkEntryDirty(StringView key)

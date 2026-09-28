@@ -118,10 +118,10 @@ public class TomlDocument
 		mRootTable = mStore.RootTable;
 	}
 
+	/// Deletes the sidecar. Only called right before the store reset, whose destructors free every
+	/// container's metadata context, so no walk over the tree is needed.
 	private void ClearMetadata()
 	{
-		if (mRootTable != null)
-			mRootTable.ClearMetadataContexts();
 		if (mMetadata != null)
 		{
 			delete mMetadata;
@@ -345,7 +345,7 @@ public class TomlDocument
 		var tempStore = new TomlDocumentStore();
 		defer delete tempStore;
 		var incoming = tempStore.RootTable;
-		incoming.mSuppressAutoDirty = true;
+		tempStore.mSuppressAutoDirty = true;
 
 		TomlDocumentMetadata incomingMetadata = null;
 		if (config.MetadataMode != .None)
@@ -385,7 +385,7 @@ public class TomlDocument
 		// The root context is how MergeFrom finds the incoming sidecar
 		if (incomingMetadata != null && incoming.MetadataContext == null)
 			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
-		incoming.ClearAutoDirtySuppression();
+		incoming.mStore.mSuppressAutoDirty = false;
 		// Styles and comments merged from a PreserveStyle read make a Positions document preserve style.
 		// Upgrade first so the merge has style records to copy into; a rejected merge changes nothing.
 		let previousMode = mMetadata?.mMode ?? .None;
@@ -431,7 +431,7 @@ public class TomlDocument
 			else if (wantsMetadata)
 				mMetadata.Upgrade(config.MetadataMode);
 			let parser = scope TomlParserImpl<TCursor>(config, mStore, wantsMetadata ? mMetadata : null, limits);
-			mRootTable.mSuppressAutoDirty = true;
+			mStore.mSuppressAutoDirty = true;
 			// Attach the root context before parsing so every table created during the parse (including
 			// intermediate tables of dotted keys) inherits a context and its keys get node IDs
 			if (wantsMetadata && mRootTable.MetadataContext == null)
@@ -442,7 +442,7 @@ public class TomlDocument
 				Clear();
 				return .Err(parseErr);
 			}
-			mRootTable.ClearAutoDirtySuppression();
+			mStore.mSuppressAutoDirty = false;
 			return .Ok;
 		}
 
@@ -450,7 +450,7 @@ public class TomlDocument
 		var tempStore = new TomlDocumentStore();
 		defer delete tempStore;
 		var incoming = tempStore.RootTable;
-		incoming.mSuppressAutoDirty = true;
+		tempStore.mSuppressAutoDirty = true;
 		TomlDocumentMetadata incomingMetadata = null;
 		if (wantsMetadata)
 		{

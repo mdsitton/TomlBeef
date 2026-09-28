@@ -27,6 +27,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Reused buffer for string values while they are decoded; strings never nest, and the finished
 	// value is copied into the store, so one buffer serves the whole parse without per-string allocations.
 	private String mStringScratch ~ delete _;
+	// Reused scratch for cursor slices of bare values (only filled when a stream read spills)
+	private String mSliceScratch ~ delete _;
 	// Key-path buffers by nesting level (see AcquireKeyPath), reused for every key of the parse.
 	private List<TomlKeyPathBuffer> mKeyPathPool ~ DeleteContainerAndItems!(_);
 	private int mKeyPathDepth;
@@ -73,6 +75,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
 		mStringScratch = new String(64);
+		mSliceScratch = new String(64);
 		mKeyPathPool = new List<TomlKeyPathBuffer>();
 		mKeyPathDepth = 0;
 		mSeenContent = false;
@@ -538,10 +541,12 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Skips whitespace and comments. In arrays, newlines are allowed; in inline tables, they are not.
 	private Result<void, TomlParseError> SkipWsAndComments(bool allowNewlines = true)
 	{
-		while (!mCursor.IsEOF)
+		while (true)
 		{
+			mCursor.SkipWhitespace();
+			if (mCursor.IsEOF)
+				break;
 			char8 b = mCursor.PeekByte();
-			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
 			if (b == '#')
 			{
 				if (SkipCommentText() case .Err(let e))
@@ -561,10 +566,12 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<String> outComments, out bool outBlankLine)
 	{
 		outBlankLine = false;
-		while (!mCursor.IsEOF)
+		while (true)
 		{
+			mCursor.SkipWhitespace();
+			if (mCursor.IsEOF)
+				break;
 			char8 b = mCursor.PeekByte();
-			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
 			if (b == '#')
 			{
 				if (outComments != null && mStyle != null)
@@ -633,44 +640,54 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset);
 	}
 
+	// Limit checks run for every value, key and container, so each compares inline and only calls into
+	// the limit state (which builds the error) when a limit is set and exceeded.
+
+	[Inline]
 	private Result<void, TomlParseError> CheckDepth()
 	{
-		if (mLimits != null)
+		if (mLimits != null && mDepth >= mLimits.mMaxDepth)
 			return mLimits.CheckDepth(mDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 
+	[Inline]
 	private Result<void, TomlParseError> CheckStringLength(int byteLength)
 	{
-		if (mLimits != null)
+		if (mLimits != null && mLimits.mMaxStringBytes > 0 && byteLength > mLimits.mMaxStringBytes)
 			return mLimits.CheckStringBytes(byteLength, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 
+	[Inline]
 	private Result<void, TomlParseError> CheckNodeCount()
 	{
-		if (mLimits != null)
+		// Counting nodes only matters with a node limit
+		if (mLimits != null && mLimits.mMaxNodes > 0)
 			return mLimits.CheckNodeCount(mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 
+	[Inline]
 	private Result<void, TomlParseError> CheckArrayItem(TomlArray arr)
 	{
-		if (mLimits != null)
+		if (mLimits != null && mLimits.mMaxArrayItems > 0 && arr.Count >= mLimits.mMaxArrayItems)
 			return mLimits.CheckArrayItem(arr, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 
+	[Inline]
 	private Result<void, TomlParseError> CheckTableEntry(TomlTable tbl)
 	{
-		if (mLimits != null)
+		if (mLimits != null && mLimits.mMaxTableEntries > 0 && tbl.Count >= mLimits.mMaxTableEntries)
 			return mLimits.CheckTableEntry(tbl, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 
+	[Inline]
 	private Result<void, TomlParseError> CheckPathSegments(int count)
 	{
-		if (mLimits != null)
+		if (mLimits != null && mLimits.mMaxPathSegments > 0 && count > mLimits.mMaxPathSegments)
 			return mLimits.CheckPathSegments(count, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}

@@ -7,22 +7,21 @@ namespace TomlBeef;
 /// dotted key allocates nothing once the buffer has grown to the longest path seen.
 internal class TomlKeyPathBuffer
 {
-	/// @brief The segments of the current key path (what the resolver reads).
-	public List<String> mParts ~ DeleteContainerAndItems!(_);
-	/// Strings from earlier paths, ready for reuse.
-	List<String> mSpare ~ DeleteContainerAndItems!(_);
+	/// @brief The segments of the current key path (what the resolver reads). Always the first
+	/// mParts.Count Strings of mAll, in order.
+	public List<String> mParts ~ delete _;
+	/// Every segment String ever used, owned here and reused in order.
+	List<String> mAll ~ DeleteContainerAndItems!(_);
 
 	public this()
 	{
 		mParts = new List<String>();
-		mSpare = new List<String>();
+		mAll = new List<String>();
 	}
 
 	/// @brief Start a new, empty key path (keeping the Strings for reuse).
 	public void Reset()
 	{
-		for (let part in mParts)
-			mSpare.Add(part);
 		mParts.Clear();
 	}
 
@@ -30,8 +29,18 @@ internal class TomlKeyPathBuffer
 	/// @return The segment's String, owned by this buffer.
 	public String Add()
 	{
-		String part = mSpare.IsEmpty ? new String() : mSpare.PopBack();
-		part.Clear();
+		int index = mParts.Count;
+		String part;
+		if (index < mAll.Count)
+		{
+			part = mAll[index];
+			part.Clear();
+		}
+		else
+		{
+			part = new String();
+			mAll.Add(part);
+		}
 		mParts.Add(part);
 		return part;
 	}

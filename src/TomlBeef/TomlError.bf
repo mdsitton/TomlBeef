@@ -72,10 +72,16 @@ public struct TomlParseError
 	/// @brief Name of the input the position refers to (TomlReadConfig.SourceName, or the path for
 	/// ReadFile/WriteFile); empty if unnamed. Valid until the next error on this thread.
 	public StringView mSource;
-	public int mLine;
-	public int mColumn;
-	public int mOffset;
-	public int mLength;
+	// 32-bit positions keep the error (and every parser Result that carries it) small: it is copied on
+	// each return up the parser's call chain, even when no error occurs
+	/// @brief 1-based line (0 when there is no position).
+	public int32 mLine;
+	/// @brief 1-based column.
+	public int32 mColumn;
+	/// @brief Byte offset into the input.
+	public int32 mOffset;
+	/// @brief Length of the erroneous span in bytes.
+	public int32 mLength;
 
 	/// Creates a new parse error at the given location.
 	/// @param kind The category of error.
@@ -87,10 +93,10 @@ public struct TomlParseError
 	public this(TomlErrorKind kind, StringView message, int line, int column, int offset, int length = 1)
 	{
 		mKind = kind;
-		mLine = line;
-		mColumn = column;
-		mOffset = offset;
-		mLength = length;
+		mLine = (int32)line;
+		mColumn = (int32)column;
+		mOffset = (int32)offset;
+		mLength = (int32)length;
 
 		mMessage = Store(sMessageBuffer.Value, message);
 		mSource = default;

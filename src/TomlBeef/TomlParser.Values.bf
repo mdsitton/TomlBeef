@@ -452,11 +452,17 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		int length = mCursor.Offset - mark.mOffset;
 		if (length == 0)
+		{
+			mCursor.ReleaseMark(mark);
 			return .Err(Error(.UnexpectedToken, "Expected value"));
+		}
 
-		String scratch = scope String();
-		StringView token = mCursor.Slice(mark, scratch);
-		token.Trim();
+		// The scratch is only filled when a stream read spills; the token is used before the next value
+		StringView token = mCursor.Slice(mark, mSliceScratch);
+		// Leading whitespace was skipped before the value; only spaces and tabs can trail it (a newline
+		// or other delimiter ends the scan). Other characters stay and make the value invalid.
+		while (token.Length > 0 && (token[token.Length - 1] == ' ' || token[token.Length - 1] == '\t'))
+			token.Length--;
 		return ParseBareToken(token);
 	}
 

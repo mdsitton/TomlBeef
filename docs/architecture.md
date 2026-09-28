@@ -647,10 +647,22 @@ out-of-line `Fill`; inline `AdvanceByte` and ASCII `Advance` with newlines and m
 sequences out of line; `IsEOF` reading a struct flag instead of the shared state). The remaining
 ~15% is the copy into the buffer and incremental UTF-8 validation. Bulk scanning (`ScanRun`) and
 the key-path and string-buffer reuse then gave (5 MB mixed bench, same-run comparison, 2026-09-28)
-+17% overall, 2× on string-heavy input, +47% on comments, +20% on integer and header input. Input
-dominated by small arrays or by dotted keys that create a table per line stays slowest (~25–28
-MB/s): its cost is per value and per table (value dispatch, table and dictionary allocation), not
-per byte.
++17% overall, 2× on string-heavy input, +47% on comments, +20% on integer and header input. A
+`perf` pass then removed per-document and per-entry overhead: dirty-marking suppression is one flag
+on the store (`TomlDocumentStore.mSuppressAutoDirty`) instead of a flag per container cleared by a
+tree walk after every parse; `Clear()` no longer walks the tree to delete metadata contexts (the
+store reset's destructors do); new keys are inserted with one hash lookup (`TomlTable.TryInsertNew`,
+the resolver checks the sealed/limit errors first); the parser's limit checks compare inline and only
+call out when a limit is exceeded; and `TomlParseError`'s positions are `int32`, which shrinks every
+parser `Result` (copied on each return up the call chain) from ~80 to 64 bytes. Together (same-run,
+2026-09-28): the 5 MB mixed bench went from ~40 to ~77 MB/s, integers ~94, dates ~109, strings ~270,
+headers ~64, dotted keys ~42, small arrays ~40.
+  - *Comparison* (same machine, 2026-09-28, MB/s on generated inputs with at most 1000 keys per
+    table): on a config-like mixed file TomlBeef ~79, Rust `toml` ~31, Tomlyn ~17, tomlc17 ~7,
+    toml11 ~2; with style preservation TomlBeef ~44, `toml_edit` ~28, Tomlyn's syntax tree ~4.
+    TomlBeef leads on every shape except comment-only input, where `toml`/`toml_edit` scan faster
+    (~660/635 vs ~580 plain, ~350 preserving). Each library builds its own document type, so the
+    work is not identical.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
   `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in

@@ -15,7 +15,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		int startLine = mCursor.Line;
-		TomlArray arr = mStore.NewArray(true);
+		TomlArray arr = mStore.NewArray();
 		arr.IsStatic = true;
 
 		// Array-local pending comment list for PreserveStyle mode
@@ -264,7 +264,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseInlineTable()
 	{
 		mCursor.AdvanceByte();
-		TomlTable tbl = mStore.NewTable(.InlineTable, true);
+		TomlTable tbl = mStore.NewTable(.InlineTable);
 		// With metadata, give the table a context up front so each field gets a node ID (and dotted
 		// sub-tables inherit contexts through Insert) before its range and format are recorded.
 		if (mMetadata != null)
@@ -479,7 +479,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			else
 			{
 				Try!(CheckNodeCount());
-				TomlTable newTbl = mStore.NewTable(.InlineTable, true);
+				TomlTable newTbl = mStore.NewTable(.InlineTable);
 				Try!(CheckTableEntry(current));
 				current.Insert(key, TomlValue.Table(newTbl));
 				current = newTbl;
