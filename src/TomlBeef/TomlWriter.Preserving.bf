@@ -627,7 +627,7 @@ extension TomlWriterImpl
 
 	private static bool HasComments(TomlCommentSet commentSet)
 	{
-		return commentSet != null && (!commentSet.mLeading.IsEmpty || commentSet.mTrailing != null);
+		return commentSet != null && (!commentSet.mLeading.IsEmpty || commentSet.HasTrailing);
 	}
 
 	private static void WriteInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
@@ -763,7 +763,7 @@ extension TomlWriterImpl
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
 			let text = commentSet.mLeading[i];
-			if (text == null)
+			if (TomlCommentSet.IsAbsent(text))
 			{
 				WriteBlankLine(outStr, metadata);
 				continue;
@@ -816,7 +816,7 @@ extension TomlWriterImpl
 		for (int i = 0; i < commentSet.mLeading.Count; i++)
 		{
 			let text = commentSet.mLeading[i];
-			if (text == null)
+			if (TomlCommentSet.IsAbsent(text))
 			{
 				WriteBlankLine(outStr, metadata);
 				continue;
@@ -837,7 +837,7 @@ extension TomlWriterImpl
 	private static void EmitTrailingComment(TomlNodeId nodeId, String outStr, TomlDocumentMetadata metadata)
 	{
 		let commentSet = metadata.GetCommentSet(nodeId);
-		if (commentSet == null || commentSet.mTrailing == null)
+		if (commentSet == null || !commentSet.HasTrailing)
 			return;
 
 		if (commentSet.mTrailing.IsEmpty)

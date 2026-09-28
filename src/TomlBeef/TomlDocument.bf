@@ -540,7 +540,7 @@ public class TomlDocument
 	{
 		if (!PreservesStyle || !IsValidCommentText(comment))
 			return false;
-		ReplaceCommentLines(mMetadata.GetOrCreateRootComments(), comment);
+		mMetadata.ReplaceCommentLines(mMetadata.GetOrCreateRootComments(), comment);
 		return true;
 	}
 
@@ -551,7 +551,7 @@ public class TomlDocument
 	{
 		if (!PreservesStyle || !IsValidCommentText(comment))
 			return false;
-		ReplaceCommentLines(mMetadata.GetOrCreateFooterComments(), comment);
+		mMetadata.ReplaceCommentLines(mMetadata.GetOrCreateFooterComments(), comment);
 		return true;
 	}
 
@@ -674,16 +674,6 @@ public class TomlDocument
 	private static bool IsValidCommentText(StringView text)
 	{
 		return TomlDocumentMetadata.IsValidCommentText(text, true);
-	}
-
-	private static void ReplaceCommentLines(TomlCommentSet commentSet, StringView comment)
-	{
-		ClearAndDeleteItems!(commentSet.mLeading);
-		if (!comment.IsEmpty)
-		{
-			for (let line in comment.Split('\n'))
-				commentSet.mLeading.Add(new String(line));
-		}
 	}
 
 	/// Parses a dotted path and walks all but its last segment, returning the parent table and final key

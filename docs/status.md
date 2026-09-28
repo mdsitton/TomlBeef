@@ -59,7 +59,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Idea | Size |
 |----|------|------|
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
-| O7 | *Optional.* Metadata text arena instead of `List<String>` for comments and original tokens (PreserveStyle comment capture: `toml_edit` is ~1.8× faster on comment-only input) | S–M |
 | O8 | *Optional, perf.* Parsing is ~77 MB/s on the mixed bench and fastest in the comparison (architecture.md "TomlTester"); judged good enough (2026-09-28). Remaining ideas by profile: multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
 
 ## Suggested order

@@ -18,19 +18,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		TomlArray arr = mStore.NewArray();
 		arr.IsStatic = true;
 
-		// Array-local pending comment list for PreserveStyle mode
-		List<String> arrayPendingComments = (mStyle != null) ? new List<String>() : null;
+		// Array-local pending comment list for PreserveStyle mode (its buffer is only allocated by a comment)
+		List<StringView> arrayPendingComments = (mStyle != null) ? scope:: List<StringView>() : null;
 		// Tracks whether the preceding comma was followed by a blank line
 		bool arraySawBlankLine = false;
-		defer
-		{
-			if (arrayPendingComments != null)
-			{
-				for (var item in arrayPendingComments)
-					delete item;
-				delete arrayPendingComments;
-			}
-		}
 
 		// Capture comments after opening bracket
 		bool unusedBlank = false;
@@ -157,27 +148,18 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				mCursor.SkipWhitespace();
 				if (!mCursor.IsEOF && mCursor.PeekByte() == '#')
 				{
-					String trailingText = new String();
-					if (CaptureCommentText(trailingText) case .Err(let tcErr))
-					{
-						delete trailingText;
-						
-						return .Err(tcErr);
-					}
-					if (elemNodeId.IsValid && mStyle != null)
-					{
-						let commentSet = mStyle.GetOrCreateCommentSet(elemNodeId);
-						if (commentSet != null)
-						{
-							if (commentSet.mTrailing != null)
-								delete commentSet.mTrailing;
-							commentSet.mTrailing = trailingText;
-						}
-						else
-							delete trailingText;
-					}
+					if (mStyle == null)
+						Try!(SkipCommentText());
 					else
-						delete trailingText;
+					{
+						let trailingText = Try!(CaptureComment());
+						if (elemNodeId.IsValid)
+						{
+							let commentSet = mStyle.GetOrCreateCommentSet(elemNodeId);
+							if (commentSet != null)
+								commentSet.mTrailing = trailingText;
+						}
+					}
 				}
 
 				// Capture ws/comments between elements (leading for next element)
@@ -273,8 +255,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// Comments can only appear inside inline tables in TOML 1.1 (they need newlines). In PreserveStyle
 		// they are collected here and attached: lines above a field become its leading comments, a comment
 		// on the field's own line its trailing comment, and comments before `}` the table's closing comments.
-		List<String> pendingComments = (mStyle != null && mVersion != .V1_0) ? scope:: List<String>() : null;
-		defer { if (pendingComments != null) ClearAndDeleteItems!(pendingComments); }
+		List<StringView> pendingComments = (mStyle != null && mVersion != .V1_0) ? scope:: List<StringView>() : null;
 
 		Try!(SkipInlineTableWs(pendingComments));
 		if (mCursor.PeekByte() == '}')
@@ -408,7 +389,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Skips whitespace, newlines (1.1) and comments inside an inline table. With `pendingComments`
 	/// (PreserveStyle on 1.1) comment text is collected instead of discarded.
-	private Result<void, TomlParseError> SkipInlineTableWs(List<String> pendingComments)
+	private Result<void, TomlParseError> SkipInlineTableWs(List<StringView> pendingComments)
 	{
 		if (pendingComments == null)
 			return SkipWsAndComments(mVersion != .V1_0);
@@ -416,32 +397,21 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// If a comment follows on the current line, records it as `nodeId`'s trailing comment.
-	private Result<void, TomlParseError> CaptureInlineTrailingComment(List<String> pendingComments, TomlNodeId nodeId)
+	private Result<void, TomlParseError> CaptureInlineTrailingComment(List<StringView> pendingComments, TomlNodeId nodeId)
 	{
 		if (pendingComments == null)
 			return .Ok;
 		mCursor.SkipWhitespace();
 		if (mCursor.IsEOF || mCursor.PeekByte() != '#')
 			return .Ok;
-		String text = new String();
-		if (CaptureCommentText(text) case .Err(let e))
-		{
-			delete text;
-			return .Err(e);
-		}
-		if (!nodeId.IsValid)
-		{
-			delete text;
-			return .Ok;
-		}
-		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
-		delete commentSet.mTrailing;
-		commentSet.mTrailing = text;
+		let text = Try!(CaptureComment());
+		if (nodeId.IsValid)
+			mStyle.GetOrCreateCommentSet(nodeId).mTrailing = text;
 		return .Ok;
 	}
 
-	/// Moves collected comments onto `nodeId` as leading comments (ownership transfers).
-	private void FlushCommentsToLeading(List<String> pendingComments, TomlNodeId nodeId)
+	/// Moves collected comments onto `nodeId` as leading comments.
+	private void FlushCommentsToLeading(List<StringView> pendingComments, TomlNodeId nodeId)
 	{
 		if (pendingComments == null || pendingComments.IsEmpty || !nodeId.IsValid)
 			return;

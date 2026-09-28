@@ -48,7 +48,7 @@ static class TomlPreserveStyleWriterTests
 		let commentSet = CommentsFor(doc, "a");
 		Test.Assert(commentSet != null);
 		// Trailing comment should exist (empty string, not null)
-		Test.Assert(commentSet.mTrailing != null);
+		Test.Assert(commentSet.HasTrailing);
 		Test.Assert(commentSet.mTrailing.IsEmpty);
 
 		// Writer should emit the # marker
@@ -508,7 +508,7 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(elemId.IsValid);
 		let commentSet = doc.Metadata.GetCommentSet(elemId);
 		Test.Assert(commentSet != null, "Expected comment set on element 0");
-		Test.Assert(commentSet.mTrailing != null, "Expected trailing comment");
+		Test.Assert(commentSet.HasTrailing, "Expected trailing comment");
 		Test.Assert(commentSet.mTrailing == "trail", scope $"Expected 'trail', got '{commentSet.mTrailing}'");
 
 		String output = scope String();

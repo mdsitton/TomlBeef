@@ -44,20 +44,20 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Err(Error(.ControlCharInDocument, "Control character in comment"));
 	}
 
-	/// @brief Capture comment text from the cursor into outText.
-	/// Requires/consumes #, copies bytes until newline/CRLF/EOF,
-	/// validates comment control chars, consumes newline if present,
-	/// and normalizes only the single leading space after #.
-	private Result<void, TomlParseError> CaptureCommentText(String outText)
+	/// @brief Capture a comment (PreserveStyle only) and store its text in the sidecar's text arena.
+	/// Requires the cursor at '#'. Consumes the comment and its newline, validating control characters,
+	/// and drops only the single conventional space after '#'.
+	/// @return A view of the stored text, valid as long as the sidecar.
+	private Result<StringView, TomlParseError> CaptureComment()
 	{
-		if (mCursor.PeekByte() != '#') return .Ok;
 		mCursor.AdvanceByte(); // skip #
-		Try!(ScanCommentBody(outText));
+		mCommentScratch.Clear();
+		Try!(ScanCommentBody(mCommentScratch));
 		CountAndSkipNewline();
-		// Trim only leading space (the conventional space after #)
-		if (outText.Length > 0 && outText[0] == ' ')
-			outText.Remove(0, 1);
-		return .Ok;
+		StringView text = mCommentScratch;
+		if (text.Length > 0 && text[0] == ' ')
+			text = text.Substring(1);
+		return mStyle.mText.Add(text);
 	}
 
 	/// @brief Capture a comment line and add it to the pending leading comments list.
@@ -68,14 +68,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			// Not capturing style — just skip the comment
 			return SkipCommentText();
 		}
-
-		String commentText = new String();
-		if (CaptureCommentText(commentText) case .Err(let e))
-		{
-			delete commentText;
-			return .Err(e);
-		}
-		mPendingComments.Add(commentText);
+		mPendingComments.Add(Try!(CaptureComment()));
 		return .Ok;
 	}
 
@@ -84,24 +77,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<void, TomlParseError> CaptureTrailingComment()
 	{
 		if (mStyle == null)
-		{
 			return SkipCommentText();
-		}
-
-		// Clear any previous trailing comment
-		if (mTrailingCommentText != null)
-		{
-			delete mTrailingCommentText;
-			mTrailingCommentText = null;
-		}
-
-		mTrailingCommentText = new String();
-		if (CaptureCommentText(mTrailingCommentText) case .Err(let e))
-		{
-			delete mTrailingCommentText;
-			mTrailingCommentText = null;
-			return .Err(e);
-		}
+		mTrailingCommentText = default;
+		mTrailingCommentText = Try!(CaptureComment());
 		return .Ok;
 	}
 
@@ -134,22 +112,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach the stored trailing comment to a node.
 	private void AttachTrailingComment(TomlNodeId nodeId)
 	{
-		if (mStyle == null || mTrailingCommentText == null)
+		if (mStyle == null || TomlCommentSet.IsAbsent(mTrailingCommentText))
 			return;
 
 		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
 		if (commentSet != null)
-		{
-			if (commentSet.mTrailing != null)
-				delete commentSet.mTrailing;
 			commentSet.mTrailing = mTrailingCommentText;
-			mTrailingCommentText = null; // Ownership transferred
-		}
-		else
-		{
-			delete mTrailingCommentText;
-			mTrailingCommentText = null;
-		}
+		mTrailingCommentText = default;
 	}
 
 	/// @brief Attach any remaining pending comments as file header comments on the root node.
@@ -188,7 +157,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Drops blank-line markers (null entries) from the end of the pending comment block.
 	private void TrimTrailingBlankMarkers()
 	{
-		while (!mPendingComments.IsEmpty && mPendingComments.Back == null)
+		while (!mPendingComments.IsEmpty && TomlCommentSet.IsAbsent(mPendingComments.Back))
 			mPendingComments.PopBack();
 	}
 

@@ -20,10 +20,13 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mDepth = 0;
 	private TomlResourceLimitState mLimits;
 
-	// Pending leading comments waiting to be attached to the next node.
-	private List<String> mPendingComments ~ { if (_ != null) { for (var item in _) delete item; delete _; } };
-	// Pending trailing comment text waiting to be attached to the current node.
-	private String mTrailingCommentText ~ delete _;
+	// Pending leading comments waiting to be attached to the next node. Comment text is stored in the
+	// sidecar's text arena as soon as it is read (see CaptureComment), so these are plain views.
+	private List<StringView> mPendingComments ~ delete _;
+	// Pending trailing comment text waiting to be attached to the current node (absent if none).
+	private StringView mTrailingCommentText;
+	// Reused buffer a comment is read into before it is copied to the arena
+	private String mCommentScratch ~ delete _;
 	// Reused buffer for string values while they are decoded; strings never nest, and the finished
 	// value is copied into the store, so one buffer serves the whole parse without per-string allocations.
 	private String mStringScratch ~ delete _;
@@ -74,8 +77,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mMetadata = metadata;
 		mStyle = (metadata != null && metadata.CapturesStyle) ? metadata : null;
 		mSourceIndex = (metadata != null) ? metadata.AddSource(config.SourceName) : -1;
-		mPendingComments = new List<String>();
-		mTrailingCommentText = null;
+		mPendingComments = new List<StringView>();
+		mTrailingCommentText = default;
+		mCommentScratch = new String(128);
 		mStringScratch = new String(64);
 		mSliceScratch = new String(64);
 		mKeyPathPool = new List<TomlKeyPathBuffer>();
@@ -154,14 +158,14 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				// Track blank lines: before any pending comment they separate the next node from what came
 				// before (mSeparatedByBlankLine); after a comment they are kept inside the comment block as a
-				// null entry (consecutive blank lines collapse to one)
+				// blank-line marker (consecutive blank lines collapse to one)
 				if (mStyle != null)
 				{
 					if (mPendingComments.Count > 0)
 					{
 						mBlankLineSinceComment = true;
-						if (mPendingComments.Back != null)
-							mPendingComments.Add(null);
+						if (!TomlCommentSet.IsAbsent(mPendingComments.Back))
+							mPendingComments.Add(TomlCommentSet.BlankLine);
 					}
 					else
 						mBlankLineCount++;
@@ -567,7 +571,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// When outComments is null or style is not captured, behaves like SkipWsAndComments(true).
 	/// @param outComments Optional list to collect captured comment text. Ownership remains with caller.
 	/// @param outBlankLine Set to true if a blank line was encountered (consecutive newlines).
-	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<String> outComments, out bool outBlankLine)
+	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<StringView> outComments, out bool outBlankLine)
 	{
 		outBlankLine = false;
 		while (true)
@@ -579,15 +583,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '#')
 			{
 				if (outComments != null && mStyle != null)
-				{
-					String text = new String();
-					if (CaptureCommentText(text) case .Err(let e))
-					{
-						delete text;
-						return .Err(e);
-					}
-					outComments.Add(text);
-				}
+					outComments.Add(Try!(CaptureComment()));
 				else
 				{
 					if (SkipCommentText() case .Err(let e))

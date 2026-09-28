@@ -54,7 +54,7 @@ internal struct TomlNodeId
 	}
 }
 
-/// @brief Reference to an owned original token copy stored in TomlDocumentMetadata.mOriginalTokens.
+/// @brief Reference to an original token copy listed in TomlDocumentMetadata.mOriginalTokens.
 internal struct TomlOriginalTokenRef
 {
 	public int32 mIndex;
@@ -169,22 +169,34 @@ internal struct TomlNodeStyle
 	}
 }
 
-/// @brief Owned set of comments associated with a node.
+/// @brief Set of comments associated with a node. The text lives in the sidecar's TomlTextArena; the
+/// views here are valid as long as the sidecar. An entry with a null pointer means absent: a blank-line
+/// marker in mLeading, or no trailing comment. Test with IsAbsent, since `view == null` compares
+/// content and is also true for an empty comment (a bare `#`).
 internal class TomlCommentSet
 {
-	/// Comments appearing on lines before the node, without the '#'. A null entry is a blank line
+	/// Comments appearing on lines before the node, without the '#'. An absent entry is a blank line
 	/// inside or after the comment block (e.g. a comment separated from the node by a blank line).
-	public List<String> mLeading ~ DeleteContainerAndItems!(_);
-	/// Comment text on the same line as the node (after the value). Null if none.
-	public String mTrailing ~ delete _;
+	public List<StringView> mLeading ~ delete _;
+	/// Comment text on the same line as the node (after the value); absent if none.
+	public StringView mTrailing;
 	/// Whether there was a blank line separating this node's leading comments from the preceding content.
 	public bool mSeparatedByBlankLine = false;
 
+	/// The blank-line marker for mLeading.
+	public const StringView BlankLine = default;
+
 	public this()
 	{
-		mLeading = new List<String>();
-		mTrailing = null;
+		mLeading = new List<StringView>();
+		mTrailing = default;
 	}
+
+	/// Whether `text` is a blank-line marker or a missing trailing comment rather than comment text.
+	[Inline]
+	public static bool IsAbsent(StringView text) => text.Ptr == null;
+
+	public bool HasTrailing => mTrailing.Ptr != null;
 }
 
 // ================================================================
@@ -579,8 +591,10 @@ internal class TomlDocumentMetadata
 	/// Per-node comment sets.
 	internal List<TomlCommentSet> mComments ~ DeleteContainerAndItems!(_);
 
-	/// Owns raw source fragments captured during parsing.
-	internal List<String> mOriginalTokens ~ DeleteContainerAndItems!(_);
+	/// Owns the text of comments and original tokens (views into it stay valid as long as the sidecar).
+	internal TomlTextArena mText ~ delete _;
+	/// Raw source fragments captured during parsing, stored in mText.
+	internal List<StringView> mOriginalTokens ~ delete _;
 
 	/// Sparse key format pool.
 	internal List<TomlKeyFormat> mKeyFormats ~ delete _;
@@ -597,7 +611,8 @@ internal class TomlDocumentMetadata
 		mSourceNames = new List<String>();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
-		mOriginalTokens = new List<String>();
+		mText = new TomlTextArena();
+		mOriginalTokens = new List<StringView>();
 		mKeyFormats = new List<TomlKeyFormat>();
 		mValueFormats = new List<TomlValueFormat>();
 	}
@@ -679,7 +694,7 @@ internal class TomlDocumentMetadata
 	internal TomlOriginalTokenRef AddOriginalToken(StringView tokenText)
 	{
 		int index = mOriginalTokens.Count;
-		mOriginalTokens.Add(new String(tokenText));
+		mOriginalTokens.Add(mText.Add(tokenText));
 		return TomlOriginalTokenRef(index);
 	}
 
@@ -756,14 +771,19 @@ internal class TomlDocumentMetadata
 	{
 		if (!nodeId.IsValid || !IsValidCommentText(comment, true))
 			return false;
-		let commentSet = GetOrCreateCommentSet(nodeId);
-		ClearAndDeleteItems!(commentSet.mLeading);
+		ReplaceCommentLines(GetOrCreateCommentSet(nodeId), comment);
+		return true;
+	}
+
+	/// Replaces a comment set's leading lines with `comment` split on '\n' (empty removes them).
+	internal void ReplaceCommentLines(TomlCommentSet commentSet, StringView comment)
+	{
+		commentSet.mLeading.Clear();
 		if (!comment.IsEmpty)
 		{
 			for (let line in comment.Split('\n'))
-				commentSet.mLeading.Add(new String(line));
+				commentSet.mLeading.Add(mText.Add(line));
 		}
-		return true;
 	}
 
 	/// Replaces a node's trailing (end of line) comment; empty text removes it.
@@ -773,8 +793,7 @@ internal class TomlDocumentMetadata
 		if (!nodeId.IsValid || !IsValidCommentText(comment, false))
 			return false;
 		let commentSet = GetOrCreateCommentSet(nodeId);
-		delete commentSet.mTrailing;
-		commentSet.mTrailing = comment.IsEmpty ? null : new String(comment);
+		commentSet.mTrailing = comment.IsEmpty ? default : mText.Add(comment);
 		return true;
 	}
 
@@ -789,7 +808,7 @@ internal class TomlDocumentMetadata
 		bool first = true;
 		for (let line in commentSet.mLeading)
 		{
-			if (line == null)
+			if (TomlCommentSet.IsAbsent(line))
 				continue;
 			if (!first)
 				outComment.Append('\n');
@@ -804,7 +823,7 @@ internal class TomlDocumentMetadata
 	internal bool TryGetTrailingCommentText(TomlNodeId nodeId, String outComment)
 	{
 		let commentSet = GetCommentSet(nodeId);
-		if (commentSet == null || commentSet.mTrailing == null)
+		if (commentSet == null || !commentSet.HasTrailing)
 			return false;
 		outComment.Append(commentSet.mTrailing);
 		return true;

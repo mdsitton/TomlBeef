@@ -29,6 +29,7 @@ workspace startup project is `TomlTester/`.
 |---|---|
 | `TomlDocument.bf` | Public entry point: `TomlReadMode`, `MergeConflict`, `TomlReadConfig`, `TomlWriteConfig`, and `TomlDocument` (read/write, file helpers, path lookup, typed path accessors and setters, transactional read/merge orchestration) |
 | `TomlDocumentStore.bf` | Internal arena (`BumpAllocator`) that owns every string, table and array of a document |
+| `TomlTextArena.bf` | Append-only text blocks for the metadata sidecar's comments and original tokens |
 | `TomlValue.bf` | `TomlTableOrigin` enum and the non-owning `TomlValue` tagged union (`Is*`, `As*`, `TryGet*`, internal `CloneInto`, `IsSemanticallyEqualTo`) |
 | `TomlTable.bf` | `TomlTable`: an ordered map (`Dictionary<String, TomlTableSlot>` of value plus metadata node ID, and a `List<String>` key order) with internal origin and sealing flags, `Set`, `MergeFrom`, validation (`Require*`, `MakeError`), and the `TomlTableEntry` proxy |
 | `TomlArray.bf` | `TomlArray` (static array or array of tables) and the `TomlInputValue` scalar-input wrapper |
@@ -494,12 +495,22 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   missing records for earlier nodes on first access. A document merged from a PreserveStyle read is
   upgraded *before* the merge so the copied styles have records to land in (and restored if the
   merge is rejected).
-- Owned copies of original string tokens (`mOriginalTokens`). **Source spans are never used to
-  recover text**, because the input buffer or stream is gone after the parse.
+- Copies of original tokens (`mOriginalTokens`). **Source spans are never used to recover text**,
+  because the input buffer or stream is gone after the parse.
+- `mText`, a `TomlTextArena` holding the text of original tokens and comments. Text is appended into
+  16 KB blocks that never move, so the `StringView`s stored for tokens and comment lines stay valid
+  as long as the sidecar, and a captured comment costs one copy instead of its own `String`. The
+  parser reads a comment into one reused scratch buffer and then copies it in. Comment setters
+  append new text and leave the old copy behind until the sidecar is freed. Before the arena, a
+  PreserveStyle parse of a commented config ran at ~148 MB/s; with it, ~174 MB/s (5 MB, Release,
+  2026-09-28), with preserving output byte-identical across the corpus.
 - Pools of key formats and value formats. `TomlValueFormat` is a union of the string, integer,
   float, date/time, array and table formats.
 - Comment sets per node (leading comments, trailing comment, blank-line separation), plus root
-  (file header) and footer comments. Inside multi-line inline tables (1.1), comments above a field
+  (file header) and footer comments. Lines are views into `mText`. A view with a null pointer means
+  absent: a blank-line marker among the leading lines, or no trailing comment
+  (`TomlCommentSet.IsAbsent`, `HasTrailing`). An empty view is a bare `#`, and `== null` on a
+  `StringView` compares content, so it cannot tell the two apart. Inside multi-line inline tables (1.1), comments above a field
   are its leading comments, a comment on its line (before or after the comma) its trailing comment,
   and comments before `}` are stored on the inline table's own node and written before the brace.
   A 1.0 write puts the table on one line, where comments cannot be kept.
