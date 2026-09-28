@@ -107,7 +107,7 @@ public struct TomlInputValue
 /// Represents a TOML array. Items are non-owning TomlValues whose payloads live in the document store.
 public class TomlArray
 {
-	private List<TomlValue> mItems;
+	private List<TomlValue> mItems ~ delete _;
 	private bool mIsStatic; // true for arrays defined inline ([]), false for [[array]] created
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 	/// @brief The owning document store. Its mSuppressAutoDirty is set while the parser fills it.
@@ -115,11 +115,6 @@ public class TomlArray
 	/// @brief Set by parser after detecting a trailing comma before the closing bracket.
 	internal bool mHasTrailingComma;
 
-	public ~this()
-	{
-		if (mItems != null)
-			delete mItems;
-	}
 
 	/// @brief Whether this is an array of tables (written as `[[header]]` blocks) rather than an ordinary
 	/// `[...]` value array.
@@ -149,9 +144,15 @@ public class TomlArray
 		Init(capacity);
 	}
 
+	/// Arrays start with room for this many elements, appended to the list object. A small array (the
+	/// common case in configs) then costs one heap allocation instead of the list plus buffers grown
+	/// 4 → 8; larger ones grow as usual. (Placing the lists in the document arena instead was slower:
+	/// fresh arena pages per document cost page faults that malloc's reused memory does not.)
+	const int InitialCapacity = 8;
+
 	private void Init(int capacity)
 	{
-		mItems = capacity > 0 ? new List<TomlValue>(capacity) : new List<TomlValue>();
+		mItems = new List<TomlValue>(Math.Max(capacity, InitialCapacity));
 		mIsStatic = false;
 		mMetadataContext = null;
 	}
