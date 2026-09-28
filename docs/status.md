@@ -59,7 +59,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
 | I3 | No writer sinks: no `Write(Stream)`/`WriteBytes`; `WriteFile` builds the whole output `String` first | M |
-| I4 | *Optional.* `Read(Stream)` is ~30% slower than byte input (per-byte `EnsureAvailable` checks and refills; measure with `TomlTester -bench`). A fast path that scans runs of bytes within the current buffer would narrow the gap | S–M |
+| I4 | *Optional.* Parse throughput (~59 MB/s bytes, ~51 MB/s stream; `TomlTester -bench`) is limited by the parser handling one byte per call. Cursor methods that scan runs (whitespace, comments, bare keys, escape-free string text) directly over the buffer would speed up both paths; it touches the parser's hottest loops | M |
 
 ### API surface
 

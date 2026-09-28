@@ -49,6 +49,8 @@ struct TomlBufferedStreamCursor : ITomlCursor
 	// When non-empty it holds [mRetainStart, mBaseOffset), contiguous with the buffer.
 	private String mSpill;
 	private TomlStreamState mState;
+	/// A read error or size-limit overflow stopped the stream (mirrors mState.mError).
+	private bool mFailed;
 
 	public this(Stream stream, uint8[] buffer, String spill, TomlStreamState state = null)
 	{
@@ -63,12 +65,14 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		mRetainStart = 0;
 		mSpill = spill;
 		mState = state;
+		mFailed = false;
 	}
 
 	[Inline] public int Offset => (int)(mBaseOffset + mPos);
 	[Inline] public int Line => mLine;
 	[Inline] public int Column => mColumn;
-	[Inline] public bool IsEOF => (mStream == null && mPos >= mEnd) || (mState != null && mState.mError);
+	// mFailed mirrors mState.mError (set only in Refill) so this hot check avoids a dereference
+	[Inline] public bool IsEOF => mFailed || (mPos >= mEnd && mStream == null);
 
 	public bool HasError => mState != null && mState.mError;
 	public bool HasUtf8Error => mState != null && mState.mUtf8Error;
@@ -125,34 +129,56 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		return (char8)mBuffer[pos];
 	}
 
+	[Inline]
 	public char8 AdvanceByte() mut
 	{
 		EnsureAvailable(1);
 		if (mPos >= mEnd) return 0;
 
 		char8 b = (char8)mBuffer[mPos];
+		// Common case inline; newline bookkeeping (and CRLF lookahead) out of line
+		if (b != '\n' && b != '\r')
+		{
+			mPos++;
+			mColumn++;
+			return b;
+		}
+		return AdvanceNewline(b);
+	}
+
+	/// Consumes a '\n', or a '\r' plus a following '\n', and starts a new line.
+	private char8 AdvanceNewline(char8 b) mut
+	{
 		mPos++;
 		if (b == '\r')
 		{
 			EnsureAvailable(1);
 			if (mPos < mEnd && mBuffer[mPos] == '\n')
 				mPos++;
-			mLine++;
-			mColumn = 1;
 		}
-		else if (b == '\n')
-		{
-			mLine++;
-			mColumn = 1;
-		}
-		else
-		{
-			mColumn++;
-		}
+		mLine++;
+		mColumn = 1;
 		return b;
 	}
 
+	[Inline]
 	public char32 Advance() mut
+	{
+		// ASCII fast path: one byte is enough, so skip the 4-byte lookahead
+		if (mPos < mEnd)
+		{
+			char8 c = (char8)mBuffer[mPos];
+			if ((uint8)c < 0x80 && c != '\n')
+			{
+				mPos++;
+				mColumn++;
+				return (char32)c;
+			}
+		}
+		return AdvanceSlow();
+	}
+
+	private char32 AdvanceSlow() mut
 	{
 		EnsureAvailable(4);
 		if (mPos >= mEnd) return 0;
@@ -189,8 +215,11 @@ struct TomlBufferedStreamCursor : ITomlCursor
 			EnsureAvailable(1);
 			if (mPos >= mEnd) break;
 			uint8 b = mBuffer[mPos];
-			if (b == ' ' || b == '\t') AdvanceByte();
-			else break;
+			if (b != ' ' && b != '\t')
+				break;
+			// Spaces and tabs never start a new line, so step past them directly
+			mPos++;
+			mColumn++;
 		}
 	}
 
@@ -256,9 +285,17 @@ struct TomlBufferedStreamCursor : ITomlCursor
 		mStream = null;
 	}
 
+	/// Makes sure `needed` bytes are buffered if the stream has them. The check is inlined into every
+	/// peek/advance; the refill itself is rare and stays out of line.
+	[Inline]
 	private void EnsureAvailable(int needed) mut
 	{
 		if (mEnd - mPos >= needed) return;
+		Fill(needed);
+	}
+
+	private void Fill(int needed) mut
+	{
 		if (mStream == null) return;
 
 		CompactForRefill(needed);
@@ -317,6 +354,7 @@ struct TomlBufferedStreamCursor : ITomlCursor
 					{
 						mState.mBytesExceeded = true;
 						mState.mError = true;
+						mFailed = true;
 						mStream = null;
 						return;
 					}
@@ -325,6 +363,7 @@ struct TomlBufferedStreamCursor : ITomlCursor
 			}
 		case .Err:
 			if (mState != null) mState.mError = true;
+			mFailed = true;
 			mStream = null;
 		}
 	}

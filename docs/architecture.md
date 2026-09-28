@@ -570,9 +570,12 @@ stdin stream (`Read(Stream)`), so the acceptance scripts also run the whole corp
 stream path. Unknown options or bad values exit with 2. `-bench N` reads stdin once and times N
 parses through `Read(string)`, `ReadBytes` and `Read(Stream)`, plus `Write` (combine with
 `-preserve`; build with `-config=Release`). On a generated 736 KB file (Release, Linux64,
-2026-09-27): string and byte input ~59 MB/s, stream ~43 MB/s, write ~257 MB/s; with PreserveStyle
-~33 / 33 / 26 / 160 MB/s. String and byte input cost the same (the byte cursor is zero-copy over
-either); the stream path pays for per-byte buffer checks and refills.
+2026-09-27): string and byte input ~59 MB/s, stream ~51 MB/s, write ~257 MB/s. String and byte input
+cost the same (the byte cursor is zero-copy over either). The stream path was ~43 MB/s until the
+buffered cursor's hot paths were inlined (`EnsureAvailable` split into an inline check and an
+out-of-line `Fill`; inline `AdvanceByte` and ASCII `Advance` with newlines and multi-byte
+sequences out of line; `IsEOF` reading a struct flag instead of the shared state). The remaining
+~15% is the copy into the buffer and incremental UTF-8 validation.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
   `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in
