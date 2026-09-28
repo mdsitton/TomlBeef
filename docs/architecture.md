@@ -256,6 +256,24 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
   the shared driver.
 - **`TomlByteCursor`** wraps a `Span<uint8>` and is zero-copy. `Slice` returns a view into the
   caller's input, and marks cost nothing.
+  - It tracks lines eagerly (they change only at line breaks) but computes the **column on
+    demand**. It keeps the offset where the current line starts and counts code points from there
+    when `Column` is read. Reads are inline and free at a line start, which is where most statements
+    begin. A one-entry cache (offset, column) continues from the last answer on the same line, so
+    repeated reads along one long line (array elements with positions) stay linear. The input is
+    valid UTF-8 (checked first), so a code point is any byte that is not a continuation byte.
+  - This matches go-toml and toml_edit, which keep only offsets and compute positions on error.
+    Per-byte column counting had kept every scan byte-at-a-time. Without it, `ScanRun` is a bare
+    stop-class loop and `SkipWhitespace` only moves the offset.
+  - The change was verified by running the old counter alongside for the full test suite and
+    corpus (valid and invalid, both versions) with a Debug assertion that the two always matched.
+  - Same-build A/B (2026-09-28, MB/s, plain / PreserveStyle): comment-only 1240 → 1780 /
+    543 → 634, commented config 407 → 442 / 221 → 237, strings 395 → 431 / 256 → 244. Shapes
+    whose parse cost lies elsewhere moved within ±7% from code-layout changes in the parser
+    (for example ints 111 → 103, with `LooksLikeDateTime`/`ParseBareToken` taking more of the
+    profile though untouched).
+  - `TomlBufferedStreamCursor` still counts columns per byte: the start of the line may already
+    have left its buffer.
 - **`TomlBufferedStreamCursor`** uses a fixed buffer of `TomlReadConfig.StreamBufferBytes` bytes
   (default 8192, minimum 16 because the parser peeks a few bytes ahead; tests use 64 to force
   refills) plus a spill `String`.

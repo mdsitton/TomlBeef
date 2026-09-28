@@ -7,7 +7,9 @@ internal interface ITomlCursor
 {
 	int Offset { get; }
 	int Line { get; }
-	int Column { get; }
+	/// 1-based column in code points. May be computed on demand (TomlByteCursor), so reading it can
+	/// update a cache.
+	int Column { get mut; }
 	bool IsEOF { get; }
 
 	char8 PeekByte() mut;
@@ -21,8 +23,8 @@ internal interface ITomlCursor
 
 	/// Advances over a run of bytes whose TomlChar.ScanClass has none of `stopMask`'s bits, appending them
 	/// to `appendTo` unless it is null. Every stop class includes '\r' and '\n', so a run stays on one line
-	/// and only the column moves (by one per code point). This is the parser's bulk path for keys, strings,
-	/// comments and bare values, replacing a peek/advance call per byte.
+	/// (TomlByteCursor then only moves its offset; the column is computed when read). This is the parser's
+	/// bulk path for keys, strings, comments and bare values, replacing a peek/advance call per byte.
 	/// @return The number of bytes consumed. The run ends at a stop byte or at EOF.
 	int ScanRun(uint8 stopMask, String appendTo) mut;
 
@@ -46,40 +48,90 @@ internal struct TomlByteCursor : ITomlCursor
 	private Span<uint8> mData;
 	private int mOffset;
 	private int mLine;
-	private int mColumn;
+	// The column is computed on demand: one plus the code points from the start of the line to the
+	// current offset (the input is valid UTF-8, checked before parsing). Counting it per byte kept
+	// every scan byte-at-a-time, while the parser reads it about once per statement. The cache holds
+	// the last answer on this line, so repeated reads along one long line stay linear.
+	private int mLineStart;
+	private int mColumnCacheOffset;
+	private int mColumnCacheValue;
 
 	public this(StringView input)
 	{
+		this = default;
 		mData = Span<uint8>((uint8*)input.Ptr, input.Length);
-		mOffset = 0;
 		mLine = 1;
-		mColumn = 1;
+		mColumnCacheValue = 1;
 	}
 
 	public this(Span<uint8> data)
 	{
+		this = default;
 		mData = data;
-		mOffset = 0;
 		mLine = 1;
-		mColumn = 1;
+		mColumnCacheValue = 1;
 	}
 
 	/// Starts reading at `startOffset` (e.g. past a BOM) while keeping offsets relative to the start
 	/// of `data`, so error offsets match the raw input on every read path.
 	public this(Span<uint8> data, int startOffset)
 	{
+		this = default;
 		mData = data;
 		mOffset = startOffset;
 		mLine = 1;
-		mColumn = 1;
+		mLineStart = startOffset;
+		mColumnCacheOffset = startOffset;
+		mColumnCacheValue = 1;
 	}
 
 	[Inline]
 	public int Offset => mOffset;
 	[Inline]
 	public int Line => mLine;
+
+	public int Column
+	{
+		[Inline]
+		get mut
+		{
+			// Most reads are at the start of a key, usually at the start of its line
+			if (mOffset == mLineStart)
+				return 1;
+			return CountColumn();
+		}
+	}
+
+	/// Counts code points from the cached answer when it is on this line, else from the line start.
+	/// The cursor only moves forward, and a new line starts past any earlier cached offset.
+	private int CountColumn() mut
+	{
+		int from = mLineStart;
+		int column = 1;
+		if (mColumnCacheOffset >= mLineStart)
+		{
+			from = mColumnCacheOffset;
+			column = mColumnCacheValue;
+		}
+		uint8* data = mData.Ptr;
+		for (int i = from; i < mOffset; i++)
+		{
+			// Every byte but a UTF-8 continuation byte starts a code point
+			if ((data[i] & 0xC0) != 0x80)
+				column++;
+		}
+		mColumnCacheOffset = mOffset;
+		mColumnCacheValue = column;
+		return column;
+	}
+
+	/// Starts a new line at the current offset (just past its line break).
 	[Inline]
-	public int Column => mColumn;
+	private void StartLine() mut
+	{
+		mLine++;
+		mLineStart = mOffset;
+	}
 	[Inline]
 	public bool IsEOF => mOffset >= mData.Length;
 
@@ -114,14 +166,7 @@ internal struct TomlByteCursor : ITomlCursor
 		{
 			mOffset++;
 			if (b0 == '\n')
-			{
-				mLine++;
-				mColumn = 1;
-			}
-			else
-			{
-				mColumn++;
-			}
+				StartLine();
 			return (char32)b0;
 		}
 
@@ -130,14 +175,12 @@ internal struct TomlByteCursor : ITomlCursor
 		if (cpLen == 0 || cpLen > remaining)
 		{
 			mOffset++;
-			mColumn++;
 			return (char32)0xFFFD;
 		}
 
 		StringView sv = StringView((char8*)mData.Ptr + mOffset, remaining);
 		char32 cp = TomlChar.DecodeAt(sv, 0, cpLen);
 		mOffset += cpLen;
-		mColumn++;
 		return cp;
 	}
 
@@ -150,7 +193,6 @@ internal struct TomlByteCursor : ITomlCursor
 		if (b != '\n' && b != '\r')
 		{
 			mOffset++;
-			mColumn++;
 			return b;
 		}
 		return AdvanceNewline(b);
@@ -162,8 +204,7 @@ internal struct TomlByteCursor : ITomlCursor
 		mOffset++;
 		if (b == '\r' && mOffset < mData.Length && mData[mOffset] == '\n')
 			mOffset++;
-		mLine++;
-		mColumn = 1;
+		StartLine();
 		return b;
 	}
 
@@ -178,7 +219,6 @@ internal struct TomlByteCursor : ITomlCursor
 				break;
 			pos++;
 		}
-		mColumn += pos - mOffset;
 		mOffset = pos;
 	}
 
@@ -188,22 +228,12 @@ internal struct TomlByteCursor : ITomlCursor
 		int start = mOffset;
 		int pos = start;
 		int end = mData.Length;
-		int columns = 0;
-		while (pos < end)
-		{
-			uint8 b = data[pos];
-			if ((TomlChar.ScanClass(b) & stopMask) != 0)
-				break;
-			// Columns count code points: every byte except UTF-8 continuation bytes
-			if ((b & 0xC0) != 0x80)
-				columns++;
+		while (pos < end && (TomlChar.ScanClass(data[pos]) & stopMask) == 0)
 			pos++;
-		}
 		int count = pos - start;
 		if (appendTo != null && count > 0)
 			appendTo.Append((char8*)data + start, count);
 		mOffset = pos;
-		mColumn += columns;
 		return count;
 	}
 
