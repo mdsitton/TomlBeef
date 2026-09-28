@@ -188,7 +188,9 @@ containing `]` cannot be reached with a path string. Use `GetPath(segments...)` 
 - **`CloneInto(store)`** on `TomlValue`, `TomlTable` and `TomlArray` is the only deep-copy path.
   It re-allocates strings and containers in the target store and keeps table origin, inline
   sealing and `IsStatic`. `MergeFrom` uses it, so after a merge the temporary source store can be
-  deleted safely.
+  deleted safely. `TomlTable.MergeFrom` is also the public cross-document copy (clone a document
+  into a cleared one, or copy a table under a new `AddTable` key); a separate clone API was judged
+  redundant.
 - `TomlParseError` is a struct that owns `mMessage` (a heap `String`). Callers must `Dispose()`
   it, usually with `defer err.Dispose()`.
 - PreserveStyle metadata (`TomlDocumentMetadata`, per-container `TomlContainerMetadataContext`)

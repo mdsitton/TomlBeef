@@ -160,6 +160,31 @@ static class TomlLifetimeTests
 	}
 
 	[Test]
+	public static void MergeFromCopiesASubtableIntoAnotherDocument()
+	{
+		var source = new TomlDocument();
+		ReadOrFail(source, "[server]\nhost = \"a\"\nports = [80, 443]\n[server.tls]\ncert = \"c\"");
+		var dest = scope TomlDocument();
+		ReadOrFail(dest, "other = 1");
+		Test.Assert(source.TryGetTable("server", var server));
+		if (dest.AddTable("backup").MergeFrom(server) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"MergeFrom failed: {e.mMessage}");
+		}
+		delete source;
+
+		Test.Assert(dest.TryGetString("backup.host", var host) && host == "a");
+		Test.Assert(dest.TryGetArray("backup.ports", var ports) && ports.Count == 2);
+		Test.Assert(dest.TryGetString("backup.tls.cert", var cert) && cert == "c");
+		String output = scope String();
+		dest.Write(output);
+		var reparsed = scope TomlDocument();
+		ReadOrFail(reparsed, output);
+		Test.Assert(reparsed.TryGetString("backup.tls.cert", var cert2) && cert2 == "c");
+	}
+
+	[Test]
 	public static void MergeFromCopiesSoSourceCanBeDeleted()
 	{
 		var dest = scope TomlDocument();

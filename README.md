@@ -349,6 +349,22 @@ root.SetOffsetDateTime("timestamp",
 > Use `doc.AddTable(...)` to create intermediate tables first.
 > For deeply nested values, build the tree top-down: create tables via `AddTable`, then populate them.
 
+### Copying Between Documents
+
+`TomlTable.MergeFrom` deep-copies into the destination document, so the source can be deleted afterwards:
+
+```bf
+// Clone a whole document
+dest.Clear();
+dest.RootTable.MergeFrom(source.RootTable);
+
+// Copy one table into another document under a new key
+if (source.TryGetTable("server", var server))
+    dest.AddTable("server_backup").MergeFrom(server);
+```
+
+If both documents were read with `PreserveStyle`, the copied values keep their comments and formats.
+
 ### Date/Time Types
 
 | TOML type | Beef struct | Example construction |

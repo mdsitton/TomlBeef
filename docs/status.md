@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 251/251 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 251/251 pass |
+| `beefbuild -test` (Debug checks) | 252/252 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 252/252 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -66,7 +66,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
 
 ### Tooling
 
@@ -88,6 +87,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. I1–I4 (streaming and writer output) and A2 (API) as needed.
+1. I1–I4 (streaming and writer output) as needed.
 2. P3–P5 additions as needed.
 3. Optional items.
