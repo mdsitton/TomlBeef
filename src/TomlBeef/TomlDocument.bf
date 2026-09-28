@@ -522,6 +522,110 @@ public class TomlDocument
 
 	/// Parse a dotted path, navigate all but the last segment, and return the parent table and final key.
 	/// All intermediate segments must resolve to existing tables.
+	// ================================================================
+	// Comments and presentation style (documents read with PreserveStyle)
+	// ================================================================
+
+	/// @brief Set the comment block at the top of the file, above all content. Lines separated by '\n',
+	/// each written as `# line`. Empty removes it.
+	/// @param comment The comment text without '#' markers.
+	/// @return False if the document has no PreserveStyle metadata or the text contains control characters.
+	public bool SetFileHeaderComment(StringView comment)
+	{
+		if (mMetadata == null || !IsValidCommentText(comment))
+			return false;
+		ReplaceCommentLines(mMetadata.GetOrCreateRootComments(), comment);
+		return true;
+	}
+
+	/// @brief Set the comment block at the end of the file, after all content. Empty removes it.
+	/// @param comment The comment text without '#' markers; lines separated by '\n'.
+	/// @return False if the document has no PreserveStyle metadata or the text contains control characters.
+	public bool SetFileFooterComment(StringView comment)
+	{
+		if (mMetadata == null || !IsValidCommentText(comment))
+			return false;
+		ReplaceCommentLines(mMetadata.GetOrCreateFooterComments(), comment);
+		return true;
+	}
+
+	/// @brief Set the comment lines above the value at a dotted path. See TomlTable.SetComment.
+	/// @param dottedPath The path of the value (bracketed segments allowed).
+	/// @param comment The comment text without '#' markers; lines separated by '\n'. Empty removes it.
+	/// @return False if the path does not resolve or TomlTable.SetComment fails.
+	public bool SetComment(StringView dottedPath, StringView comment)
+	{
+		TomlTable parent;
+		StringView key;
+		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetComment(key, comment);
+	}
+
+	/// @brief Set the comment at the end of the line of the value at a dotted path.
+	/// See TomlTable.SetTrailingComment.
+	/// @param dottedPath The path of the value (bracketed segments allowed).
+	/// @param comment The comment text without the '#' marker. Must be a single line; empty removes it.
+	/// @return False if the path does not resolve or TomlTable.SetTrailingComment fails.
+	public bool SetTrailingComment(StringView dottedPath, StringView comment)
+	{
+		TomlTable parent;
+		StringView key;
+		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetTrailingComment(key, comment);
+	}
+
+	/// @brief Choose how the string at a dotted path is written. See TomlTable.SetStringStyle.
+	/// @param dottedPath The path of a string value.
+	/// @param style The string style to write.
+	/// @return False if the path does not resolve or TomlTable.SetStringStyle fails.
+	public bool SetStringStyle(StringView dottedPath, TomlStringStyle style)
+	{
+		TomlTable parent;
+		StringView key;
+		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetStringStyle(key, style);
+	}
+
+	/// @brief Choose the base the integer at a dotted path is written in. See TomlTable.SetIntegerBase.
+	/// @param dottedPath The path of an integer value.
+	/// @param integerBase The base to write.
+	/// @return False if the path does not resolve or TomlTable.SetIntegerBase fails.
+	public bool SetIntegerBase(StringView dottedPath, TomlIntegerBase integerBase)
+	{
+		TomlTable parent;
+		StringView key;
+		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetIntegerBase(key, integerBase);
+	}
+
+	private bool TryResolveForStyle(StringView dottedPath, out TomlTable parent, out StringView finalKey)
+	{
+		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
+		{
+			e.Dispose();
+			return false;
+		}
+		return true;
+	}
+
+	private static bool IsValidCommentText(StringView text)
+	{
+		for (let c in text)
+		{
+			if (c == '\n')
+				continue;
+			if (c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
+				return false;
+		}
+		return true;
+	}
+
+	private static void ReplaceCommentLines(TomlCommentSet commentSet, StringView comment)
+	{
+		ClearAndDeleteItems!(commentSet.mLeading);
+		if (!comment.IsEmpty)
+		{
+			for (let line in comment.Split('\n'))
+				commentSet.mLeading.Add(new String(line));
+		}
+	}
+
 	private Result<void, TomlParseError> ResolvePath(StringView dottedPath, out TomlTable parent, out StringView finalKey)
 	{
 		var segments = scope List<StringView>();

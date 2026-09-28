@@ -1370,12 +1370,44 @@ static class TomlWriterImpl
 	}
 
 	/// Write an inline table using captured format metadata.
+	/// Whether any field of an inline table, or its closing position, carries a comment.
+	private static bool InlineTableHasComments(TomlTable tbl, TomlDocumentMetadata metadata)
+	{
+		let ctx = tbl.MetadataContext;
+		if (ctx == null)
+			return false;
+		if (ctx.mNodeId.IsValid && HasComments(metadata.GetCommentSet(ctx.mNodeId)))
+			return true;
+		for (int i = 0; i < tbl.Count; i++)
+		{
+			if (ctx.TryGetEntryNodeId(tbl.GetKeyAt(i), let fieldId) && HasComments(metadata.GetCommentSet(fieldId)))
+				return true;
+		}
+		return false;
+	}
+
+	private static bool HasComments(TomlCommentSet commentSet)
+	{
+		return commentSet != null && (!commentSet.mLeading.IsEmpty || commentSet.mTrailing != null);
+	}
+
 	private static void WriteInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
 		TomlDocumentMetadata metadata, TomlTableFormat fmt, bool hasFormat)
 	{
 		if (hasFormat && fmt.mMultiline && fmt.mInline && version != .V1_0)
 		{
 			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, fmt);
+			return;
+		}
+		// Comments (e.g. added through SetComment) only fit in the multi-line layout, which needs 1.1
+		if (version != .V1_0 && InlineTableHasComments(tbl, metadata))
+		{
+			var multilineFmt = hasFormat ? fmt : TomlTableFormat();
+			multilineFmt.mMultiline = true;
+			multilineFmt.mInline = true;
+			if (multilineFmt.mEntryIndent == 0 && metadata.mDocumentStyle.mIndentSize == 0)
+				multilineFmt.mEntryIndent = 2;
+			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, multilineFmt);
 			return;
 		}
 

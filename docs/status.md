@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 231/231 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 231/231 pass |
+| `beefbuild -test` (Debug checks) | 239/239 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 239/239 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -34,7 +34,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
-| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines |
+| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base |
 | Error reporting | Line, column, and byte offset for lexical, UTF-8, and semantic errors |
 
 ## Open items
@@ -50,7 +50,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Gap | Size |
 |----|-----|------|
 | P2 | No "detached comment" placement: a comment block separated from the next node by a blank line is attached to that node (or the root/footer) rather than kept free-standing where it was | M |
-| P3 | The `Style` dirty flag is never set; no public API to edit comments or style | M |
+| P3 | Style editing covers string style and integer base only. Possible additions: float style (decimal/scientific), date-time separator/`Z`, array layout (inline/multi-line), inline-table layout, key quoting; and comments on array elements (`TomlArray.SetComment(index, ...)`) | S–M |
 | P4 | Document-style defaults: `mUseTabs` never inferred; `mDefaultArrayStyle` and `mPreferDottedKeys` inferred but unused for new values; no "nearby style" fallback | S |
 | P5 | `TomlNodeStyle.mRange` source locations are never populated | S |
 
@@ -92,6 +92,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. P3 (Style dirty flag, comment/style editing API), P4, P5, then P2 (detached comments).
+1. P4 (document defaults for new values), P5, P2 (detached comments), and P3 additions as needed.
 2. I1–I4 and A2, A5–A7 as needed.
 3. Optional items.

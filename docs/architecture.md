@@ -428,7 +428,19 @@ empty document reuses its existing sidecar instead of replacing it.
 - `Children`: set on a container when an entry or item is inserted or removed after the parse
   (`MarkChildrenDirty`). The parser builds the tree with `mSuppressAutoDirty` set, then clears it
   with `ClearAutoDirtySuppression()`, so a freshly parsed document is clean.
-- `Style` is defined but no current code sets it.
+- `Style`: set by the public style setters (`SetStringStyle`, `SetIntegerBase`), which store a new
+  value format on the node. Any non-clean flag stops original-token reuse, so the value is
+  regenerated in the new style.
+
+**Comment and style editing API** (`TomlTable.SetComment`/`SetTrailingComment`/`TryGetComment`/
+`TryGetTrailingComment`/`SetHeaderComment`/`SetHeaderTrailingComment`/`SetStringStyle`/
+`SetIntegerBase`, and on `TomlDocument` the path forms plus `SetFileHeaderComment`/
+`SetFileFooterComment`): comments for a key go on the entry's node, except for a `[header]` table,
+whose comments live on the table's own node (where the parser puts header comments). An array of
+tables has one header per element, so key-level calls on it are rejected and `SetHeaderComment` is
+used on the element. Comment text is validated (no control characters except tab; trailing comments
+single-line) so the output stays valid. A comment on a field of a single-line inline table switches
+that table to the multi-line layout on 1.1 writes, since only that layout can hold comments.
 - Every setter skips a semantically equal value, so the node stays clean and a string's original
   token remains reusable. `IsSemanticallyEqualTo` compares scalars by value (treating NaN as equal
   to NaN) and containers by identity; `TomlInputValue.Matches` does the same without copying the

@@ -720,6 +720,218 @@ public class TomlTable
 	}
 
 	/// Mark the container as having changed children. Call after programmatic insert/remove.
+	// ================================================================
+	// Comments and presentation style (documents read with PreserveStyle)
+	// ================================================================
+
+	/// @brief Set the comment lines written above `key`. Separate lines with '\n'; each is written as
+	/// `# line`, so omit the leading '#'. An empty comment removes them. For a key holding a `[header]`
+	/// table this is the header's comment. An array of tables has one header per element: use
+	/// SetHeaderComment on the element table instead.
+	/// @param key The key to comment.
+	/// @param comment The comment text without '#' markers.
+	/// @return False if the document has no PreserveStyle metadata, the key is missing or is a non-empty
+	/// array of tables, or the text contains control characters other than tab and '\n'.
+	public bool SetComment(StringView key, StringView comment)
+	{
+		return SetLeadingComment(CommentNodeFor(key), comment);
+	}
+
+	/// @brief Set the comment written at the end of `key`'s line (for a `[header]` table, the header line).
+	/// An empty comment removes it.
+	/// @param key The key to comment.
+	/// @param comment The comment text without the '#' marker. Must be a single line.
+	/// @return False under the same conditions as SetComment, or if the comment contains a newline.
+	public bool SetTrailingComment(StringView key, StringView comment)
+	{
+		return SetTrailing(CommentNodeFor(key), comment);
+	}
+
+	/// @brief Get the comment lines above `key`, joined with '\n'.
+	/// @param key The key.
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the key has a leading comment.
+	public bool TryGetComment(StringView key, String outComment)
+	{
+		return TryGetLeading(CommentNodeFor(key), outComment);
+	}
+
+	/// @brief Get the comment at the end of `key`'s line.
+	/// @param key The key.
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the key has a trailing comment.
+	public bool TryGetTrailingComment(StringView key, String outComment)
+	{
+		return TryGetTrailing(CommentNodeFor(key), outComment);
+	}
+
+	/// @brief Set the comment lines above this table's own `[header]` or `[[header]]` line. Use this for
+	/// array-of-tables elements; for other tables it is the same as parent.SetComment(key).
+	/// @param comment The comment text without '#' markers; lines separated by '\n'. Empty removes it.
+	/// @return False if the document has no PreserveStyle metadata or the text is invalid.
+	public bool SetHeaderComment(StringView comment)
+	{
+		return SetLeadingComment(mMetadataContext?.mNodeId ?? .Invalid, comment);
+	}
+
+	/// @brief Set the comment at the end of this table's own header line. Empty removes it.
+	/// @param comment The comment text without the '#' marker. Must be a single line.
+	/// @return False if the document has no PreserveStyle metadata or the text is invalid.
+	public bool SetHeaderTrailingComment(StringView comment)
+	{
+		return SetTrailing(mMetadataContext?.mNodeId ?? .Invalid, comment);
+	}
+
+	/// @brief Choose how the string at `key` is written (basic, literal, or their multi-line forms).
+	/// Literal forms fall back to basic when the value cannot be represented literally.
+	/// @param key The key of a string value.
+	/// @param style The string style to write.
+	/// @return False if the document has no PreserveStyle metadata or the value is not a string.
+	public bool SetStringStyle(StringView key, TomlStringStyle style)
+	{
+		if (!TryGetValue(key, let val) || !val.IsString)
+			return false;
+		let nodeId = EntryNodeFor(key);
+		if (!nodeId.IsValid)
+			return false;
+		let metadata = mMetadataContext.mMetadata;
+		var fmt = TomlStringFormat();
+		fmt.mStartsWithNewline = true;
+		let current = metadata.GetNodeStyle(nodeId).mValueFormatRef;
+		if (current.IsValid && metadata.mValueFormats[current.mIndex] case .String(let existing))
+			fmt = existing;
+		// Keep a multi-line string's own opening-newline shape; one newly made multi-line starts on a new line
+		bool wasMultiline = fmt.mStyle == .MultilineBasic || fmt.mStyle == .MultilineLiteral;
+		if (!wasMultiline)
+			fmt.mStartsWithNewline = true;
+		fmt.mStyle = style;
+		return ApplyStyle(nodeId, .String(fmt));
+	}
+
+	/// @brief Choose the base the integer at `key` is written in. Negative values are always written in
+	/// decimal, since TOML only allows hex/octal/binary for non-negative integers.
+	/// @param key The key of an integer value.
+	/// @param integerBase The base to write.
+	/// @return False if the document has no PreserveStyle metadata or the value is not an integer.
+	public bool SetIntegerBase(StringView key, TomlIntegerBase integerBase)
+	{
+		if (!TryGetValue(key, let val) || !val.IsInteger)
+			return false;
+		let nodeId = EntryNodeFor(key);
+		if (!nodeId.IsValid)
+			return false;
+		let metadata = mMetadataContext.mMetadata;
+		var fmt = TomlIntegerFormat();
+		let current = metadata.GetNodeStyle(nodeId).mValueFormatRef;
+		if (current.IsValid && metadata.mValueFormats[current.mIndex] case .Integer(let existing))
+			fmt = existing;
+		fmt.mBase = integerBase;
+		return ApplyStyle(nodeId, .Integer(fmt));
+	}
+
+	/// The node that holds `key`'s entry style (value format, key format).
+	private TomlNodeId EntryNodeFor(StringView key)
+	{
+		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
+			return .Invalid;
+		mMetadataContext.TryGetEntryNodeId(key, let nodeId);
+		return nodeId;
+	}
+
+	/// The node whose comments are written around `key`: a `[header]` table's own node, otherwise the
+	/// entry's node. Invalid for a non-empty array of tables (each element has its own header).
+	private TomlNodeId CommentNodeFor(StringView key)
+	{
+		if (!TryGetValue(key, let val))
+			return .Invalid;
+		if (val case .Table(let sub) && sub.mOrigin != .InlineTable)
+			return (sub.mMetadataContext?.mMetadata != null) ? sub.mMetadataContext.mNodeId : .Invalid;
+		if (val case .Array(let arr) && !arr.IsStatic && arr.Count > 0)
+			return .Invalid;
+		return EntryNodeFor(key);
+	}
+
+	private TomlDocumentMetadata SidecarFor(TomlNodeId nodeId)
+	{
+		return nodeId.IsValid ? mMetadataContext?.mMetadata : null;
+	}
+
+	/// Comment text becomes `# text` lines, so it must not contain control characters (tab allowed).
+	private static bool IsValidCommentText(StringView text, bool allowNewlines)
+	{
+		for (let c in text)
+		{
+			if (c == '\n' && allowNewlines)
+				continue;
+			if (c == '\n' || c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
+				return false;
+		}
+		return true;
+	}
+
+	private bool SetLeadingComment(TomlNodeId nodeId, StringView comment)
+	{
+		let metadata = SidecarFor(nodeId);
+		if (metadata == null || !IsValidCommentText(comment, true))
+			return false;
+		let commentSet = metadata.GetOrCreateCommentSet(nodeId);
+		ClearAndDeleteItems!(commentSet.mLeading);
+		if (!comment.IsEmpty)
+		{
+			for (let line in comment.Split('\n'))
+				commentSet.mLeading.Add(new String(line));
+		}
+		return true;
+	}
+
+	private bool SetTrailing(TomlNodeId nodeId, StringView comment)
+	{
+		let metadata = SidecarFor(nodeId);
+		if (metadata == null || !IsValidCommentText(comment, false))
+			return false;
+		let commentSet = metadata.GetOrCreateCommentSet(nodeId);
+		delete commentSet.mTrailing;
+		commentSet.mTrailing = comment.IsEmpty ? null : new String(comment);
+		return true;
+	}
+
+	private bool TryGetLeading(TomlNodeId nodeId, String outComment)
+	{
+		let metadata = SidecarFor(nodeId);
+		let commentSet = metadata?.GetCommentSet(nodeId);
+		if (commentSet == null || commentSet.mLeading.IsEmpty)
+			return false;
+		for (int i = 0; i < commentSet.mLeading.Count; i++)
+		{
+			if (i > 0)
+				outComment.Append('\n');
+			outComment.Append(commentSet.mLeading[i]);
+		}
+		return true;
+	}
+
+	private bool TryGetTrailing(TomlNodeId nodeId, String outComment)
+	{
+		let metadata = SidecarFor(nodeId);
+		let commentSet = metadata?.GetCommentSet(nodeId);
+		if (commentSet == null || commentSet.mTrailing == null)
+			return false;
+		outComment.Append(commentSet.mTrailing);
+		return true;
+	}
+
+	/// Replaces the node's value format and marks it Style-dirty, so the writer regenerates the value
+	/// in the new style instead of reusing its original token.
+	private bool ApplyStyle(TomlNodeId nodeId, TomlValueFormat format)
+	{
+		let metadata = mMetadataContext.mMetadata;
+		let formatRef = metadata.AddValueFormat(format);
+		let style = metadata.GetNodeStyle(nodeId);
+		style.mValueFormatRef = formatRef;
+		style.mDirtyFlags |= .Style;
+		return true;
+	}
+
 	internal void MarkChildrenDirty()
 	{
 		if (mMetadataContext == null || mMetadataContext.mMetadata == null)
