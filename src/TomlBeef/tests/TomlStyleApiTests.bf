@@ -369,4 +369,130 @@ static class TomlStyleApiTests
 		WriteChecked(doc, edited);
 		AssertContains(edited, "mode = 0o644");
 	}
+
+	[Test]
+	public static void Style_FloatNotation()
+	{
+		let doc = ReadPreserving(scope .(), "a = 1500.0\nb = 2.5e-3\nn = 1\nspecial = inf\n");
+		Test.Assert(doc.RootTable.SetFloatNotation("a", .Scientific));
+		Test.Assert(doc.SetFloatNotation("b", .Decimal));
+		Test.Assert(doc.SetFloatNotation("special", .Scientific), "inf is still written as inf");
+		Test.Assert(!doc.SetFloatNotation("n", .Scientific), "Not a float");
+		Test.Assert(!doc.SetFloatNotation("missing", .Scientific));
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		AssertContains(output, "a = 1.5e3");
+		AssertContains(output, "b = 0.0025");
+		AssertContains(output, "special = inf");
+	}
+
+	[Test]
+	public static void Style_DateTimeStyle()
+	{
+		let doc = ReadPreserving(scope .(), "odt = 1979-05-27T07:32:00Z\nldt = 1979-05-27T07:32:00.5\nt = 07:32:00\nd = 1979-05-27\n");
+		var spaced = TomlDateTimeStyle() { Separator = ' ', UseZ = false, MinFractionDigits = 3 };
+		Test.Assert(doc.SetDateTimeStyle("odt", spaced));
+		Test.Assert(doc.SetDateTimeStyle("ldt", .() { Separator = ' ' }));
+		Test.Assert(doc.SetDateTimeStyle("t", .() { MinFractionDigits = 2 }));
+		Test.Assert(!doc.SetDateTimeStyle("d", spaced), "A local date has no time to style");
+		Test.Assert(!doc.SetDateTimeStyle("odt", .() { Separator = 'x' }), "Separator must be 'T' or ' '");
+		Test.Assert(!doc.SetDateTimeStyle("odt", .() { MinFractionDigits = 10 }));
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		AssertContains(output, "odt = 1979-05-27 07:32:00.000+00:00");
+		AssertContains(output, "ldt = 1979-05-27 07:32:00.5");
+		AssertContains(output, "t = 07:32:00.00");
+	}
+
+	[Test]
+	public static void Style_ArrayLayout()
+	{
+		let doc = ReadPreserving(scope .(), "a = [1, 2, 3]\nb = [\n  \"x\",\n  \"y\",\n]\n\n[[aot]]\nn = 1\n");
+		Test.Assert(doc.SetArrayLayout("a", .Multiline, false));
+		Test.Assert(doc.SetArrayLayout("b", .Inline));
+		Test.Assert(!doc.SetArrayLayout("aot", .Multiline), "An array of tables has no inline layout");
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		// Indented like the document's other multi-line array (2 spaces), no trailing comma as asked
+		AssertContains(output, "a = [\n  1,\n  2,\n  3\n]");
+		AssertContains(output, "b = [\"x\", \"y\"]");
+	}
+
+	[Test]
+	public static void Style_InlineTableLayout()
+	{
+		let doc = ReadPreserving(scope .(), "p = { x = 1, y = 2 }\nq = {a=1}\nr = { k = true }\n[t]\nz = 1\n");
+		Test.Assert(doc.SetInlineTableLayout("p", .Compact));
+		Test.Assert(doc.SetInlineTableLayout("q", .Spaced));
+		Test.Assert(doc.SetInlineTableLayout("r", .Multiline));
+		Test.Assert(!doc.SetInlineTableLayout("t", .Compact), "A [header] table is not inline");
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		AssertContains(output, "p = {x=1,y=2}");
+		AssertContains(output, "q = { a = 1 }");
+		// This document indents nothing, so the default indent of 4 applies
+		AssertContains(output, "r = {\n    k = true\n}");
+
+		// TOML 1.0 has no multi-line inline tables: the layout falls back to one spaced line
+		String v10 = scope String();
+		doc.Write(v10, .() { Version = .V1_0 });
+		AssertContains(v10, "r = { k = true }");
+	}
+
+	[Test]
+	public static void Style_KeyQuoting()
+	{
+		let doc = ReadPreserving(scope .(), "name = \"x\"\n\"quoted\" = 1\n\"a b\" = 2\n\"it's\" = 3\n[server]\nport = 80\n");
+		Test.Assert(doc.SetKeyQuoting("name", .Literal));
+		Test.Assert(doc.SetKeyQuoting("quoted", .Bare));
+		Test.Assert(doc.SetKeyQuoting("[a b]", .Bare), "A key that needs quotes stays quoted");
+		Test.Assert(doc.SetKeyQuoting("[it's]", .Literal), "A key with a single quote falls back to basic quotes");
+		Test.Assert(doc.SetKeyQuoting("server.port", .Basic));
+		Test.Assert(!doc.SetKeyQuoting("server", .Basic), "[header] tables are written as headers");
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		AssertContains(output, "'name' = \"x\"");
+		AssertContains(output, "\nquoted = 1");
+		AssertContains(output, "\"a b\" = 2");
+		AssertContains(output, "\"it's\" = 3");
+		AssertContains(output, "\"port\" = 80");
+	}
+
+	[Test]
+	public static void Style_ArrayElementComments()
+	{
+		let doc = ReadPreserving(scope .(), "ports = [80, 443]\n\n[[srv]]\nn = 1\n");
+		Test.Assert(doc.TryGetArray("ports", var ports));
+		Test.Assert(ports.SetTrailingComment(0, "http"));
+		Test.Assert(ports.SetComment(1, "https\nand TLS"));
+		Test.Assert(!ports.SetComment(2, "out of range"));
+		Test.Assert(!ports.SetTrailingComment(0, "two\nlines"));
+
+		let text = scope String();
+		Test.Assert(ports.TryGetComment(1, text) && text == "https\nand TLS");
+		text.Clear();
+		Test.Assert(ports.TryGetTrailingComment(0, text) && text == "http");
+		Test.Assert(!ports.TryGetComment(0, text..Clear()));
+
+		// Array-of-tables elements take their comments on the [[header]] line
+		Test.Assert(doc.TryGetArray("srv", var servers));
+		Test.Assert(servers.SetComment(0, "first server"));
+		Test.Assert(servers.TryGetComment(0, text..Clear()) && text == "first server");
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		AssertContains(output, "ports = [\n    80, # http\n    # https\n    # and TLS\n    443,\n]");
+		AssertContains(output, "# first server\n[[srv]]");
+
+		// Without PreserveStyle there is nothing to attach comments to
+		var plain = scope TomlDocument();
+		Test.Assert(plain.Read("a = [1]") case .Ok);
+		Test.Assert(plain.TryGetArray("a", var plainArray) && !plainArray.SetComment(0, "x"));
+		Test.Assert(!plain.SetFloatNotation("a", .Decimal) && !plain.SetKeyQuoting("a", .Basic));
+	}
 }

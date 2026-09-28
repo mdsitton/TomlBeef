@@ -288,11 +288,19 @@ doc.SetComment("server.port", "Port to listen on");       // lines above the key
 doc.SetTrailingComment("server.port", "default 80");      // end of the key's line
 doc.SetStringStyle("server.name", .Literal);              // 'value' instead of "value"
 doc.SetIntegerBase("permissions", .Octal);                // 0o755
+doc.SetFloatNotation("limits.ratio", .Scientific);        // 1.5e-3 instead of 0.0015
+doc.SetDateTimeStyle("created", .() { Separator = ' ', UseZ = false, MinFractionDigits = 3 });
+                                                          // 1979-05-27 07:32:00.000+00:00
+doc.SetArrayLayout("server.hosts", .Multiline);           // one element per line
+doc.SetInlineTableLayout("point", .Compact);              // {x=1,y=2}; also .Spaced, .Multiline (1.1)
+doc.SetKeyQuoting("server.port", .Literal);               // 'port' = 80; also .Bare, .Basic
 if (doc.TryGetTable("server", var server))
     server.SetHeaderComment("Server settings");           // above [server] (or a [[...]] element)
+if (doc.TryGetArray("server.hosts", var hosts))
+    hosts.SetComment(0, "primary");                       // above the first element
 ```
 
-The same methods exist on `TomlTable` taking a key, along with `TryGetComment` and `TryGetTrailingComment` for reading comments back. Comment text is given without the `#` marker, one line per `\n`.
+The same methods exist on `TomlTable` taking a key, along with `TryGetComment` and `TryGetTrailingComment` for reading comments back; `TomlArray` has `SetComment`, `SetTrailingComment`, `TryGetComment` and `TryGetTrailingComment` by element index (an array with element comments is written one element per line). Comment text is given without the `#` marker, one line per `\n`. Values are always written exactly: a float in scientific notation keeps every digit, and `MinFractionDigits` only pads. A key that cannot be quoted as asked (a bare key with spaces, a literal key containing `'`) falls back to basic quotes.
 
 A document read with `PreserveStyle` also knows where each value came from, which is handy for reporting validation errors against the file. When you only need positions (validating a config you will not write back), read with `MetadataMode = .Positions` instead: it records the same source ranges without capturing comments, tokens or formats, and writes canonical TOML. `doc.HasSourcePositions` and `doc.PreservesStyle` tell the modes apart.
 

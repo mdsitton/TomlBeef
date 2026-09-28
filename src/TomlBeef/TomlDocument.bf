@@ -599,6 +599,64 @@ public class TomlDocument
 		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetIntegerBase(key, integerBase);
 	}
 
+	/// @brief Choose decimal or scientific notation for the float at a dotted path. See
+	/// TomlTable.SetFloatNotation.
+	/// @param dottedPath The path of a float value.
+	/// @param notation The notation to write.
+	/// @return False if the path does not resolve or TomlTable.SetFloatNotation fails.
+	public bool SetFloatNotation(StringView dottedPath, TomlFloatNotation notation)
+	{
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetFloatNotation(key, notation);
+	}
+
+	/// @brief Choose how the date-time or time at a dotted path is written. See TomlTable.SetDateTimeStyle.
+	/// @param dottedPath The path of a date-time or time value.
+	/// @param style The style to write.
+	/// @return False if the path does not resolve or TomlTable.SetDateTimeStyle fails.
+	public bool SetDateTimeStyle(StringView dottedPath, TomlDateTimeStyle style)
+	{
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetDateTimeStyle(key, style);
+	}
+
+	/// @brief Choose one-line or one-element-per-line layout for the array at a dotted path. See
+	/// TomlTable.SetArrayLayout.
+	/// @param dottedPath The path of an array.
+	/// @param layout The layout to write.
+	/// @param trailingComma For the multi-line layout, whether the last element gets a comma.
+	/// @return False if the path does not resolve or TomlTable.SetArrayLayout fails.
+	public bool SetArrayLayout(StringView dottedPath, TomlArrayLayout layout, bool trailingComma = true)
+	{
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetArrayLayout(key, layout, trailingComma);
+	}
+
+	/// @brief Choose the layout of the inline table at a dotted path. See TomlTable.SetInlineTableLayout.
+	/// @param dottedPath The path of an inline table.
+	/// @param layout The layout to write.
+	/// @return False if the path does not resolve or TomlTable.SetInlineTableLayout fails.
+	public bool SetInlineTableLayout(StringView dottedPath, TomlInlineTableLayout layout)
+	{
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetInlineTableLayout(key, layout);
+	}
+
+	/// @brief Choose how the last key of a dotted path is quoted. See TomlTable.SetKeyQuoting.
+	/// @param dottedPath The path of the entry.
+	/// @param quoting The quoting to write.
+	/// @return False if the path does not resolve or TomlTable.SetKeyQuoting fails.
+	public bool SetKeyQuoting(StringView dottedPath, TomlKeyQuoting quoting)
+	{
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetKeyQuoting(key, quoting);
+	}
+
 	/// @brief Where the value at a dotted path appeared in the source. See TomlTable.TryGetSourceRange.
 	/// Example: report `port must be positive (line {range.mLine})`.
 	/// @param dottedPath The path of the value (bracketed segments allowed).
@@ -614,14 +672,7 @@ public class TomlDocument
 
 	private static bool IsValidCommentText(StringView text)
 	{
-		for (let c in text)
-		{
-			if (c == '\n')
-				continue;
-			if (c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
-				return false;
-		}
-		return true;
+		return TomlDocumentMetadata.IsValidCommentText(text, true);
 	}
 
 	private static void ReplaceCommentLines(TomlCommentSet commentSet, StringView comment)

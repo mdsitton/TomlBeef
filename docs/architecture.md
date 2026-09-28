@@ -517,16 +517,25 @@ empty document reuses its existing sidecar instead of replacing it.
 
 - `Value`: set on an entry or item when its value is replaced (`MarkEntryDirty`, `MarkItemDirty`).
 - `Children`: set on a container when an entry or item is inserted or removed after the parse
-  (`MarkChildrenDirty`). The parser builds the tree with `mSuppressAutoDirty` set, then clears it
-  with `ClearAutoDirtySuppression()`, so a freshly parsed document is clean.
-- `Style`: set by the public style setters (`SetStringStyle`, `SetIntegerBase`), which store a new
-  value format on the node. Any non-clean flag stops original-token reuse, so the value is
-  regenerated in the new style.
+  (`MarkChildrenDirty`). The parser fills the store with `TomlDocumentStore.mSuppressAutoDirty` set
+  and clears that one flag afterwards, so a freshly parsed document is clean.
+- `Style`: set by the public value-style setters (`SetStringStyle`, `SetIntegerBase`,
+  `SetFloatNotation`, `SetDateTimeStyle`, `SetArrayLayout`, `SetInlineTableLayout`), which store a
+  new value format on the node, starting from the captured one. Any non-clean flag stops
+  original-token reuse, so the value is regenerated in the new style. `SetKeyQuoting` stores a new
+  key format instead; keys are always regenerated from their format, so it needs no flag.
 
 **Comment and style editing API** (`TomlTable.SetComment`/`SetTrailingComment`/`TryGetComment`/
-`TryGetTrailingComment`/`SetHeaderComment`/`SetHeaderTrailingComment`/`SetStringStyle`/
-`SetIntegerBase`, and on `TomlDocument` the path forms plus `SetFileHeaderComment`/
-`SetFileFooterComment`): comments for a key go on the entry's node, except for a `[header]` table,
+`TryGetTrailingComment`/`SetHeaderComment`/`SetHeaderTrailingComment`/`TryGetHeaderComment`/
+`TryGetHeaderTrailingComment` and the style setters above; `TomlArray.SetComment`/
+`SetTrailingComment`/`TryGetComment`/`TryGetTrailingComment` by element index, which for an
+array-of-tables element act on its `[[header]]`; and on `TomlDocument` the path forms plus
+`SetFileHeaderComment`/`SetFileFooterComment`). The comment text rules and storage live on
+`TomlDocumentMetadata` (`SetLeadingCommentText` etc.), shared by tables and arrays. Formats set in
+code start from the captured format and reset what no longer applies: a float changing notation
+drops its captured digit counts (a missing exponent width means the minimal `1.5e3`), and an
+array turned multi-line takes the document's indentation. An array with element comments is always
+written multi-line, as inline tables with comments are on 1.1: comments for a key go on the entry's node, except for a `[header]` table,
 whose comments live on the table's own node (where the parser puts header comments). An array of
 tables has one header per element, so key-level calls on it are rejected and `SetHeaderComment` is
 used on the element. Comment text is validated (no control characters except tab; trailing comments

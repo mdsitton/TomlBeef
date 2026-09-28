@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 273/273 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 273/273 pass |
-| `./test-leaks.sh` | 273/273 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 279/279 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 279/279 pass |
+| `./test-leaks.sh` | 279/279 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -36,7 +36,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Public surface | Metadata sidecar, parser, cursors, path resolver and table origin/sealing (`TomlTableOrigin`, `Origin`, `IsInlineSealed`) are `internal`. Metadata is reached only through `doc.PreservesStyle`, `doc.HasSourcePositions` and the comment/style/source-range methods, with `TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange` as the public types |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
-| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base, and to query source positions (also available alone through the cheaper `Positions` mode) |
+| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments (keys, headers, array elements), string style, integer base, float notation, date-time style, array and inline-table layout, and key quoting, and to query source positions (also available alone through the cheaper `Positions` mode) |
 | Error reporting | Source name, line, column, and byte offset for lexical, UTF-8, semantic and merge errors; `TomlParseError` needs no cleanup (message in a per-thread buffer), works with `Try!`, and formats as `source:line:column: message` |
 | Validation | `Require*` getters (MissingKey/WrongType) and `MakeError` (InvalidValue) on documents, tables and arrays, located in the source with Positions/PreserveStyle; positions keep their source file across merges |
 
@@ -52,7 +52,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| P3 | Style editing covers string style and integer base only. Possible additions: float style (decimal/scientific), date-time separator/`Z`, array layout (inline/multi-line), inline-table layout, key quoting; and comments on array elements (`TomlArray.SetComment(index, ...)`) | S–M |
 | P4 | *Optional.* "Nearby style" for new values: a new key could copy the format of its siblings (e.g. hex like its neighbours) instead of the document-wide default. New multi-line arrays always get a trailing comma rather than following the document's habit | S |
 
 ### Streaming and I/O
@@ -75,5 +74,5 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. P3, then P4, if tools write configs back.
+1. P4, if tools write configs back.
 2. The remaining optional items as needed.

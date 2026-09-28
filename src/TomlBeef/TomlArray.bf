@@ -290,6 +290,80 @@ public class TomlArray
 		return mItems[index];
 	}
 
+	/// @brief Set the comment lines written above the element at `index`. Separate lines with '\n', omit
+	/// the '#'; an empty comment removes them. Elements with comments are written one per line. For an
+	/// array-of-tables element this is its `[[header]]` comment.
+	/// @param index The element index.
+	/// @param comment The comment text without '#' markers.
+	/// @return False if the document has no PreserveStyle metadata, the index is out of range, or the text
+	/// contains control characters other than tab and '\n'.
+	public bool SetComment(int index, StringView comment)
+	{
+		if (TryGetElementTable(index, let element))
+			return element.SetHeaderComment(comment);
+		let metadata = CommentTarget(index, let nodeId);
+		return metadata != null && metadata.SetLeadingCommentText(nodeId, comment);
+	}
+
+	/// @brief Set the comment written after the element at `index` (after its comma). An empty comment
+	/// removes it. For an array-of-tables element this is its `[[header]]` line's comment.
+	/// @param index The element index.
+	/// @param comment The comment text without the '#' marker. Must be a single line.
+	/// @return False under the same conditions as SetComment, or if the comment contains a newline.
+	public bool SetTrailingComment(int index, StringView comment)
+	{
+		if (TryGetElementTable(index, let element))
+			return element.SetHeaderTrailingComment(comment);
+		let metadata = CommentTarget(index, let nodeId);
+		return metadata != null && metadata.SetTrailingCommentText(nodeId, comment);
+	}
+
+	/// @brief Get the comment lines above the element at `index`, joined with '\n'.
+	/// @param index The element index.
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the element has a leading comment.
+	public bool TryGetComment(int index, String outComment)
+	{
+		if (TryGetElementTable(index, let element))
+			return element.TryGetHeaderComment(outComment);
+		let metadata = CommentTarget(index, let nodeId);
+		return metadata != null && metadata.TryGetLeadingCommentText(nodeId, outComment);
+	}
+
+	/// @brief Get the comment after the element at `index`.
+	/// @param index The element index.
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the element has a trailing comment.
+	public bool TryGetTrailingComment(int index, String outComment)
+	{
+		if (TryGetElementTable(index, let element))
+			return element.TryGetHeaderTrailingComment(outComment);
+		let metadata = CommentTarget(index, let nodeId);
+		return metadata != null && metadata.TryGetTrailingCommentText(nodeId, outComment);
+	}
+
+	/// An array-of-tables element, whose comments belong to its own [[header]] line.
+	private bool TryGetElementTable(int index, out TomlTable element)
+	{
+		element = null;
+		if (mIsStatic || index < 0 || index >= mItems.Count || !mItems[index].IsTable)
+			return false;
+		element = mItems[index].AsTable;
+		return true;
+	}
+
+	/// The sidecar and node for comments on the element at `index`; null without PreserveStyle metadata.
+	private TomlDocumentMetadata CommentTarget(int index, out TomlNodeId nodeId)
+	{
+		nodeId = .Invalid;
+		let metadata = mMetadataContext?.mMetadata;
+		if (metadata == null || !metadata.CapturesStyle || index < 0 || index >= mItems.Count)
+			return null;
+		if (!mMetadataContext.TryGetItemNodeId(index, out nodeId))
+			return null;
+		return metadata;
+	}
+
 	/// @brief Where the element at `index` appeared in the source: the start of the value, or of its
 	/// `[[header]]` for an array-of-tables element. Requires a document read with Positions or PreserveStyle.
 	/// @param index The element index.

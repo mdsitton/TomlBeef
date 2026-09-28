@@ -481,6 +481,15 @@ extension TomlWriterImpl
 			WriteMultilineArrayPreserving(arr, outStr, version, metadata, fmt);
 			return;
 		}
+		// Comments (e.g. added through TomlArray.SetComment) need their own lines
+		if (ArrayHasComments(arr, metadata))
+		{
+			var multilineFmt = hasFormat ? fmt : TomlArrayFormat();
+			multilineFmt.mStyle = .Multiline;
+			multilineFmt.mTrailingComma = true;
+			WriteMultilineArrayPreserving(arr, outStr, version, metadata, multilineFmt);
+			return;
+		}
 
 		outStr.Append('[');
 		for (int i = 0; i < arr.Count; i++)
@@ -595,6 +604,22 @@ extension TomlWriterImpl
 		for (int i = 0; i < tbl.Count; i++)
 		{
 			if (tbl.TryGetEntryNodeId(tbl.GetKeyAt(i), let fieldId) && HasComments(metadata.GetCommentSet(fieldId)))
+				return true;
+		}
+		return false;
+	}
+
+	/// Whether any element of an array, or the array itself, carries a comment.
+	private static bool ArrayHasComments(TomlArray arr, TomlDocumentMetadata metadata)
+	{
+		let ctx = arr.MetadataContext;
+		if (ctx == null)
+			return false;
+		if (ctx.mNodeId.IsValid && HasComments(metadata.GetCommentSet(ctx.mNodeId)))
+			return true;
+		for (int i = 0; i < arr.Count; i++)
+		{
+			if (ctx.TryGetItemNodeId(i, let elemId) && HasComments(metadata.GetCommentSet(elemId)))
 				return true;
 		}
 		return false;

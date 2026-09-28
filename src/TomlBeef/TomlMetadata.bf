@@ -248,6 +248,61 @@ public enum TomlIntegerBase : uint8
 	Hex
 }
 
+/// @brief How a float is written (TomlTable.SetFloatNotation). inf and nan are written as such either way.
+public enum TomlFloatNotation : uint8
+{
+	/// @brief `1500.0`, `0.25`.
+	Decimal,
+	/// @brief `1.5e3`, `2.5e-1`.
+	Scientific
+}
+
+/// @brief How an array is laid out (TomlTable.SetArrayLayout). An array whose elements carry comments is
+/// always written one element per line, since comments need their own lines.
+public enum TomlArrayLayout : uint8
+{
+	/// @brief `[1, 2, 3]` on one line.
+	Inline,
+	/// @brief One element per line, indented.
+	Multiline
+}
+
+/// @brief How an inline table is laid out (TomlTable.SetInlineTableLayout).
+public enum TomlInlineTableLayout : uint8
+{
+	/// @brief `{a=1,b=2}`.
+	Compact,
+	/// @brief `{ a = 1, b = 2 }`.
+	Spaced,
+	/// @brief One field per line (TOML 1.1; a 1.0 write puts it on one line, spaced).
+	Multiline
+}
+
+/// @brief How a key is quoted (TomlTable.SetKeyQuoting). A key that cannot be written as asked falls back:
+/// Bare to basic quotes when the key has characters outside A-Z a-z 0-9 - _, Literal to basic quotes when
+/// the key contains a single quote or control characters.
+public enum TomlKeyQuoting : uint8
+{
+	/// @brief `port` (quoted only when needed).
+	Bare,
+	/// @brief `"port"`.
+	Basic,
+	/// @brief `'port'`.
+	Literal
+}
+
+/// @brief How a date-time or time is written (TomlTable.SetDateTimeStyle).
+public struct TomlDateTimeStyle
+{
+	/// @brief Between date and time: 'T' (default) or ' '.
+	public char8 Separator = 'T';
+	/// @brief Write a zero UTC offset as `Z` (default) rather than `+00:00`.
+	public bool UseZ = true;
+	/// @brief Write at least this many fraction-of-second digits (0-9), padding with zeros; more are
+	/// written when the value needs them, so no precision is lost.
+	public int MinFractionDigits = 0;
+}
+
 /// @brief Format metadata for an integer value.
 internal struct TomlIntegerFormat
 {
@@ -676,6 +731,81 @@ internal class TomlDocumentMetadata
 		if (!nodeId.IsValid || nodeId.mIndex >= mComments.Count)
 			return null;
 		return mComments[nodeId.mIndex];
+	}
+
+	/// Comment text becomes `# text` lines, so it must not contain control characters (tab allowed), nor
+	/// newlines unless it is a multi-line leading comment.
+	internal static bool IsValidCommentText(StringView text, bool allowNewlines)
+	{
+		for (let c in text)
+		{
+			if (c == '\n' && allowNewlines)
+				continue;
+			if (c == '\n' || c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
+				return false;
+		}
+		return true;
+	}
+
+	/// Replaces a node's leading comment lines (split on '\n'); empty text removes them. The public
+	/// comment setters on tables and arrays check that the sidecar captures style before calling this.
+	/// @return False for an invalid node or invalid text.
+	internal bool SetLeadingCommentText(TomlNodeId nodeId, StringView comment)
+	{
+		if (!nodeId.IsValid || !IsValidCommentText(comment, true))
+			return false;
+		let commentSet = GetOrCreateCommentSet(nodeId);
+		ClearAndDeleteItems!(commentSet.mLeading);
+		if (!comment.IsEmpty)
+		{
+			for (let line in comment.Split('\n'))
+				commentSet.mLeading.Add(new String(line));
+		}
+		return true;
+	}
+
+	/// Replaces a node's trailing (end of line) comment; empty text removes it.
+	/// @return False for an invalid node or invalid text (including a newline).
+	internal bool SetTrailingCommentText(TomlNodeId nodeId, StringView comment)
+	{
+		if (!nodeId.IsValid || !IsValidCommentText(comment, false))
+			return false;
+		let commentSet = GetOrCreateCommentSet(nodeId);
+		delete commentSet.mTrailing;
+		commentSet.mTrailing = comment.IsEmpty ? null : new String(comment);
+		return true;
+	}
+
+	/// Appends a node's leading comment lines, joined with '\n'. Blank-line markers inside the block are
+	/// layout, not text, and are skipped.
+	/// @return True if the node has leading comment text.
+	internal bool TryGetLeadingCommentText(TomlNodeId nodeId, String outComment)
+	{
+		let commentSet = GetCommentSet(nodeId);
+		if (commentSet == null)
+			return false;
+		bool first = true;
+		for (let line in commentSet.mLeading)
+		{
+			if (line == null)
+				continue;
+			if (!first)
+				outComment.Append('\n');
+			outComment.Append(line);
+			first = false;
+		}
+		return !first;
+	}
+
+	/// Appends a node's trailing comment.
+	/// @return True if the node has one.
+	internal bool TryGetTrailingCommentText(TomlNodeId nodeId, String outComment)
+	{
+		let commentSet = GetCommentSet(nodeId);
+		if (commentSet == null || commentSet.mTrailing == null)
+			return false;
+		outComment.Append(commentSet.mTrailing);
+		return true;
 	}
 
 	/// @brief Get or create the root/document-level comment set.

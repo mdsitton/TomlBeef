@@ -809,6 +809,153 @@ public class TomlTable
 		return ApplyStyle(nodeId, .Integer(fmt));
 	}
 
+	/// @brief Choose whether the float at `key` is written in decimal (`1500.0`) or scientific (`1.5e3`)
+	/// notation. The value is always written exactly; inf and nan are unaffected.
+	/// @param key The key of a float value.
+	/// @param notation The notation to write.
+	/// @return False if the document has no PreserveStyle metadata or the value is not a float.
+	public bool SetFloatNotation(StringView key, TomlFloatNotation notation)
+	{
+		if (!TryGetValue(key, let val) || !val.IsFloat)
+			return false;
+		let metadata = StyleTarget(key, let nodeId);
+		if (metadata == null)
+			return false;
+		var fmt = TomlFloatFormat();
+		if (TryGetValueFormat(metadata, nodeId, let current) && current case .Float(let existing))
+			fmt = existing;
+		let style = (notation == .Scientific) ? TomlFloatStyle.Scientific : TomlFloatStyle.Decimal;
+		// Captured digit counts and grouping describe the old notation, so a change starts fresh
+		if (fmt.mStyle != style)
+			fmt = TomlFloatFormat() { mStyle = style, mUppercaseExponent = fmt.mUppercaseExponent };
+		return ApplyStyle(nodeId, .Float(fmt));
+	}
+
+	/// @brief Choose how the offset date-time, local date-time or local time at `key` is written: the
+	/// date/time separator, `Z` or `+00:00` for a zero offset, and a minimum number of fraction digits.
+	/// @param key The key of a date-time or time value.
+	/// @param style The style to write; Separator must be 'T' or ' ' and MinFractionDigits 0-9.
+	/// @return False if the document has no PreserveStyle metadata, the value is not a date-time or time
+	/// (a local date has nothing to style), or the style is out of range.
+	public bool SetDateTimeStyle(StringView key, TomlDateTimeStyle style)
+	{
+		if (!TryGetValue(key, let val) || !(val.IsOffsetDateTime || val.IsLocalDateTime || val.IsLocalTime))
+			return false;
+		if ((style.Separator != 'T' && style.Separator != ' ') || style.MinFractionDigits < 0 || style.MinFractionDigits > 9)
+			return false;
+		let metadata = StyleTarget(key, let nodeId);
+		if (metadata == null)
+			return false;
+		var fmt = TomlDateTimeFormat() { mHasSeconds = true, mHasOffset = val.IsOffsetDateTime };
+		if (TryGetValueFormat(metadata, nodeId, let current) && current case .DateTime(let existing))
+			fmt = existing;
+		fmt.mSeparator = style.Separator;
+		fmt.mUsesZ = style.UseZ;
+		fmt.mLowercaseZ = false;
+		fmt.mFractionalDigits = (uint8)style.MinFractionDigits;
+		return ApplyStyle(nodeId, .DateTime(fmt));
+	}
+
+	/// @brief Choose whether the array at `key` is written on one line or one element per line. An array
+	/// whose elements carry comments is written one element per line regardless.
+	/// @param key The key of an array (not an array of tables).
+	/// @param layout The layout to write.
+	/// @param trailingComma For the multi-line layout, whether the last element gets a comma.
+	/// @return False if the document has no PreserveStyle metadata or the value is not an array.
+	public bool SetArrayLayout(StringView key, TomlArrayLayout layout, bool trailingComma = true)
+	{
+		if (!TryGetValue(key, let val) || !val.IsArray || !val.AsArray.IsStatic)
+			return false;
+		let metadata = StyleTarget(key, let nodeId);
+		if (metadata == null)
+			return false;
+		var fmt = TomlArrayFormat();
+		if (TryGetValueFormat(metadata, nodeId, let current) && current case .Array(let existing))
+			fmt = existing;
+		// A one-line array's indent is only the document default at capture time; newly multi-line, it
+		// follows the document's indentation (0 = the document's) when written
+		if (fmt.mStyle != .Multiline)
+			fmt.mIndentSize = 0;
+		fmt.mStyle = (layout == .Multiline) ? .Multiline : .Inline;
+		fmt.mTrailingComma = layout == .Multiline && trailingComma;
+		return ApplyStyle(nodeId, .Array(fmt));
+	}
+
+	/// @brief Choose how the inline table at `key` is laid out: `{a=1,b=2}`, `{ a = 1, b = 2 }`, or one
+	/// field per line (TOML 1.1; a 1.0 write keeps it on one line). Fields with comments need the
+	/// multi-line layout and get it on a 1.1 write regardless.
+	/// @param key The key of an inline table.
+	/// @param layout The layout to write.
+	/// @return False if the document has no PreserveStyle metadata or the value is not an inline table.
+	public bool SetInlineTableLayout(StringView key, TomlInlineTableLayout layout)
+	{
+		if (!TryGetValue(key, let val) || !val.IsTable || val.AsTable.mOrigin != .InlineTable)
+			return false;
+		let metadata = StyleTarget(key, let nodeId);
+		if (metadata == null)
+			return false;
+		var fmt = TomlTableFormat() { mInline = true };
+		if (TryGetValueFormat(metadata, nodeId, let current) && current case .Table(let existing))
+			fmt = existing;
+		uint8 spacing = (layout == .Compact) ? 0 : 1;
+		fmt.mInline = true;
+		fmt.mMultiline = layout == .Multiline;
+		fmt.mOpenBraceSpacing = spacing;
+		fmt.mCloseBraceSpacing = spacing;
+		fmt.mEqualsSpacing = spacing;
+		fmt.mCommaSpacing = spacing;
+		return ApplyStyle(nodeId, .Table(fmt));
+	}
+
+	/// @brief Choose how `key` itself is quoted on its `key = value` line (or as an inline-table field):
+	/// bare, "basic" or 'literal'. A key that cannot be written that way falls back to basic quotes (see
+	/// TomlKeyQuoting). Keys written as part of a dotted path or a `[header]` keep automatic quoting.
+	/// @param key The key.
+	/// @param quoting The quoting to write.
+	/// @return False if the document has no PreserveStyle metadata, the key is missing, or it names a
+	/// `[header]` table or an array of tables.
+	public bool SetKeyQuoting(StringView key, TomlKeyQuoting quoting)
+	{
+		if (!TryGetValue(key, let val))
+			return false;
+		// Header tables and arrays of tables are written as [path] headers, not key = value lines
+		if ((val.IsTable && val.AsTable.mOrigin != .InlineTable) || (val.IsArray && !val.AsArray.IsStatic))
+			return false;
+		let metadata = StyleTarget(key, let nodeId);
+		if (metadata == null)
+			return false;
+		let style = metadata.GetNodeStyle(nodeId);
+		var fmt = TomlKeyFormat();
+		if (style.mKeyFormatRef.IsValid)
+			fmt = metadata.mKeyFormats[style.mKeyFormatRef.mIndex];
+		switch (quoting)
+		{
+		case .Bare:    fmt.mStyle = .Bare;
+		case .Basic:   fmt.mStyle = .QuotedBasic;
+		case .Literal: fmt.mStyle = .QuotedLiteral;
+		}
+		// Keys are always regenerated from their format, so no dirty flag is needed
+		style.mKeyFormatRef = metadata.AddKeyFormat(fmt);
+		return true;
+	}
+
+	/// @brief Get the comment lines above this table's own `[header]` or `[[header]]` line, joined with '\n'
+	/// (for example an array-of-tables element's).
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the header has a leading comment.
+	public bool TryGetHeaderComment(String outComment)
+	{
+		return TryGetLeading(mMetadataContext?.mNodeId ?? .Invalid, outComment);
+	}
+
+	/// @brief Get the comment at the end of this table's own header line.
+	/// @param outComment Receives the comment text (appended).
+	/// @return True if the header line has a trailing comment.
+	public bool TryGetHeaderTrailingComment(String outComment)
+	{
+		return TryGetTrailing(mMetadataContext?.mNodeId ?? .Invalid, outComment);
+	}
+
 	/// @brief Where the value at `key` appeared in the source: the start of its key (or of its `[header]`
 	/// for a header table, or of the first `[[header]]` for an array of tables), and the length through
 	/// the end of the value or header. Useful for reporting validation errors against the file.
@@ -969,73 +1116,48 @@ public class TomlTable
 		return (metadata != null && metadata.CapturesStyle) ? metadata : null;
 	}
 
-	/// Comment text becomes `# text` lines, so it must not contain control characters (tab allowed).
-	private static bool IsValidCommentText(StringView text, bool allowNewlines)
+	/// The sidecar and node for a style edit of the value at `key`; null without PreserveStyle metadata.
+	private TomlDocumentMetadata StyleTarget(StringView key, out TomlNodeId nodeId)
 	{
-		for (let c in text)
+		nodeId = EntryNodeFor(key);
+		return SidecarFor(nodeId);
+	}
+
+	/// The value format recorded for a node (captured from the source or set earlier), if any.
+	private static bool TryGetValueFormat(TomlDocumentMetadata metadata, TomlNodeId nodeId, out TomlValueFormat format)
+	{
+		let formatRef = metadata.GetNodeStyle(nodeId).mValueFormatRef;
+		if (formatRef.IsValid)
 		{
-			if (c == '\n' && allowNewlines)
-				continue;
-			if (c == '\n' || c == '\r' || (uint8)c == 0x7F || ((uint8)c < 0x20 && c != '\t'))
-				return false;
+			format = metadata.mValueFormats[formatRef.mIndex];
+			return true;
 		}
-		return true;
+		format = default;
+		return false;
 	}
 
 	private bool SetLeadingComment(TomlNodeId nodeId, StringView comment)
 	{
 		let metadata = SidecarFor(nodeId);
-		if (metadata == null || !IsValidCommentText(comment, true))
-			return false;
-		let commentSet = metadata.GetOrCreateCommentSet(nodeId);
-		ClearAndDeleteItems!(commentSet.mLeading);
-		if (!comment.IsEmpty)
-		{
-			for (let line in comment.Split('\n'))
-				commentSet.mLeading.Add(new String(line));
-		}
-		return true;
+		return metadata != null && metadata.SetLeadingCommentText(nodeId, comment);
 	}
 
 	private bool SetTrailing(TomlNodeId nodeId, StringView comment)
 	{
 		let metadata = SidecarFor(nodeId);
-		if (metadata == null || !IsValidCommentText(comment, false))
-			return false;
-		let commentSet = metadata.GetOrCreateCommentSet(nodeId);
-		delete commentSet.mTrailing;
-		commentSet.mTrailing = comment.IsEmpty ? null : new String(comment);
-		return true;
+		return metadata != null && metadata.SetTrailingCommentText(nodeId, comment);
 	}
 
 	private bool TryGetLeading(TomlNodeId nodeId, String outComment)
 	{
 		let metadata = SidecarFor(nodeId);
-		let commentSet = metadata?.GetCommentSet(nodeId);
-		if (commentSet == null || commentSet.mLeading.IsEmpty)
-			return false;
-		// Null entries are blank lines inside the comment block; they are layout, not comment text
-		bool first = true;
-		for (let line in commentSet.mLeading)
-		{
-			if (line == null)
-				continue;
-			if (!first)
-				outComment.Append('\n');
-			outComment.Append(line);
-			first = false;
-		}
-		return !first;
+		return metadata != null && metadata.TryGetLeadingCommentText(nodeId, outComment);
 	}
 
 	private bool TryGetTrailing(TomlNodeId nodeId, String outComment)
 	{
 		let metadata = SidecarFor(nodeId);
-		let commentSet = metadata?.GetCommentSet(nodeId);
-		if (commentSet == null || commentSet.mTrailing == null)
-			return false;
-		outComment.Append(commentSet.mTrailing);
-		return true;
+		return metadata != null && metadata.TryGetTrailingCommentText(nodeId, outComment);
 	}
 
 	/// Replaces the node's value format and marks it Style-dirty, so the writer regenerates the value

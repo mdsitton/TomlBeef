@@ -262,15 +262,14 @@ extension TomlWriterImpl
 			outStr.Append('+');
 		}
 
-		// Pad or trim exponent digits to match captured width.
-		if (fmt.mExponentDigits > 0)
-		{
-			while (expDigits.Length < fmt.mExponentDigits)
-				expDigits.Insert(0, '0');
-			// Trim excess leading zeros (safe: they don't change the value)
-			while (expDigits.Length > fmt.mExponentDigits && expDigits[0] == '0')
-				expDigits.Remove(0, 1);
-		}
+		// Pad or trim exponent digits to match captured width. Without one (a format set in code), use
+		// the minimal width: 1.5e3, not the formatter's 1.5e003.
+		int width = (fmt.mExponentDigits > 0) ? fmt.mExponentDigits : 1;
+		while (expDigits.Length < width)
+			expDigits.Insert(0, '0');
+		// Trim excess leading zeros (safe: they don't change the value)
+		while (expDigits.Length > width && expDigits[0] == '0')
+			expDigits.Remove(0, 1);
 
 		outStr.Append(expDigits);
 	}
