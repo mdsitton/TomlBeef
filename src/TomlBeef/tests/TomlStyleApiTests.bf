@@ -98,10 +98,10 @@ static class TomlStyleApiTests
 	public static void Comments_ProgrammaticKeysAndInlineTableFields()
 	{
 		let doc = ReadPreserving(scope .(), "t = { a = 1, b = 2 }");
-		doc.RootTable.SetInteger("added", 3);
+		doc.RootTable.Set("added", 3);
 		Test.Assert(doc.RootTable.SetComment("added", "added in code"));
 		let sub = doc.AddTable("section");
-		sub.SetString("k", "v");
+		sub.Set("k", "v");
 		Test.Assert(doc.RootTable.SetComment("section", "new section"));
 
 		// A comment on a single-line inline table's field switches it to the multi-line (1.1) layout
@@ -248,7 +248,7 @@ static class TomlStyleApiTests
 	public static void SourceRange_UnknownForNewValuesAndWithoutMetadata()
 	{
 		let doc = ReadPreserving(scope .(), "a = 1\n");
-		doc.RootTable.SetInteger("added", 2);
+		doc.RootTable.Set("added", 2);
 		TomlSourceRange range;
 		Test.Assert(!doc.TryGetSourceRange("added", out range), "Values added in code have no source position");
 		Test.Assert(!doc.TryGetSourceRange("missing", out range));
@@ -277,7 +277,7 @@ static class TomlStyleApiTests
 		AssertContains(output, "neg = -5");
 
 		// The chosen base sticks when the value changes
-		doc.RootTable.SetInteger("mode", 420);
+		doc.RootTable.Set("mode", 420);
 		String edited = scope String();
 		WriteChecked(doc, edited);
 		AssertContains(edited, "mode = 0o644");

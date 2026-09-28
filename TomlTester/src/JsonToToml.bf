@@ -45,7 +45,7 @@ class JsonToToml
 			let text = scope String();
 			if (TryGetTag(value, type, text))
 			{
-				Try!(SetScalar(table, key, type, text, error));
+				table.Set(key, Try!(ToScalar(type, text, error)));
 			}
 			else if (value.AsObject() case .Ok(let child))
 			{
@@ -72,7 +72,7 @@ class JsonToToml
 			let text = scope String();
 			if (TryGetTag(value, type, text))
 			{
-				Try!(AddScalar(array, type, text, error));
+				array.Add(Try!(ToScalar(type, text, error)));
 			}
 			else if (value.AsObject() case .Ok(let child))
 			{
@@ -119,81 +119,40 @@ class JsonToToml
 		return .Ok;
 	}
 
-	Result<void> SetScalar(TomlTable table, StringView key, StringView type, StringView text, String error)
+	/// Converts a tagged scalar to a TomlInputValue. A string value borrows `text`, so the result must be
+	/// stored (Set/Add copy it) while `text` is alive.
+	Result<TomlInputValue> ToScalar(StringView type, StringView text, String error)
 	{
 		switch (type)
 		{
 		case "string":
-			table.SetString(key, text);
-			return .Ok;
+			return (TomlInputValue)(text);
 		case "bool":
 			if (text != "true" && text != "false")
 			{
 				error.AppendF("Invalid bool value '{}'", text);
 				return .Err;
 			}
-			table.SetBool(key, text == "true");
-			return .Ok;
+			return (TomlInputValue)(text == "true");
 		}
 
 		Try!(ParseLiteral(type, text, error));
 		switch (type)
 		{
 		case "integer":
-			if (mScratch.TryGetInteger("v", let v)) { table.SetInteger(key, v); return .Ok; }
+			if (mScratch.TryGetInteger("v", let v)) return (TomlInputValue)(v);
 		case "float":
-			if (mScratch.TryGetFloat("v", let v)) { table.SetFloat(key, v); return .Ok; }
+			if (mScratch.TryGetFloat("v", let v)) return (TomlInputValue)(v);
 			// toml-test writes integral floats without a fraction, e.g. "5"
-			if (mScratch.TryGetInteger("v", let i)) { table.SetFloat(key, (double)i); return .Ok; }
+			if (mScratch.TryGetInteger("v", let i)) return (TomlInputValue)((double)i);
 		case "datetime":
-			if (mScratch.TryGetOffsetDateTime("v", let v)) { table.SetOffsetDateTime(key, v); return .Ok; }
+			if (mScratch.TryGetOffsetDateTime("v", let v)) return (TomlInputValue)(v);
 		case "datetime-local":
-			if (mScratch.TryGetLocalDateTime("v", let v)) { table.SetLocalDateTime(key, v); return .Ok; }
+			if (mScratch.TryGetLocalDateTime("v", let v)) return (TomlInputValue)(v);
 		case "date-local":
-			if (mScratch.TryGetLocalDate("v", let v)) { table.SetLocalDate(key, v); return .Ok; }
+			if (mScratch.TryGetLocalDate("v", let v)) return (TomlInputValue)(v);
 		case "time-local":
-			if (mScratch.TryGetLocalTime("v", let v)) { table.SetLocalTime(key, v); return .Ok; }
-		default:
-			error.AppendF("Unknown type tag '{}'", type);
-			return .Err;
-		}
-		error.AppendF("Value '{}' is not a valid {}", text, type);
-		return .Err;
-	}
-
-	Result<void> AddScalar(TomlArray array, StringView type, StringView text, String error)
-	{
-		switch (type)
-		{
-		case "string":
-			array.AddString(text);
-			return .Ok;
-		case "bool":
-			if (text != "true" && text != "false")
-			{
-				error.AppendF("Invalid bool value '{}'", text);
-				return .Err;
-			}
-			array.AddBool(text == "true");
-			return .Ok;
-		}
-
-		Try!(ParseLiteral(type, text, error));
-		switch (type)
-		{
-		case "integer":
-			if (mScratch.TryGetInteger("v", let v)) { array.AddInteger(v); return .Ok; }
-		case "float":
-			if (mScratch.TryGetFloat("v", let v)) { array.AddFloat(v); return .Ok; }
-			if (mScratch.TryGetInteger("v", let i)) { array.AddFloat((double)i); return .Ok; }
-		case "datetime":
-			if (mScratch.TryGetOffsetDateTime("v", let v)) { array.AddOffsetDateTime(v); return .Ok; }
-		case "datetime-local":
-			if (mScratch.TryGetLocalDateTime("v", let v)) { array.AddLocalDateTime(v); return .Ok; }
-		case "date-local":
-			if (mScratch.TryGetLocalDate("v", let v)) { array.AddLocalDate(v); return .Ok; }
-		case "time-local":
-			if (mScratch.TryGetLocalTime("v", let v)) { array.AddLocalTime(v); return .Ok; }
+			if (mScratch.TryGetLocalTime("v", let v)) return (TomlInputValue)(v);
 		default:
 			error.AppendF("Unknown type tag '{}'", type);
 			return .Err;

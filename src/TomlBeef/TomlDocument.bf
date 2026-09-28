@@ -400,145 +400,51 @@ public class TomlDocument
 		TomlWriterImpl.Write(this, output, config.Version);
 	}
 
-	/// @brief Remove a key and its value from the root table.
-	/// @param key The key to remove.
-	/// @return True if the key was found and removed.
-	public bool Remove(StringView key)
+	/// @brief Set a scalar value at a dotted path, creating any missing parent tables:
+	/// `doc.Set("server.port", 8080)`. Accepts strings, integers, floats, bools and the date/time types.
+	/// @param dottedPath The path (bracketed segments allowed, e.g. `a.[b.c]`).
+	/// @param value The value.
+	/// @return False if the path is malformed or a parent segment exists but is not a table.
+	public bool Set(StringView dottedPath, TomlInputValue value)
 	{
-		return mRootTable.Remove(key);
+		TomlTable parent;
+		StringView key;
+		if (!ResolvePath(dottedPath, true, out parent, out key))
+			return false;
+		parent.Set(key, value);
+		return true;
 	}
 
-	/// @brief Create a new store-backed table at the root level and return it.
-	/// @param key The key for the new table.
-	/// @return The new table, or null if the key already exists.
-	public TomlTable AddTable(StringView key)
+	/// @brief Remove the value at a dotted path.
+	/// @param dottedPath The path of the value to remove.
+	/// @return True if the value existed and was removed.
+	public bool Remove(StringView dottedPath)
 	{
-		return mRootTable.AddTable(key);
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.Remove(key);
 	}
 
-	/// @brief Create a new store-backed array at the root level and return it.
-	/// @param key The key for the new array.
-	/// @return The new array, or null if the key already exists.
-	public TomlArray AddArray(StringView key)
+	/// @brief Create a new table at a dotted path (written as a `[header]`), creating missing parents.
+	/// @param dottedPath The path of the new table.
+	/// @return The new table, or null if the key already exists or a parent segment is not a table.
+	public TomlTable AddTable(StringView dottedPath)
 	{
-		return mRootTable.AddArray(key);
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, true, out parent, out key) ? parent.AddTable(key) : null;
 	}
 
-	/// @brief Set a string value at the given dotted path.
-	/// The value is copied into the document's store.
-	/// @param dottedPath The path to traverse. Supports bracket-delimited segments.
-	/// @param value The string value to set.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetString(StringView dottedPath, StringView value)
+	/// @brief Create a new array at a dotted path, creating missing parents.
+	/// @param dottedPath The path of the new array.
+	/// @return The new array, or null if the key already exists or a parent segment is not a table.
+	public TomlArray AddArray(StringView dottedPath)
 	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetString(finalKey, value);
-		return .Ok;
+		TomlTable parent;
+		StringView key;
+		return ResolvePath(dottedPath, true, out parent, out key) ? parent.AddArray(key) : null;
 	}
 
-	/// @brief Set an integer value at the given dotted path.
-	/// @param dottedPath The dotted path.
-	/// @param value The integer value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetInteger(StringView dottedPath, int64 value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetInteger(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set a float value at the given dotted path.
-	/// @param dottedPath The dotted path.
-	/// @param value The float value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetFloat(StringView dottedPath, double value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetFloat(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set a boolean value at the given dotted path.
-	/// @param dottedPath The dotted path.
-	/// @param value The boolean value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetBool(StringView dottedPath, bool value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetBool(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set an offset date-time value at the given dotted path.
-	/// @param dottedPath The dotted path to traverse.
-	/// @param value The offset date-time value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetOffsetDateTime(StringView dottedPath, TomlOffsetDateTime value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetOffsetDateTime(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set a local date-time value at the given dotted path.
-	/// @param dottedPath The dotted path to traverse.
-	/// @param value The local date-time value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetLocalDateTime(StringView dottedPath, TomlLocalDateTime value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetLocalDateTime(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set a local date value at the given dotted path.
-	/// @param dottedPath The dotted path to traverse.
-	/// @param value The local date value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetLocalDate(StringView dottedPath, TomlLocalDate value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetLocalDate(finalKey, value);
-		return .Ok;
-	}
-
-	/// @brief Set a local time value at the given dotted path.
-	/// @param dottedPath The dotted path to traverse.
-	/// @param value The local time value.
-	/// @return .Ok on success, or .Err if the path is malformed or any intermediate segment is missing/not a table.
-	public Result<void, TomlParseError> SetLocalTime(StringView dottedPath, TomlLocalTime value)
-	{
-		TomlTable parent = ?;
-		StringView finalKey = ?;
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-			return .Err(e);
-		parent.SetLocalTime(finalKey, value);
-		return .Ok;
-	}
-
-	/// Parse a dotted path, navigate all but the last segment, and return the parent table and final key.
-	/// All intermediate segments must resolve to existing tables.
 	// ================================================================
 	// Comments and presentation style (documents read with PreserveStyle)
 	// ================================================================
@@ -574,7 +480,7 @@ public class TomlDocument
 	{
 		TomlTable parent;
 		StringView key;
-		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetComment(key, comment);
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetComment(key, comment);
 	}
 
 	/// @brief Set the comment at the end of the line of the value at a dotted path.
@@ -586,7 +492,7 @@ public class TomlDocument
 	{
 		TomlTable parent;
 		StringView key;
-		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetTrailingComment(key, comment);
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetTrailingComment(key, comment);
 	}
 
 	/// @brief Choose how the string at a dotted path is written. See TomlTable.SetStringStyle.
@@ -597,7 +503,7 @@ public class TomlDocument
 	{
 		TomlTable parent;
 		StringView key;
-		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetStringStyle(key, style);
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetStringStyle(key, style);
 	}
 
 	/// @brief Choose the base the integer at a dotted path is written in. See TomlTable.SetIntegerBase.
@@ -608,7 +514,7 @@ public class TomlDocument
 	{
 		TomlTable parent;
 		StringView key;
-		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetIntegerBase(key, integerBase);
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.SetIntegerBase(key, integerBase);
 	}
 
 	/// @brief Where the value at a dotted path appeared in the source. See TomlTable.TryGetSourceRange.
@@ -621,17 +527,7 @@ public class TomlDocument
 		range = default;
 		TomlTable parent;
 		StringView key;
-		return TryResolveForStyle(dottedPath, out parent, out key) && parent.TryGetSourceRange(key, out range);
-	}
-
-	private bool TryResolveForStyle(StringView dottedPath, out TomlTable parent, out StringView finalKey)
-	{
-		if (ResolvePath(dottedPath, out parent, out finalKey) case .Err(let e))
-		{
-			e.Dispose();
-			return false;
-		}
-		return true;
+		return ResolvePath(dottedPath, false, out parent, out key) && parent.TryGetSourceRange(key, out range);
 	}
 
 	private static bool IsValidCommentText(StringView text)
@@ -656,36 +552,35 @@ public class TomlDocument
 		}
 	}
 
-	private Result<void, TomlParseError> ResolvePath(StringView dottedPath, out TomlTable parent, out StringView finalKey)
+	/// Parses a dotted path and walks all but its last segment, returning the parent table and final key
+	/// (which borrows from `dottedPath`). With `createParents`, missing segments become new tables.
+	/// @return False if the path is malformed, or a parent segment is missing (without createParents)
+	/// or exists but is not a table.
+	private bool ResolvePath(StringView dottedPath, bool createParents, out TomlTable parent, out StringView finalKey)
 	{
+		parent = null;
+		finalKey = default;
 		var segments = scope List<StringView>();
-		if (!ParseDottedPath(dottedPath, segments))
-		{
-			parent = null;
-			finalKey = default;
-			return .Err(TomlParseError(.UnexpectedToken, "Malformed path", 0, 0, 0));
-		}
-		if (segments.Count == 0)
-		{
-			parent = null;
-			finalKey = default;
-			return .Err(TomlParseError(.TypeConflict, "Empty path", 0, 0, 0));
-		}
+		if (!ParseDottedPath(dottedPath, segments) || segments.IsEmpty)
+			return false;
 
 		TomlTable current = mRootTable;
 		for (int i = 0; i < segments.Count - 1; i++)
 		{
-			if (!current.TryGetValue(segments[i], let val) || !val.IsTable)
+			if (current.TryGetValue(segments[i], let val))
 			{
-				parent = null;
-				finalKey = default;
-				return .Err(TomlParseError(.TypeConflict, scope $"Segment '{segments[i]}' is not a table", 0, 0, 0));
+				if (!val.IsTable)
+					return false;
+				current = val.AsTable;
 			}
-			current = val.AsTable;
+			else if (createParents)
+				current = current.AddTable(segments[i]);
+			else
+				return false;
 		}
 		parent = current;
-		finalKey = segments[segments.Count - 1];
-		return .Ok;
+		finalKey = segments.Back;
+		return true;
 	}
 
 	/// @brief Navigate a bracket-aware dotted path and return the value at that path, regardless of type.

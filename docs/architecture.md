@@ -124,8 +124,8 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 ### Tables, arrays and entries
 
 - `TomlTable` keeps insertion order (`GetKeyAt`, `GetValueAt`, `Count`, `ContainsKey`,
-  `TryGetValue`, `Get`, `this[StringView]`). It has typed `TryGet*(key, out v)` readers, typed
-  `Set*(key, v)` setters (insert or replace), `AddTable`/`AddArray` (return null if the key
+  `TryGetValue`, `Get`, `this[StringView]`). It has typed `TryGet*(key, out v)` readers, one
+  `Set(key, TomlInputValue)` setter (insert or replace), `AddTable`/`AddArray` (return null if the key
   exists), `Remove`, `Clear` and `MergeFrom`.
 - `table[i]` returns a `TomlTableEntry` struct proxy (table plus index). It provides `Key`, typed
   `TryGet*`, `Value = <scalar>` assignment, `SetTable()`/`SetArray()` (replace with a new empty
@@ -135,22 +135,25 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
   `for (let value in array)` yields borrowed `TomlValue`s (`TomlArrayEnumerator`). Assignments and
   renames during iteration are fine; adding or removing keys/elements is a fatal error because the
   index-based enumerators would skip or repeat entries.
-- `TomlArray` provides typed `Add*`, `Add(TomlInputValue)`, `AddTable()`, `AddArray()`, index
+- `TomlArray` provides `Add(TomlInputValue)`, `AddTable()`, `AddArray()`, index
   assignment `arr[i] = <scalar>`, `SetTable(i)`/`SetArray(i)`, `RemoveAt`, `Clear`, typed
-  `TryGet*(index, out v)`, and `IsStatic` (true for `[...]` arrays, false for `[[...]]`
-  arrays of tables). Reading through the indexer is a fatal error, so reads go through `TryGet*`,
+  `TryGet*(index, out v)`, and `IsArrayOfTables` (true for `[[...]]` arrays of tables; the
+  internal `IsStatic` flag is its inverse). Reading through the indexer is a fatal error, so reads go through `TryGet*`,
   or `GetValueAt(i)` for elements of unknown type (mirrors `TomlTable.GetValueAt`).
 - `TomlInputValue` is a scalar-only struct with implicit conversions from `StringView`, `int64`,
-  `double`, `bool` and the four date/time structs. Callers never build a `TomlValue` or a container
-  themselves. The value is materialized into the document's store on assignment.
+  `double`, `bool` and the four date/time structs. It is the single input type for every scalar
+  setter (`Set`, `Add`, `arr[i] =`, `entry.Value =`), so there are no per-type setters. Callers
+  never build a `TomlValue` or a container themselves. The value is materialized into the
+  document's store on assignment.
 - Programmatic `TomlTable.AddTable` creates an `ExplicitHeader`-origin table, which is written as
   `[header]`. `TomlTableEntry.SetTable` creates an `InlineTable`-origin table.
   `TomlArray.AddTable`/`SetTable` create `ArrayElement` tables.
 
 ### Path syntax
 
-Used by `TomlDocument.Get`, the `TryGet*` path accessors and the `Set*` path setters
-(`TomlDocument.ParseDottedPath`). Segments are split on `.` outside brackets. A segment that
+Used by `TomlDocument.Get`, the `TryGet*` path accessors and the path mutators `Set`, `Remove`,
+`AddTable` and `AddArray` (`TomlDocument.ParseDottedPath`). `Set`, `AddTable` and `AddArray`
+create missing parent tables; `Remove` does not. Segments are split on `.` outside brackets. A segment that
 itself contains dots must be wrapped in `[...]`.
 
 | Input | Segments | Result |
@@ -187,8 +190,8 @@ containing `]` cannot be reached with a path string. Use `GetPath(segments...)` 
   `Clear()` or `delete doc`. This keeps any borrowed `TomlValue` or `StringView` a caller already
   holds valid (though possibly stale). The cost is that memory grows under heavy repeated
   mutation of one document. There is no compaction.
-- `SetString` skips allocation when the new value equals the existing string, to avoid churning
-  the arena.
+- `Set` skips allocation (and dirty marking) when the new scalar equals the existing value, to
+  avoid churning the arena.
 - **Containers can only be created by the store.** `TomlTable`/`TomlArray` constructors are
   `internal`, and every container carries `mStore`, so a container can always allocate children in
   the right arena. Raw `TomlValue` insertion (`TomlTable.Insert`, `ReplaceValue`,
@@ -592,7 +595,7 @@ sequences out of line; `IsEOF` reading a struct flag instead of the shared state
   JSON is parsed with **BJSON**, a `TomlTester`-only dependency; the library never depends on it.
   An object with exactly two string members `type` and `value` is a scalar, any other object a
   table, any array an array. The document is built only through the public typed API
-  (`Set*`, `AddTable`, `AddArray`, `TomlArray.Add*`), so this mode also exercises that API.
+  (`Set`, `AddTable`, `AddArray`, `TomlArray.Add`), so this mode also exercises that API.
   Integer, float and date/time values are converted by parsing `v = <value>` with TomlBeef itself,
   so the encoder shares the decoder's grammar. BJSON stores short strings inline in `JsonValue`,
   so tag and value text are copied out rather than viewed.
@@ -606,7 +609,7 @@ sequences out of line; `IsEOF` reading a struct flag instead of the shared state
 | Borrowed value | A `TomlValue`, `StringView`, `TomlTable` or `TomlArray` obtained from a document. Valid until `Clear()` or `delete`, and possibly stale after a mutation |
 | Origin | `TomlTableOrigin`: how a table came to exist. It drives the conflict rules and how the table is written |
 | Sealed | An inline table (and its inline descendants) that cannot be extended after its closing `}` |
-| Static array | An array written as `[...]` (`IsStatic = true`), as opposed to an array of tables built from `[[...]]` |
+| Static array | An array written as `[...]` (internal `IsStatic = true`, public `IsArrayOfTables = false`), as opposed to an array of tables built from `[[...]]` |
 | Mark / slice / spill | Cursor retention: a mark pins input from its offset, a slice reads and releases it, and the spill holds retained bytes that the stream buffer evicted |
 | Sidecar | PreserveStyle metadata kept outside the semantic tree and linked by `TomlNodeId` |
 | Clean / dirty | Whether a node's value or children changed since the parse. Only fully clean string nodes reuse their original token |

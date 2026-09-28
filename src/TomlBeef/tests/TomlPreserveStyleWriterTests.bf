@@ -890,7 +890,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Mutate only 'a' — 'b' should stay clean
 		// ReplaceValue does not allocate metadata, so pointers remain valid.
-		doc.RootTable.SetString("a", "changed");
+		doc.RootTable.Set("a", "changed");
 
 		Test.Assert(aStyle.mDirtyFlags == .Value, "Mutated entry should be dirty");
 		Test.Assert(bStyle.mDirtyFlags == .None, "Sibling should remain clean");
@@ -1354,7 +1354,7 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
 
 		// Mutate a value
-		doc.RootTable.SetString("a", "changed");
+		doc.RootTable.Set("a", "changed");
 
 		// Write - changed string should use document's literal style
 		String output = scope String();
@@ -1377,10 +1377,10 @@ static class TomlPreserveStyleWriterTests
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
 
-		doc.RootTable.SetString("basic", "changed");
-		doc.RootTable.SetString("ml", "still inline");
-		doc.RootTable.SetString("mlnl", "still newline");
-		doc.RootTable.SetString("added", "new key");
+		doc.RootTable.Set("basic", "changed");
+		doc.RootTable.Set("ml", "still inline");
+		doc.RootTable.Set("mlnl", "still newline");
+		doc.RootTable.Set("added", "new key");
 
 		String output = scope String();
 		doc.Write(output);
@@ -1451,7 +1451,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Remove and reinsert with a new value
 		doc.RootTable.Remove("a");
-		doc.RootTable.SetString("a", "new");
+		doc.RootTable.Set("a", "new");
 
 		// Writer should emit 'new', not 'old'
 		String output = scope String();
@@ -1619,7 +1619,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Editing a field keeps its comments
 		Test.Assert(doc.TryGetTable("t", var t));
-		t.SetInteger("a", 10);
+		t.Set("a", 10);
 		String edited = scope String();
 		doc.Write(edited);
 		AssertContains(edited, "  # about a\n  a = 10, # trailing a\n");
@@ -1681,8 +1681,8 @@ static class TomlPreserveStyleWriterTests
 		AssertContains(clean, "d = 1979-05-27T07:32:00Z");
 
 		// Edited values keep the captured separator and Z case
-		doc.RootTable.SetOffsetDateTime("a", TomlOffsetDateTime(2000, 1, 2, 3, 4, 5, 0, 0));
-		doc.RootTable.SetLocalDateTime("c", TomlLocalDateTime(2000, 1, 2, 3, 4, 5, 0));
+		doc.RootTable.Set("a", TomlOffsetDateTime(2000, 1, 2, 3, 4, 5, 0, 0));
+		doc.RootTable.Set("c", TomlLocalDateTime(2000, 1, 2, 3, 4, 5, 0));
 		String edited = scope String();
 		doc.Write(edited);
 		AssertContains(edited, "a = 2000-01-02t03:04:05z");
@@ -1712,7 +1712,7 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"Merged output changed on re-read:\n{output}");
 
 		// Merged nodes stay editable with their captured format
-		doc.RootTable.SetInteger("extra", 8);
+		doc.RootTable.Set("extra", 8);
 		String edited = scope String();
 		doc.Write(edited);
 		AssertContains(edited, "extra = 0o10");
@@ -1766,7 +1766,7 @@ static class TomlPreserveStyleWriterTests
 		Test.Assert(t.MetadataContext != null, "Clear must keep the table's metadata context");
 		Test.Assert((doc.Metadata.GetNodeStyle(t.MetadataContext.mNodeId).mDirtyFlags & .Children) != 0, "Clear should mark children dirty");
 
-		t.SetString("z", "new");
+		t.Set("z", "new");
 		Test.Assert(NodeIdFor(doc, "t.z").IsValid, "Keys added after Clear should get node IDs");
 
 		String output = scope String();
@@ -1797,7 +1797,7 @@ static class TomlPreserveStyleWriterTests
 
 		// Editing one field keeps its format; untouched siblings keep their tokens
 		Test.Assert(doc.TryGetTable("t", var t));
-		t.SetInteger("n", 16);
+		t.Set("n", 16);
 		Test.Assert(StyleFor(doc, "t.n").mDirtyFlags == .Value, "Edited inline field should be dirty");
 		Test.Assert(StyleFor(doc, "t.s").mDirtyFlags == .None, "Untouched inline field should stay clean");
 		String edited = scope String();
@@ -1898,7 +1898,7 @@ static class TomlPreserveStyleWriterTests
 		AssertStreamMatchesStringPreserveStyle(input, scope (doc) =>
 		{
 			doc.RootTable.TryGetTable("t", var t);
-			t.SetInteger("a", 2);
+			t.Set("a", 2);
 		});
 	}
 
@@ -1911,7 +1911,7 @@ static class TomlPreserveStyleWriterTests
 		input.Append("\n'lit'.\"quoted\".bare = 'v'\nplain = 1\n");
 		AssertStreamMatchesStringPreserveStyle(input, scope (doc) =>
 		{
-			doc.SetInteger("plain", 2);
+			doc.Set("plain", 2);
 		});
 	}
 }

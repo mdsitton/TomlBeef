@@ -199,89 +199,23 @@ public class TomlTable
 		return false;
 	}
 
-	/// @brief Set a string value for the given key. The string is copied into the document store.
+	/// @brief Set a scalar value for `key`, inserting or replacing it: `table.Set("port", 8080)`.
+	/// Accepts strings, integers, floats, bools and the four date/time types (they convert implicitly to
+	/// TomlInputValue). Strings are copied into the document. Assigning a value equal to the current one
+	/// changes nothing (no allocation; a PreserveStyle node stays clean). Use AddTable/AddArray for
+	/// containers.
 	/// @param key The key.
-	/// @param value The string value.
-	public void SetString(StringView key, StringView value)
+	/// @param value The value.
+	public void Set(StringView key, TomlInputValue value)
 	{
-		// Avoid arena churn: if the existing value is already an equal string, do nothing.
-		StringView existingStr = ?;
-		if (TryGetValue(key, let existing) && existing.TryGetString(out existingStr) && existingStr == value)
+		var input = value;
+		if (!input.IsValid)
+			Runtime.FatalError("Invalid TomlInputValue");
+		if (TryGetValue(key, let existing) && input.Matches(existing))
 			return;
-
-		TomlValue owned = .String(mStore.NewString(value));
-		if (!ReplaceValue(key, owned))
-			Insert(key, owned);
-	}
-
-	/// @brief Set an integer value for the given key.
-	/// @param key The key.
-	/// @param value The integer value.
-	public void SetInteger(StringView key, int64 value)
-	{
-		TomlValue v = .Integer(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set a float value for the given key.
-	/// @param key The key.
-	/// @param value The float value.
-	public void SetFloat(StringView key, double value)
-	{
-		TomlValue v = .Float(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set a boolean value for the given key.
-	/// @param key The key.
-	/// @param value The boolean value.
-	public void SetBool(StringView key, bool value)
-	{
-		TomlValue v = .Bool(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set an offset date-time value for the given key.
-	/// @param key The key.
-	/// @param value The offset date-time value.
-	public void SetOffsetDateTime(StringView key, TomlOffsetDateTime value)
-	{
-		TomlValue v = .OffsetDateTime(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set a local date-time value for the given key.
-	/// @param key The key.
-	/// @param value The local date-time value.
-	public void SetLocalDateTime(StringView key, TomlLocalDateTime value)
-	{
-		TomlValue v = .LocalDateTime(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set a local date value for the given key.
-	/// @param key The key.
-	/// @param value The local date value.
-	public void SetLocalDate(StringView key, TomlLocalDate value)
-	{
-		TomlValue v = .LocalDate(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
-	}
-
-	/// @brief Set a local time value for the given key.
-	/// @param key The key.
-	/// @param value The local time value.
-	public void SetLocalTime(StringView key, TomlLocalTime value)
-	{
-		TomlValue v = .LocalTime(value);
-		if (!ReplaceValue(key, v))
-			Insert(key, v);
+		TomlValue stored = input.Materialize(mStore);
+		if (!ReplaceValue(key, stored))
+			Insert(key, stored);
 	}
 
 	/// @brief Create a new store-backed sub-table for the given key and return it.
@@ -673,7 +607,7 @@ public class TomlTable
 	// ================================================================
 
 	/// Recursively clear metadata contexts from this table and all descendant tables/arrays.
-	public void ClearMetadataContexts()
+	internal void ClearMetadataContexts()
 	{
 		if (mMetadataContext != null)
 		{

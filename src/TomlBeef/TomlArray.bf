@@ -122,11 +122,15 @@ public class TomlArray
 			delete mItems;
 	}
 
-	/// @brief Whether this array is a static inline array (true) or a dynamic array-of-tables (false).
-	public bool IsStatic
+	/// @brief Whether this is an array of tables (written as `[[header]]` blocks) rather than an ordinary
+	/// `[...]` value array.
+	public bool IsArrayOfTables => !mIsStatic;
+
+	/// True for an ordinary `[...]` array, false for an array of tables.
+	internal bool IsStatic
 	{
 		get => mIsStatic;
-		internal set => mIsStatic = value;
+		set => mIsStatic = value;
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.
@@ -178,62 +182,6 @@ public class TomlArray
 				MarkChildrenDirty();
 			BindContainerMetadata(value);
 		}
-	}
-
-	/// @brief Append a string value to the array. The string is copied into the document store.
-	/// @param value The string value.
-	public void AddString(StringView value)
-	{
-		Add(.String(mStore.NewString(value)));
-	}
-
-	/// @brief Append an integer value to the array.
-	/// @param value The integer value.
-	public void AddInteger(int64 value)
-	{
-		Add(.Integer(value));
-	}
-
-	/// @brief Append a float value to the array.
-	/// @param value The float value.
-	public void AddFloat(double value)
-	{
-		Add(.Float(value));
-	}
-
-	/// @brief Append a boolean value to the array.
-	/// @param value The boolean value.
-	public void AddBool(bool value)
-	{
-		Add(.Bool(value));
-	}
-
-	/// @brief Append an offset date-time value to the array.
-	/// @param value The offset date-time value.
-	public void AddOffsetDateTime(TomlOffsetDateTime value)
-	{
-		Add(.OffsetDateTime(value));
-	}
-
-	/// @brief Append a local date-time value to the array.
-	/// @param value The local date-time value.
-	public void AddLocalDateTime(TomlLocalDateTime value)
-	{
-		Add(.LocalDateTime(value));
-	}
-
-	/// @brief Append a local date value to the array.
-	/// @param value The local date value.
-	public void AddLocalDate(TomlLocalDate value)
-	{
-		Add(.LocalDate(value));
-	}
-
-	/// @brief Append a local time value to the array.
-	/// @param value The local time value.
-	public void AddLocalTime(TomlLocalTime value)
-	{
-		Add(.LocalTime(value));
 	}
 
 	/// @brief Append a new store-backed sub-table to the array and return it.
@@ -542,7 +490,7 @@ public class TomlArray
 	// ================================================================
 
 	/// Recursively clear metadata contexts from this array and all descendant tables/arrays.
-	public void ClearMetadataContexts()
+	internal void ClearMetadataContexts()
 	{
 		if (mMetadataContext != null)
 		{

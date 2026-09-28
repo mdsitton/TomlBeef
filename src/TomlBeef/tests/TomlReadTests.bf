@@ -316,7 +316,7 @@ static class TomlReadTests
 
 		// WriteConfig applies to Write(output): a 1.1 escape is downgraded for 1.0
 		var writer = scope TomlDocument();
-		writer.RootTable.SetString("s", "\x1B");
+		writer.RootTable.Set("s", "\x1B");
 		writer.WriteConfig.Version = .V1_0;
 		String output = scope String();
 		writer.Write(output);

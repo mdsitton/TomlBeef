@@ -818,7 +818,7 @@ static class TomlPreserveStyleMetadataTests
 		Test.Assert(StyleFor(doc, "s").mDirtyFlags == .None);
 
 		// Mutate the value
-		doc.RootTable.SetString("s", "changed");
+		doc.RootTable.Set("s", "changed");
 
 		// Node should now be marked dirty
 		Test.Assert(StyleFor(doc, "s").mDirtyFlags == .Value);
@@ -1167,7 +1167,7 @@ static class TomlPreserveStyleMetadataTests
 		let doc = ReadPreserveStyle(scope .(), "a = 1\n[t]\nx = 1");
 		Test.Assert(doc.Metadata.mRootDirtyFlags == .None, "Freshly parsed root should be clean");
 
-		doc.RootTable.SetString("new", "v");
+		doc.RootTable.Set("new", "v");
 		Test.Assert(doc.Metadata.mRootDirtyFlags == .Children, "Inserting a root key should mark the root Children-dirty");
 
 		let removed = ReadPreserveStyle(scope .(), "a = 1\nb = 2");
@@ -1182,7 +1182,7 @@ static class TomlPreserveStyleMetadataTests
 		Test.Assert(doc.TryGetTable("a.b", var ab));
 		Test.Assert(ab.MetadataContext != null, "Intermediate dotted-key tables get a metadata context during the parse");
 
-		ab.SetInteger("d", 5);
+		ab.Set("d", 5);
 		Test.Assert(NodeIdFor(doc, "a.b.d").IsValid, "Keys added inside a dotted-key table get node IDs");
 		Test.Assert((doc.Metadata.GetNodeStyle(ab.MetadataContext.mNodeId).mDirtyFlags & .Children) != 0);
 		Test.Assert(doc.SetComment("a.b.d", "added"));
@@ -1261,7 +1261,7 @@ static class TomlPreserveStyleMetadataTests
 		Test.Assert(StyleFor(doc, "s").mOriginalValueToken.IsValid);
 		Test.Assert(StyleFor(doc, "s").mDirtyFlags == .None);
 
-		doc.RootTable.SetString("s", "original");
+		doc.RootTable.Set("s", "original");
 		Test.Assert(StyleFor(doc, "s").mDirtyFlags == .None);
 	}
 }

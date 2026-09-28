@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 253/253 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 253/253 pass |
+| `beefbuild -test` (Debug checks) | 254/254 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 254/254 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |

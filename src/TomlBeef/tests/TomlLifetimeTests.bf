@@ -38,7 +38,7 @@ static class TomlLifetimeTests
 		ReadOrFail(doc, "a = 1");
 		doc.Clear();
 		let t = doc.AddTable("t");
-		t.SetString("k", "v");
+		t.Set("k", "v");
 		doc.AddArray("arr").Add(5);
 		String output = scope String();
 		doc.Write(output);
@@ -91,7 +91,7 @@ static class TomlLifetimeTests
 		Test.Assert(doc.TryGetString("a", var oldA));
 		Test.Assert(doc.TryGetString("b", var oldB));
 
-		doc.RootTable.SetString("a", "replacement");
+		doc.RootTable.Set("a", "replacement");
 		Test.Assert(doc.RootTable.Remove("b"));
 
 		// Payloads stay in the document arena, so earlier borrowed views remain valid
@@ -128,15 +128,15 @@ static class TomlLifetimeTests
 		Test.Assert(doc.Metadata === metadata, "A merge keeps the destination sidecar");
 
 		// Mutating the detached table exercises its metadata context
-		removed.SetString("x", "changed");
-		removed.SetInteger("new", 4);
+		removed.Set("x", "changed");
+		removed.Set("new", 4);
 		Test.Assert(removed.Remove("new"));
 		removed.Clear();
 		Test.Assert(removed.Count == 0);
 
 		// Reachable tables were detached from the metadata and keep working
 		Test.Assert(doc.TryGetTable("u", var u));
-		u.SetInteger("y", 5);
+		u.Set("y", 5);
 		String output = scope String();
 		doc.Write(output);
 		Test.Assert(output.Contains("y = 5") && output.Contains("z = 3"), scope $"Unexpected output:\n{output}");

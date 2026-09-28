@@ -85,7 +85,7 @@ if (doc.Read(input, config) case .Err(let err)) { defer err.Dispose(); /* ... */
 | `MaxPathSegments` | `0` | Segments in a dotted key or `[table]` / `[[array]]` header path |
 | `MaxNodes` | `0` | Total value nodes: every scalar, array, and table (explicit, implicit, inline, or array element); the root table is not counted. `a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3 nodes |
 
-A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set*`/`Add*`.
+A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set`/`Add`.
 
 For large files, set `StreamBufferBytes` (e.g. `65536`): `Read(Stream)` uses a buffer of that size, and `ReadFile` then streams the file through it instead of loading it whole.
 
@@ -161,7 +161,7 @@ table[0].Value = 42;
 
 // Container replacement:
 TomlTable child = table[0].SetTable();
-child.SetString("name", "replacement");
+child.Set("name", "replacement");
 
 // Key rename and removal:
 table[0].Rename("new_key");
@@ -195,16 +195,7 @@ value.IsTable    value.IsArray
 value.IsOffsetDateTime  value.IsLocalDateTime
 value.IsLocalDate       value.IsLocalTime
 
-// Safe accessors — return Result, no crash on type mismatch
-value.TryGetString()   // → Result<StringView>
-value.TryGetInteger()  // → Result<int64>
-value.TryGetFloat()    // → Result<double>
-value.TryGetBool()     // → Result<bool>
-value.TryGetTable()    // → Result<TomlTable>
-value.TryGetArray()    // → Result<TomlArray>
-// ... same for date/time types
-
-// Out-parameter variants — return bool, no crash on type mismatch
+// Safe accessors — return bool, no crash on type mismatch
 value.TryGetString(var s)        // → true/false
 value.TryGetInteger(var i)       // → true/false
 value.TryGetFloat(var f)         // → true/false
@@ -271,7 +262,7 @@ By default the writer produces canonical TOML. To edit a file and keep its look,
 
 ```bf
 doc.ReadFile("config.toml", .() { MetadataMode = .PreserveStyle });
-doc.SetInteger("server.port", 8080);   // only this value is regenerated
+doc.Set("server.port", 8080);   // only this value is regenerated
 doc.WriteFile("config.toml");
 ```
 
@@ -307,10 +298,10 @@ if (doc.TryGetInteger("server.port", var port) && port <= 0 &&
 var doc = new TomlDocument();
 var root = doc.RootTable;
 
-// Scalar setters — no new String / new TomlValue needed
-root.SetString("name", "TomlBeef");
-root.SetInteger("version", 1);
-root.SetBool("released", true);
+// Scalar setter — takes any scalar (string, integer, float, bool, date/time)
+root.Set("name", "TomlBeef");
+root.Set("version", 1);
+root.Set("released", true);
 
 // Arrays — created through the document store
 var arr = doc.AddArray("numbers");
@@ -328,10 +319,10 @@ if (arr.TryGetString(0, out s)) { ... }
 
 // Container replacement
 var tbl = arr.SetTable(1);
-tbl.SetString("name", "replacement");
+tbl.Set("name", "replacement");
 
 var nested = arr.SetArray(2);
-nested.AddString("x");
+nested.Add("x");
 
 // Deletion
 arr.RemoveAt(0);
@@ -339,17 +330,22 @@ arr.Clear();
 
 // Sub-tables — created through the document store
 var sub = doc.AddTable("section");
-sub.SetString("key", "value");
+sub.Set("key", "value");
 
-// Dates — typed setters
-root.SetLocalDate("created", TomlLocalDate(2024, 7, 15));
-root.SetOffsetDateTime("timestamp",
-    TomlOffsetDateTime(2024, 7, 15, 14, 30, 0, 0, 0));
+// Dates
+root.Set("created", TomlLocalDate(2024, 7, 15));
+root.Set("timestamp", TomlOffsetDateTime(2024, 7, 15, 14, 30, 0, 0, 0));
+
+// Dotted paths on the document create missing parent tables
+doc.Set("database.primary.port", 5432);
+var replicas = doc.AddArray("database.replicas");
 ```
 
-> **Note:** Document setters (`SetString`, `SetInteger`, etc.) require intermediate path segments to already exist as tables.
-> Use `doc.AddTable(...)` to create intermediate tables first.
-> For deeply nested values, build the tree top-down: create tables via `AddTable`, then populate them.
+> **Note:** `doc.Set`, `doc.AddTable` and `doc.AddArray` take a dotted path and create missing intermediate tables.
+> `doc.Set` returns `false` (and `AddTable`/`AddArray` return `null`) when a path segment is malformed or names an existing non-table value.
+> `doc.Remove(path)` never creates anything.
+>
+> `TomlArray.IsArrayOfTables` tells a `[[...]]` array of tables apart from a `[...]` array.
 
 ### Copying Between Documents
 
@@ -407,8 +403,8 @@ case .Err(let err):
 - `TomlDocument` owns the entire parsed tree via an internal arena (`TomlDocumentStore`). `delete doc` frees everything.
 - `TomlValue` is a non-owning tagged union — it holds borrowed references to document-owned `String`, `TomlArray`, and `TomlTable` objects.
 - Tables and arrays created via `AddTable`/`AddArray` are store-backed and freed when the document is cleared or destroyed.
-- `StringView` returned by `TryGetString()` is borrowed from document-owned strings. Do not use after the document is cleared.
-- Mutate documents through typed setters and appenders (`SetString`, `SetInteger`, `AddTable`, `TomlArray.Add`, etc.); raw `TomlValue` insertion is not public API.
+- `StringView` returned by `TryGetString` is borrowed from document-owned strings. Do not use after the document is cleared.
+- Mutate documents through `Set`, `AddTable`, `AddArray`, `TomlArray.Add`, etc.; raw `TomlValue` insertion is not public API.
 - Replaced or removed values are not freed individually; their payloads stay in the document arena until `Clear()` or `delete`. This keeps borrowed `TomlValue`/`StringView` copies valid, but memory grows under heavy repeated mutation of one document.
 
 ## Supported TOML Features

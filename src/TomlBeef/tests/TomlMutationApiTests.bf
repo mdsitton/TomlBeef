@@ -8,16 +8,18 @@ namespace TomlBeef;
 static class TomlMutationApiTests
 {
 	[Test]
-	public static void TypedSetters_DocumentLevel()
+	public static void Set_DocumentLevel()
 	{
 		var doc = new TomlDocument();
 		defer delete doc;
 
-		// Build a document without new String, new TomlTable, etc.
-		doc.SetString("title", "Hello");
-		doc.SetInteger("count", 42);
-		doc.SetFloat("pi", 3.14);
-		doc.SetBool("enabled", true);
+		// One Set for every scalar type (implicit conversion to TomlInputValue)
+		Test.Assert(doc.Set("title", "Hello"));
+		Test.Assert(doc.Set("count", 42));
+		Test.Assert(doc.Set("pi", 3.14));
+		Test.Assert(doc.Set("enabled", true));
+		Test.Assert(doc.Set("day", TomlLocalDate(2024, 7, 15)));
+		Test.Assert(doc.TryGetLocalDate("day", var day) && day.mDay == 15);
 
 		// Verify via typed getters
 		Test.Assert(doc.TryGetString("title", var title) && title == "Hello");
@@ -39,13 +41,13 @@ static class TomlMutationApiTests
 	}
 
 	[Test]
-	public static void TypedSetters_TableAndArrayLevel()
+	public static void Set_TableAndArrayLevel()
 	{
 		var doc = new TomlDocument();
 		defer delete doc;
 
-		doc.RootTable.SetString("name", "test");
-		doc.RootTable.SetInteger("value", 99);
+		doc.RootTable.Set("name", "test");
+		doc.RootTable.Set("value", 99);
 
 		Test.Assert(doc.TryGetString("name", var n) && n == "test");
 		Test.Assert(doc.TryGetInteger("value", var v) && v == 99);
@@ -53,18 +55,54 @@ static class TomlMutationApiTests
 		// Container creation through the store
 		let arr = doc.RootTable.AddArray("items");
 		Test.Assert(arr != null);
-		arr.AddString("a");
-		arr.AddInteger(1);
-		arr.AddBool(true);
+		arr.Add("a");
+		arr.Add(1);
+		arr.Add(true);
 
 		Test.Assert(doc.TryGetArray("items", var a1) && a1.Count == 3);
 
 		// Nested container: table inside table
 		let sub = doc.RootTable.AddTable("cfg");
 		Test.Assert(sub != null);
-		sub.SetString("host", "localhost");
-		sub.SetInteger("port", 8080);
+		sub.Set("host", "localhost");
+		sub.Set("port", 8080);
 		Test.Assert(doc.TryGetString("cfg.host", var h) && h == "localhost");
+	}
+
+	[Test]
+	public static void PathMutators_CreateParentsAndRejectBadPaths()
+	{
+		var doc = scope TomlDocument();
+		// Missing parents are created as [header] tables
+		Test.Assert(doc.Set("server.http.port", 8080));
+		Test.Assert(doc.TryGetInteger("server.http.port", var port) && port == 8080);
+		Test.Assert(doc.AddTable("server.tls") != null);
+		Test.Assert(doc.AddArray("server.hosts") != null);
+		Test.Assert(doc.AddTable("server.tls") == null, "AddTable on an existing key returns null");
+
+		// A parent that exists but is not a table, or a malformed path, is rejected without side effects
+		Test.Assert(doc.Set("name", "x"));
+		Test.Assert(!doc.Set("name.first", "y"));
+		Test.Assert(!doc.Set("a..b", 1));
+		Test.Assert(!doc.Set("", 1));
+		Test.Assert(doc.AddTable("name.sub") == null);
+
+		// Remove takes a path too
+		Test.Assert(doc.Remove("server.http.port"));
+		Test.Assert(!doc.TryGetInteger("server.http.port", ?));
+		Test.Assert(!doc.Remove("server.http.port"));
+		Test.Assert(!doc.Remove("missing.parent.key"), "Remove does not create parents");
+		Test.Assert(!doc.TryGetTable("missing", ?));
+
+		String output = scope String();
+		doc.Write(output);
+		var reparsed = scope TomlDocument();
+		if (reparsed.Read(output) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}\n{output}");
+		}
+		Test.Assert(reparsed.TryGetTable("server.tls", ?) && reparsed.TryGetArray("server.hosts", ?));
 	}
 
 	[Test]
@@ -110,14 +148,14 @@ static class TomlMutationApiTests
 
 		// Replace with table at index 0
 		var tbl = arr.SetTable(0);
-		tbl.SetString("name", "replacement");
+		tbl.Set("name", "replacement");
 		StringView n = ?;
 		Test.Assert(arr.TryGetTable(0, var t) && t.TryGetString("name", out n) && n == "replacement");
 
 		// Replace with array at index 1
 		var nested = arr.SetArray(1);
-		nested.AddString("x");
-		nested.AddInteger(1);
+		nested.Add("x");
+		nested.Add(1);
 		Test.Assert(arr.TryGetArray(1, var a) && a.Count == 2);
 
 		// Write and re-parse
@@ -169,9 +207,9 @@ static class TomlMutationApiTests
 		defer delete doc;
 		var root = doc.RootTable;
 
-		root.SetString("name", "test");
-		root.SetInteger("count", 42);
-		root.SetBool("flag", true);
+		root.Set("name", "test");
+		root.Set("count", 42);
+		root.Set("flag", true);
 
 		// Read via entry proxy
 		var e0 = root[0];
@@ -209,12 +247,12 @@ static class TomlMutationApiTests
 		defer delete doc;
 		var root = doc.RootTable;
 
-		root.SetInteger("a", 0);
-		root.SetInteger("b", 0);
+		root.Set("a", 0);
+		root.Set("b", 0);
 
 		// Replace with table
 		var tbl = root[0].SetTable();
-		tbl.SetString("inner", "value");
+		tbl.Set("inner", "value");
 		StringView s = ?;
 		Test.Assert(root.TryGetTable("a", var t) && t.TryGetString("inner", out s) && s == "value");
 
@@ -244,8 +282,8 @@ static class TomlMutationApiTests
 		var doc = new TomlDocument();
 		defer delete doc;
 		var root = doc.RootTable;
-		root.SetString("a", "x");
-		root.SetString("b", "y");
+		root.Set("a", "x");
+		root.Set("b", "y");
 
 		Test.Assert(root[0].Rename("b") case .Err);
 	}
