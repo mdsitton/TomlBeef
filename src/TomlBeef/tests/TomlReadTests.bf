@@ -25,18 +25,10 @@ static class TomlReadTests
 		defer delete doc;
 		if (doc.Read("old = 1") case .Err(let setupErr))
 		{
-			defer setupErr.Dispose();
 			Test.Assert(false, scope $"Setup parse failed: {setupErr.mMessage}");
 		}
 
-		if (doc.Read("a = 1\n?") case .Err(let err))
-		{
-			defer err.Dispose();
-		}
-		else
-		{
-			Test.Assert(false, "Expected parse error");
-		}
+		Test.Assert(doc.Read("a = 1\n?") case .Err, "Expected parse error");
 		Test.Assert(doc.RootTable.Count == 0);
 	}
 
@@ -47,18 +39,10 @@ static class TomlReadTests
 		defer delete doc;
 		if (doc.Read("a = 1") case .Err(let setupErr))
 		{
-			defer setupErr.Dispose();
 			Test.Assert(false, scope $"Setup parse failed: {setupErr.mMessage}");
 		}
 
-		if (doc.Read("a = 2", .() { Mode = .Merge }) case .Err(let err))
-		{
-			defer err.Dispose();
-		}
-		else
-		{
-			Test.Assert(false, "Expected merge conflict");
-		}
+		Test.Assert(doc.Read("a = 2", .() { Mode = .Merge }) case .Err, "Expected merge conflict");
 		Test.Assert(doc.RootTable.Count == 1);
 		Test.Assert(doc.TryGetInteger("a", var val));
 		Test.Assert(val == 1);
@@ -72,7 +56,6 @@ static class TomlReadTests
 	{
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed for '{input}': {e.mMessage}");
 		}
 	}
@@ -113,7 +96,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected merge conflict");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .DuplicateKey, scope $"Expected DuplicateKey, got {e.mKind}");
 		}
 		// Validation happens before any insert, so the non-conflicting key must not be added either
@@ -156,7 +138,6 @@ static class TomlReadTests
 	{
 		if (Merge(doc, input, onConflict) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Merge failed: {e.mMessage}");
 		}
 	}
@@ -169,7 +150,6 @@ static class TomlReadTests
 		var reparsed = scope TomlDocument();
 		if (reparsed.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Merged output does not re-parse: {e.mMessage}\n{output}");
 			return;
 		}
@@ -200,7 +180,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected a nested leaf conflict");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .DuplicateKey, scope $"Expected DuplicateKey, got {e.mKind}");
 			Test.Assert(e.mMessage.Contains("'server.port'"), scope $"Error should name the path: {e.mMessage}");
 		}
@@ -219,7 +198,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected conflict");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mMessage.Contains("'a.[b.c].x'"), scope $"Expected bracketed path, got: {e.mMessage}");
 		}
 	}
@@ -248,8 +226,7 @@ static class TomlReadTests
 	{
 		var doc = scope TomlDocument();
 		ReadOrFail(doc, "a = [1, 2]\n[[s]]\nn = 1\n[[s]]\nn = 2");
-		Test.Assert(Merge(doc, "a = [3]", .Error) case .Err(let e), "A shared array is a conflicting leaf");
-		e.Dispose();
+		Test.Assert(Merge(doc, "a = [3]", .Error) case .Err, "A shared array is a conflicting leaf");
 
 		MergeOrFail(doc, "a = [3]\n[[s]]\nn = 3", .Overwrite);
 		Test.Assert(doc.TryGetArray("a", var a) && a.Count == 1);
@@ -270,7 +247,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected conflict for value vs table");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mMessage.Contains("'t'"), scope $"Error should name the path: {e.mMessage}");
 		}
 
@@ -301,7 +277,6 @@ static class TomlReadTests
 		doc.WriteConfig.Version = .V1_0;
 		if (doc.Read("a = 0x10") case .Err(let readErr))
 		{
-			defer readErr.Dispose();
 			Test.Assert(false, scope $"Parse failed: {readErr.mMessage}");
 		}
 		Test.Assert(doc.PreservesStyle, "ReadConfig applies to Read(input)");
@@ -309,10 +284,7 @@ static class TomlReadTests
 		// A 1.1-only escape is rejected under the document's 1.0 read config
 		var strict = scope TomlDocument();
 		strict.ReadConfig.Version = .V1_0;
-		if (strict.Read("s = \"\\e\"") case .Err(let e))
-			e.Dispose();
-		else
-			Test.Assert(false, "Expected the document's V1_0 read config to reject \\e");
+		Test.Assert(strict.Read("s = \"\\e\"") case .Err, "Expected the document's V1_0 read config to reject \\e");
 
 		// WriteConfig applies to Write(output): a 1.1 escape is downgraded for 1.0
 		var writer = scope TomlDocument();
@@ -336,15 +308,13 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected IoError for a missing file");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .IoError, scope $"Expected IoError, got {e.mKind}");
 		}
 		Test.Assert(replace.RootTable.Count == 0, "A failed Replace read leaves the document empty");
 
 		var merge = scope TomlDocument();
 		ReadOrFail(merge, "old = 1");
-		if (merge.ReadFile("tests/does-not-exist.toml", .() { Mode = .Merge }) case .Err(let e2))
-			e2.Dispose();
+		Test.Assert(merge.ReadFile("tests/does-not-exist.toml", .() { Mode = .Merge }) case .Err);
 		Test.Assert(merge.TryGetInteger("old", var old) && old == 1, "A failed Merge read leaves the document unchanged");
 
 		// The streamed file path reports the same error
@@ -354,7 +324,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, "Expected IoError for a missing file (streamed)");
 		case .Err(let e3):
-			defer e3.Dispose();
 			Test.Assert(e3.mKind == .IoError);
 		}
 	}
@@ -402,7 +371,6 @@ static class TomlReadTests
 		var fromBytes = scope TomlDocument();
 		if (fromBytes.ReadBytes(Span<uint8>((uint8*)input.Ptr, input.Length)) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"ReadBytes failed: {e.mMessage}");
 		}
 		Test.Assert(fromBytes.TryGetInteger("a", var a2) && a2 == 1);
@@ -421,7 +389,6 @@ static class TomlReadTests
 		case .Ok:
 			Test.Assert(false, scope $"Expected {kind} for '{input}'");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == kind, scope $"Expected {kind}, got {e.mKind}: {e.mMessage}");
 			Test.Assert(e.mLine == line && e.mColumn == column && e.mOffset == offset,
 				scope $"Expected {line}:{column} @{offset}, got {e.mLine}:{e.mColumn} @{e.mOffset} ({e.mMessage})");
@@ -462,7 +429,6 @@ static class TomlReadTests
 			case .Ok:
 				Test.Assert(false, scope $"{pathNames[i]}: expected DuplicateKey");
 			case .Err(let e):
-				defer e.Dispose();
 				// Line/column restart after the BOM; the byte offset counts it (3 + 6)
 				Test.Assert(e.mKind == .DuplicateKey && e.mLine == 2 && e.mColumn == 1 && e.mOffset == 9,
 					scope $"{pathNames[i]}: got {e.mKind} {e.mLine}:{e.mColumn} @{e.mOffset}");
@@ -485,7 +451,6 @@ static class TomlReadTests
 		switch (TomlDocument.Parse("[server]\nport = 8080", .() { MetadataMode = .PreserveStyle }))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		case .Ok(let doc):
 			defer delete doc;
@@ -500,14 +465,12 @@ static class TomlReadTests
 			delete doc;
 			Test.Assert(false, "expected DuplicateKey");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .DuplicateKey);
 		}
 
 		switch (TomlDocument.ParseFile("tests/valid/bool/bool.toml"))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(false, scope $"ParseFile failed: {e.mMessage}");
 		case .Ok(let doc):
 			defer delete doc;
@@ -520,9 +483,70 @@ static class TomlReadTests
 			delete doc;
 			Test.Assert(false, "expected IoError");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .IoError);
 		}
+	}
+
+	static Result<void, TomlParseError> ReadForwardingError(TomlDocument doc, StringView input)
+	{
+		Try!(doc.Read(input));
+		return .Ok;
+	}
+
+	static Result<void> ReadDroppingError(TomlDocument doc, StringView input)
+	{
+		Try!(doc.Read(input));
+		return .Ok;
+	}
+
+	[Test]
+	public static void Error_NeedsNoCleanupAndWorksWithTry()
+	{
+		var doc = scope TomlDocument();
+
+		// Try! forwards the error unchanged, or drops it without leaking into a plain Result
+		switch (ReadForwardingError(doc, "a = 1\na = 2"))
+		{
+		case .Ok:
+			Test.Assert(false, "expected DuplicateKey");
+		case .Err(let e):
+			Test.Assert(e.mKind == .DuplicateKey && e.mLine == 2 && e.mMessage.Contains("'a'"), scope $"got {e.mKind}: {e.mMessage}");
+		}
+		Test.Assert(ReadDroppingError(doc, "a = 1\na = 2") case .Err);
+		Test.Assert(ReadDroppingError(doc, "a = 1") case .Ok);
+
+		// The message stays valid until the next error on this thread, which replaces it
+		Test.Assert(doc.Read("x = ") case .Err(let first));
+		let firstText = scope String(first.mMessage);
+		Test.Assert(!firstText.IsEmpty);
+		Test.Assert(doc.Read("[t]\n[t]") case .Err(let second));
+		Test.Assert(second.mKind == .DuplicateTable && second.mMessage.Contains("[t]"), scope $"got {second.mMessage}");
+
+		// An error built from a previous error's message (a view of the shared buffer) keeps its text
+		let rebuilt = TomlParseError(.IoError, second.mMessage, 1, 1, 0);
+		Test.Assert(rebuilt.mMessage == "Duplicate table '[t]'", scope $"got {rebuilt.mMessage}");
+		let rebuiltTail = TomlParseError(.IoError, rebuilt.mMessage.Substring(10), 1, 1, 0);
+		Test.Assert(rebuiltTail.mMessage == "table '[t]'", scope $"got {rebuiltTail.mMessage}");
+	}
+
+	[Test]
+	public static void Error_MessageBufferIsPerThread()
+	{
+		Test.Assert(TomlDocument.Parse("a = 1\na = 2") case .Err(let mainErr));
+		let mainText = scope String(mainErr.mMessage);
+
+		// Another thread's error uses its own buffer (released when that thread exits)
+		bool otherOk = false;
+		let thread = scope System.Threading.Thread(new [&otherOk] () =>
+		{
+			if (TomlDocument.Parse("[t]\n[t]") case .Err(let otherErr))
+				otherOk = otherErr.mKind == .DuplicateTable && otherErr.mMessage.Contains("[t]");
+		});
+		thread.Start(false);
+		thread.Join();
+
+		Test.Assert(otherOk, "error on another thread");
+		Test.Assert(mainErr.mMessage == mainText, "the main thread's message is untouched by another thread's error");
 	}
 
 	[Test]

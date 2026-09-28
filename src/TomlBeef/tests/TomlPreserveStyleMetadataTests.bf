@@ -20,7 +20,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("server.port = 8080\nserver.host = 'localhost'", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mPreferDottedKeys == true);
@@ -35,7 +34,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("port = 8080\nhost = 'localhost'", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mPreferDottedKeys == false);
@@ -52,7 +50,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 'one'\nb = 'two'\nc = 'three'\nd = \"four\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
@@ -70,7 +67,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "  a = 1\n  b = 2";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 2);
@@ -87,7 +83,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 1\nb = 2";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mIndentSize == 4); // default
@@ -103,7 +98,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 1\r\nb = 2\r\n";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .CRLF);
@@ -119,7 +113,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 1\nb = 2\n";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .LF);
@@ -135,7 +128,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "arr = [\n  1,\n  2,\n  3,\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultArrayStyle == .Multiline);
@@ -151,7 +143,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "arr = [1, 2, 3]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultArrayStyle == .Inline);
@@ -166,7 +157,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("server.port = 8080", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = KeyFormatFor(doc, "server.port");
@@ -183,7 +173,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("\"my key\" = 42", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = KeyFormatFor(doc, "my key");
@@ -199,7 +188,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("'raw key' = 99", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = KeyFormatFor(doc, "raw key");
@@ -215,7 +203,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("simple = 1", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = KeyFormatFor(doc, "simple");
@@ -232,7 +219,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("dob = 1979-05-27T07:32:00Z", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "dob");
@@ -257,7 +243,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("dt = 1979-05-27 07:32:00-08:00", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "dt");
@@ -280,7 +265,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("dob = 1979-05-27", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "dob");
@@ -303,7 +287,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("t = 07:32:00", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "t");
@@ -325,7 +308,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("dt = 1979-05-27T07:32:00", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "dt");
@@ -350,7 +332,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 1\r\nb = 2\r\nc = 3\n";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .CRLF);
@@ -367,7 +348,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = 1\r\nb = 2\nc = 3\n";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mNewlineStyle == .LF);
@@ -384,7 +364,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "arr = ['a', 'b', 'c']\nname = \"x\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
@@ -401,7 +380,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = \"one\"\nb = \"two\"\nc = 'three'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Basic);
@@ -416,7 +394,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = inf\nb = +inf\nc = -inf\nd = nan\ne = +nan\nf = -nan", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -443,7 +420,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = 0xDEAD_BEEF", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -469,7 +445,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("mode = 0o755", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "mode");
@@ -488,7 +463,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("flags = 0b1101_0010", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "flags");
@@ -510,7 +484,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("pop = 1_000_000", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "pop");
@@ -533,7 +506,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("val = 1E+06", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "val");
@@ -556,7 +528,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("pi = 3.14", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "pi");
@@ -584,7 +555,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read(ms, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -613,7 +583,6 @@ static class TomlPreserveStyleMetadataTests
 		defer delete doc;
 		if (doc.Read("a = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata == null);
@@ -628,7 +597,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = 1", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);
@@ -644,7 +612,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "s = \"hello world\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -666,7 +633,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "s = \"\"\"line1\nline2\"\"\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -689,7 +655,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = 42", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -710,7 +675,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = \"hello\"\nb = \"world\"\nc = 42";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -736,7 +700,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = \"hello\"", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Setup parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);
@@ -745,7 +708,6 @@ static class TomlPreserveStyleMetadataTests
 		// Re-read without PreserveStyle
 		if (doc.Read("b = 1") case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-read failed: {reErr.mMessage}");
 		}
 		Test.Assert(doc.Metadata == null);
@@ -761,7 +723,6 @@ static class TomlPreserveStyleMetadataTests
 		let input = "a = \"basic\"\nb = 'literal'\nc = \"\"\"multi\nline\"\"\"\nd = '''ml\nlit'''";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let metadata = doc.Metadata;
@@ -809,7 +770,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("s = 'original'", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -841,7 +801,6 @@ static class TomlPreserveStyleMetadataTests
 		// First read with PreserveStyle
 		if (doc.Read("a = 'first'", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"First read failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);
@@ -850,7 +809,6 @@ static class TomlPreserveStyleMetadataTests
 		// Second read with PreserveStyle (Replace mode)
 		if (doc.Read("b = 'second'\nc = 'third'", config) case .Err(let read2Err))
 		{
-			defer read2Err.Dispose();
 			Test.Assert(false, scope $"Second read failed: {read2Err.mMessage}");
 		}
 		// Metadata should be replaced with new document's metadata
@@ -876,7 +834,6 @@ static class TomlPreserveStyleMetadataTests
 		mergeConfig.Mode = .Merge;
 		if (doc.Read("b = 'world'\n[t]\ny = 2\n[u.v]\nz = 3", mergeConfig) case .Err(let mergeErr))
 		{
-			defer mergeErr.Dispose();
 			Test.Assert(false, scope $"Merge failed: {mergeErr.mMessage}");
 		}
 		Test.Assert(doc.Metadata === metadata, "Merge must keep the destination sidecar");
@@ -898,14 +855,7 @@ static class TomlPreserveStyleMetadataTests
 		defer delete doc;
 		var config = TomlReadConfig();
 		config.MetadataMode = .PreserveStyle;
-		if (doc.Read("a = ???invalid", config) case .Err(let e))
-		{
-			defer e.Dispose();
-		}
-		else
-		{
-			Test.Assert(false, "Expected parse error");
-		}
+		Test.Assert(doc.Read("a = ???invalid", config) case .Err, "Expected parse error");
 		// Metadata should be cleaned up on error
 		Test.Assert(doc.Metadata == null);
 	}
@@ -920,7 +870,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);
@@ -1070,7 +1019,6 @@ static class TomlPreserveStyleMetadataTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read(ms, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);

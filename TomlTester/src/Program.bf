@@ -105,7 +105,6 @@ class Program
 		// stream buffer rather than the whole input being read into a string first
 		if (doc.Read(Console.In.BaseStream, config) case .Err(let err))
 		{
-			defer err.Dispose();
 			Console.Error.Write(scope $"Parse error at line {err.mLine}:{err.mColumn}: ");
 			Console.Error.WriteLine(err.mMessage);
 			return 1;
@@ -134,7 +133,6 @@ class Program
 		var doc = scope TomlDocument();
 		if (doc.Read(input, config) case .Err(let err))
 		{
-			defer err.Dispose();
 			Console.Error.WriteLine(scope $"Parse error at line {err.mLine}:{err.mColumn}: {err.mMessage}");
 			return 1;
 		}

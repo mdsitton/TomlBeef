@@ -13,7 +13,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("[a]\nb.c = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// Existing bare dotted path still works
@@ -29,7 +28,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("\"a.b\" = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// Bracket syntax to access key containing '.'
@@ -45,7 +43,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("[servers]\n\"192.168.1.1\" = { host = \"db1\" }") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// Access server's IP with bracket syntax, then read a sub-field
@@ -61,7 +58,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("\"a.b\" = { \"c.d\" = { \"e.f\" = 1 } }") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("[a.b].[c.d].[e.f]", var val) && val == 1);
@@ -75,7 +71,6 @@ static class TomlPathTests
 		// Setup: create keys where malformed paths would resolve if accepted
 		if (doc.Read("a = { b = 1 }\n\"x.y\" = { z = 2 }") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// Empty path
@@ -116,7 +111,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("\"x.y\" = \"hello\"") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// Typed accessor should inherit bracket syntax via Get()
@@ -130,7 +124,6 @@ static class TomlPathTests
 		defer delete doc;
 		if (doc.Read("[a]\nb.c = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		// params StringView[] — clean multi-segment syntax
@@ -139,7 +132,6 @@ static class TomlPathTests
 		// Single segment
 		if (doc.Read("x = 42") case .Err(let e2))
 		{
-			defer e2.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e2.mMessage}");
 		}
 		Test.Assert(doc.GetPath("x") case .Ok(let v2) && v2.IsInteger && v2.AsInteger == 42);
@@ -148,7 +140,6 @@ static class TomlPathTests
 		// A key containing ']' cannot be reached via string-path syntax.
 		if (doc.Read("\"weird]key\" = 1") case .Err(let e2b))
 		{
-			defer e2b.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e2b.mMessage}");
 		}
 		Test.Assert(doc.Get("weird]key") case .Err);
@@ -161,7 +152,6 @@ static class TomlPathTests
 		segs.Add("c");
 		if (doc.Read("[a]\nb.c = 99") case .Err(let e3))
 		{
-			defer e3.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e3.mMessage}");
 		}
 		Test.Assert(doc.GetPath(segs) case .Ok(let v4) && v4.IsInteger && v4.AsInteger == 99);

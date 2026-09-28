@@ -22,7 +22,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.RootTable.Count == 1);
@@ -43,7 +42,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.RootTable.Count == 1);
@@ -64,7 +62,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetString("a", var s));
@@ -85,7 +82,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.RootTable.Count == 1);
@@ -147,7 +143,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.RootTable.Count == 1);
@@ -167,7 +162,6 @@ static class TomlStreamTests
 		defer delete doc;
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("a", var val) && val == 1);
@@ -236,7 +230,6 @@ static class TomlStreamTests
 		var doc = scope TomlDocument();
 		if (doc.Read(stream) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Expected clean EOF, got {e.mKind}: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("a", var a) && a == 1);
@@ -257,7 +250,6 @@ static class TomlStreamTests
 			var fromString = scope TomlDocument();
 			if (fromString.Read(StringView((char8*)bytes.Ptr, bytes.Count)) case .Err(let e1))
 			{
-				defer e1.Dispose();
 				Test.Assert(false, scope $"String parse failed ({trailing}): {e1.mMessage}");
 				continue;
 			}
@@ -269,7 +261,6 @@ static class TomlStreamTests
 			var fromStream = scope TomlDocument();
 			if (fromStream.Read(ms) case .Err(let e2))
 			{
-				defer e2.Dispose();
 				Test.Assert(false, scope $"Stream parse failed ({trailing}): {e2.mMessage}");
 				continue;
 			}
@@ -287,7 +278,6 @@ static class TomlStreamTests
 		var doc = scope TomlDocument();
 		if (doc.Read(ms, .() { StreamBufferBytes = 1 }) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetString("s", var s) && s == "long enough to need many refills");
@@ -306,7 +296,6 @@ static class TomlStreamTests
 		var doc = scope TomlDocument();
 		if (doc.Read(ms) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("a", var a) && a == 1234567890123);
@@ -324,7 +313,6 @@ static class TomlStreamTests
 		case .Ok:
 			Test.Assert(false, "Expected InvalidUtf8 error");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .InvalidUtf8, scope $"Expected InvalidUtf8, got {e.mKind}: {e.mMessage}");
 			Test.Assert(e.mLine == line && e.mColumn == column && e.mOffset == offset,
 				scope $"Expected {line}:{column} @{offset}, got {e.mLine}:{e.mColumn} @{e.mOffset}");

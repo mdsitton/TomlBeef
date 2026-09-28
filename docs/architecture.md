@@ -202,8 +202,18 @@ containing `]` cannot be reached with a path string. Use `GetPath(segments...)` 
   deleted safely. `TomlTable.MergeFrom` is also the public cross-document copy (clone a document
   into a cleared one, or copy a table under a new `AddTable` key); a separate clone API was judged
   redundant.
-- `TomlParseError` is a struct that owns `mMessage` (a heap `String`). Callers must `Dispose()`
-  it, usually with `defer err.Dispose()`.
+- `TomlParseError` owns nothing. Its constructor copies the message into a per-thread `String`
+  (`LazyTLS`, freed at thread exit) and `mMessage` views it, so the text is valid until the next
+  error is constructed on that thread. A message built from a previous error's view is copied
+  through a temporary first.
+  - *Why:* errors used to own a heap `String` and need `Dispose()`. Forgetting it, matching
+    `case .Err` without binding, or using `Try!` leaked the message. A document-owned message
+    would not survive `TomlDocument.Parse` deleting the document on failure, and an inline buffer
+    in the struct either costs a few hundred bytes per `Result` or truncates key paths. The
+    per-thread rule matches `errno`-style APIs: copy the message to keep it past another failure.
+  - The library never builds an error it then discards, apart from the stream paths that replace
+    a secondary parse error with the cursor's own cause, so an error seen by the caller is always
+    the most recent one on its thread.
 - PreserveStyle metadata (`TomlDocumentMetadata`, per-container `TomlContainerMetadataContext`)
   lives on the normal heap, not in the arena. The document owns it and deletes it on `Clear`, on
   Replace, and after a non-empty merge.

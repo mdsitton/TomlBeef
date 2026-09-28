@@ -284,22 +284,14 @@ public class TomlDocument
 
 		if (ReadWithCursor(cursor, config) case .Err(let e))
 		{
+			// A cursor failure surfaces as a secondary parse error; report the cause instead
 			if (state.mBytesExceeded)
-			{
-				e.Dispose();
 				return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0), config);
-			}
 			if (state.mError)
-			{
-				e.Dispose();
 				return ReadFailure(TomlParseError(.IoError, "Stream read error", 0, 0, 0), config);
-			}
 			if (state.mUtf8Error)
-			{
-				e.Dispose();
 				return ReadFailure(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset), config);
-			}
 			return .Err(e);
 		}
 		if (state.mBytesExceeded)
@@ -333,21 +325,12 @@ public class TomlDocument
 		if (parser.Parse(cursor, resolver) case .Err(let e))
 		{
 			if (state.mBytesExceeded)
-			{
-				e.Dispose();
 				return .Err(TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0));
-			}
 			if (state.mError)
-			{
-				e.Dispose();
 				return .Err(TomlParseError(.IoError, "Stream read error", 0, 0, 0));
-			}
 			if (state.mUtf8Error)
-			{
-				e.Dispose();
 				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
 					state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset));
-			}
 			return .Err(e);
 		}
 		if (state.mBytesExceeded)

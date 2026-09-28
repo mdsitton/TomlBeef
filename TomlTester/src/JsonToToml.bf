@@ -112,7 +112,6 @@ class JsonToToml
 	{
 		if (mScratch.Read(scope $"v = {literal}") case .Err(let e))
 		{
-			defer e.Dispose();
 			error.AppendF("Invalid {} value '{}': {}", type, literal, e.mMessage);
 			return .Err;
 		}

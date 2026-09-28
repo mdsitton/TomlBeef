@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 256/256 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 256/256 pass |
+| `beefbuild -test` (Debug checks) | 258/258 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 258/258 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -36,7 +36,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
 | Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base, and to query source positions |
-| Error reporting | Line, column, and byte offset for lexical, UTF-8, and semantic errors |
+| Error reporting | Line, column, and byte offset for lexical, UTF-8, and semantic errors; `TomlParseError` needs no cleanup (message in a per-thread buffer) and works with `Try!` |
 
 ## Open items
 

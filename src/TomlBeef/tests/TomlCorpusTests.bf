@@ -22,7 +22,6 @@ static class TomlCorpusTests
 			let fromFile = scope TomlDocument();
 			if (fromFile.ReadFile(path) case .Err(let fileErr))
 			{
-				defer fileErr.Dispose();
 				Test.Assert(false, scope $"ReadFile failed [{name}]: {fileErr.mMessage}");
 				return;
 			}
@@ -51,7 +50,6 @@ static class TomlCorpusTests
 			{
 				if (results[i] case .Err(let e))
 				{
-					defer e.Dispose();
 					Test.Assert(false, scope $"{pathNames[i]} failed [{name}]: {e.mMessage}");
 				}
 				else if (!TomlDocumentEquals(fromFile, docs[i]))
@@ -76,7 +74,6 @@ static class TomlCorpusTests
 			let original = scope TomlDocument();
 			if (original.ReadFile(path, .() { MetadataMode = .PreserveStyle }) case .Err(let e))
 			{
-				defer e.Dispose();
 				Test.Assert(false, scope $"Read failed [{name}]: {e.mMessage}");
 				return;
 			}
@@ -86,7 +83,6 @@ static class TomlCorpusTests
 			let reparsed = scope TomlDocument();
 			if (reparsed.Read(written, .() { MetadataMode = .PreserveStyle }) case .Err(let e2))
 			{
-				defer e2.Dispose();
 				Test.Assert(false, scope $"PreserveStyle output does not re-parse [{name}]: {e2.mMessage}\n{written}");
 				return;
 			}
@@ -127,7 +123,6 @@ static class TomlCorpusTests
 			let fromBytes = scope TomlDocument();
 			if (fromBytes.ReadBytes(Span<uint8>(data.Ptr, data.Count), config) case .Err(let e1))
 			{
-				defer e1.Dispose();
 				Test.Assert(false, scope $"ReadBytes failed [{name}]: {e1.mMessage}");
 				return;
 			}
@@ -135,7 +130,6 @@ static class TomlCorpusTests
 			let fromStream = scope TomlDocument();
 			if (fromStream.Read(ms, config) case .Err(let e2))
 			{
-				defer e2.Dispose();
 				Test.Assert(false, scope $"Stream read failed [{name}]: {e2.mMessage}");
 				return;
 			}
@@ -176,7 +170,7 @@ static class TomlCorpusTests
 			switch (ParseFile(path, .V1_1))
 			{
 			case .Err(let e):
-				Test.Assert(false, scope $"FAIL [{name}]: {e.mMessage}"); e.Dispose(); failed++;
+				Test.Assert(false, scope $"FAIL [{name}]: {e.mMessage}"); failed++;
 			case .Ok(let doc1):
 				defer delete doc1;
 				String t1 = scope String();
@@ -185,7 +179,7 @@ static class TomlCorpusTests
 				defer delete doc2;
 				if (doc2.Read(t1) case .Err(let e2))
 				{
-					Test.Assert(false, scope $"FAIL [{name}]: re-parse - {e2.mMessage}\n{t1}"); e2.Dispose(); failed++;
+					Test.Assert(false, scope $"FAIL [{name}]: re-parse - {e2.mMessage}\n{t1}"); failed++;
 				}
 				else
 				{

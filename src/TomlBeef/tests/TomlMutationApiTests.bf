@@ -34,7 +34,6 @@ static class TomlMutationApiTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc2.TryGetString("title", var title2) && title2 == "Hello");
@@ -99,7 +98,6 @@ static class TomlMutationApiTests
 		var reparsed = scope TomlDocument();
 		if (reparsed.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}\n{output}");
 		}
 		Test.Assert(reparsed.TryGetTable("server.tls", ?) && reparsed.TryGetArray("server.hosts", ?));
@@ -129,7 +127,6 @@ static class TomlMutationApiTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc2.TryGetArray("values", var a2) && a2.Count == 4);
@@ -165,7 +162,6 @@ static class TomlMutationApiTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc2.TryGetArray("data", var a2) && a2.Count == 2);
@@ -194,7 +190,6 @@ static class TomlMutationApiTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc2.TryGetArray("x", var a2) && a2.Count == 0);
@@ -231,7 +226,6 @@ static class TomlMutationApiTests
 		switch (root[0].Rename("title"))
 		{
 		case .Err(let re):
-			defer re.Dispose();
 			Test.Assert(false, "Rename failed");
 		case .Ok:
 		}
@@ -269,7 +263,6 @@ static class TomlMutationApiTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc2.TryGetTable("a", var t2) && t2.Count == 1);
@@ -294,7 +287,6 @@ static class TomlMutationApiTests
 		var doc = scope TomlDocument();
 		if (doc.Read("b = 1\na = \"x\"\n[t]\nk = 2\n[[p]]\nn = 1\n[[p]]\nn = 2\n") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -346,7 +338,6 @@ static class TomlMutationApiTests
 			var doc = scope TomlDocument();
 			if (doc.Read("before = 1\n[[p]]\nx = 1\n[[p]]\nx = 2\n[t]\ny = 3", .() { MetadataMode = mode }) case .Err(let e))
 			{
-				defer e.Dispose();
 				Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 			}
 			Test.Assert(doc.TryGetArray("p", var p));
@@ -357,7 +348,6 @@ static class TomlMutationApiTests
 			var reparsed = scope TomlDocument();
 			if (reparsed.Read(output) case .Err(let e2))
 			{
-				defer e2.Dispose();
 				Test.Assert(false, scope $"Re-parse failed ({mode}): {e2.mMessage}\n{output}");
 			}
 			Test.Assert(reparsed.TryGetArray("p", var p2) && p2.Count == 0, scope $"Emptied array of tables lost ({mode}):\n{output}");

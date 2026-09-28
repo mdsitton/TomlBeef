@@ -11,7 +11,6 @@ static class TomlLifetimeTests
 	{
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed for '{input}': {e.mMessage}");
 		}
 	}
@@ -169,7 +168,6 @@ static class TomlLifetimeTests
 		Test.Assert(source.TryGetTable("server", var server));
 		if (dest.AddTable("backup").MergeFrom(server) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"MergeFrom failed: {e.mMessage}");
 		}
 		delete source;
@@ -194,7 +192,6 @@ static class TomlLifetimeTests
 		ReadOrFail(source, "s = \"copied\"\narr = [\"x\", \"y\"]\n[t]\nnested = { k = \"deep\" }\n[[aot]]\nn = 1");
 		if (dest.RootTable.MergeFrom(source.RootTable) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"MergeFrom failed: {e.mMessage}");
 		}
 		delete source;

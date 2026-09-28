@@ -12,7 +12,6 @@ static class TomlStyleApiTests
 	{
 		if (doc.Read(input, .() { MetadataMode = .PreserveStyle }) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}\n{input}");
 		}
 		return doc;
@@ -25,7 +24,6 @@ static class TomlStyleApiTests
 		var reparsed = scope TomlDocument();
 		if (reparsed.Read(output) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Output does not re-parse: {e.mMessage}\n{output}");
 			return;
 		}
@@ -154,7 +152,6 @@ static class TomlStyleApiTests
 		var plain = scope TomlDocument();
 		if (plain.Read("a = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false);
 		}
 		Test.Assert(!plain.RootTable.SetComment("a", "x"));
@@ -257,7 +254,6 @@ static class TomlStyleApiTests
 		var plain = scope TomlDocument();
 		if (plain.Read("a = 1") case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false);
 		}
 		Test.Assert(!plain.TryGetSourceRange("a", out range), "Positions are recorded only with PreserveStyle");

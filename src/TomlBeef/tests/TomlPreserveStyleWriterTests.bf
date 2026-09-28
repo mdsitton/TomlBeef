@@ -20,7 +20,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "# leading\na = 1 # trailing";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -41,7 +40,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 1 #";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata != null);
@@ -69,7 +67,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "# leading\na = 1 # trailing";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -91,7 +88,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 1 #";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -113,7 +109,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "# server config\n[server]\nport = 8080";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -139,7 +134,6 @@ static class TomlPreserveStyleWriterTests
 		// Original: 1e06 has exponent width 2, no explicit plus
 		if (doc.Read("f = 1e06", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "f");
@@ -172,7 +166,6 @@ static class TomlPreserveStyleWriterTests
 		// Original: 1E+006 has uppercase E, explicit plus, exponent width 3
 		if (doc.Read("f = 1E+006", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "f");
@@ -203,7 +196,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("f = 1e06", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -223,7 +215,6 @@ static class TomlPreserveStyleWriterTests
 		// Original: 224_617.445_991 has underscore grouping in both parts
 		if (doc.Read("f = 224_617.445_991", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		let fmt = ValueFormatFor(doc, "f");
@@ -253,7 +244,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("f = -inf", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -273,7 +263,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = +inf\nb = +nan", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -325,7 +314,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("t = { a = 1, b = 2 }", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -351,7 +339,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("t = {\n  a = 1,\n}", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -376,7 +363,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "t = {\n  a = 1,\n  b = 2,\n}";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -412,7 +398,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1,\n  2,\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -435,7 +420,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n    1,\n    2,\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -473,7 +457,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  # lead\n  1\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -500,7 +483,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -515,7 +497,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1, # trail\n  2\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -543,7 +524,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -559,7 +539,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1,\n\n  2\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -590,7 +569,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  # empty comment\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -605,7 +583,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -621,7 +598,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1 # last\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -636,7 +612,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -652,7 +627,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1, # trail\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -679,7 +653,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -698,7 +671,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "t = {a=1,b=2}";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -730,7 +702,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -746,7 +717,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "t = {\n  a = 1,\n  b = 2,\n}";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -788,7 +758,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "[a]\nx = 1\n\n[b]\ny = 2";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -816,7 +785,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -843,7 +811,6 @@ static class TomlPreserveStyleWriterTests
 		ms.Position = 0;
 		if (doc2.Read(ms, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -871,7 +838,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 'hello'\nb = 'world'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -912,7 +878,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "t = { a = 1, b = 2 }";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -971,7 +936,6 @@ static class TomlPreserveStyleWriterTests
 		defer delete doc2;
 		if (doc2.Read(output) case .Err(let reErr))
 		{
-			defer reErr.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {reErr.mMessage}");
 		}
 	}
@@ -991,7 +955,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "s = \"a\\u0020b\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1020,7 +983,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "path = 'C:\\Users\\test'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1046,7 +1008,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "msg = \"\"\"Hello,\\nWorld!\"\"\"";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1066,7 +1027,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("n = 0xDEAD_BEEF", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1099,7 +1059,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("n = 0x00FF", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1119,7 +1078,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("n = -1_000", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1139,7 +1097,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("n = 0xFF", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1163,7 +1120,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("f = 1.000", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1183,7 +1139,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("f = 1E+06", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1208,7 +1163,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("dt = 1979-05-27 07:32Z", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1230,7 +1184,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "arr = [\n  1,\n  2,\n]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1252,7 +1205,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("[tbl]\n  a = 1", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1276,7 +1228,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "server.port = 8080\nserver.host = 'localhost'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1298,7 +1249,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "server.port = 8080\nserver.db.host = 'localhost'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1319,7 +1269,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("arr = ['hello', 'world']", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1346,7 +1295,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 'hello'\nb = 'world'";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1372,7 +1320,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 'one'\nb = 'two'\nc = 'three'\nbasic = \"four\"\nml = \"\"\"inline start\"\"\"\nmlnl = '''\nnewline start'''";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.Metadata.mDocumentStyle.mDefaultStringStyle == .Literal);
@@ -1392,7 +1339,6 @@ static class TomlPreserveStyleWriterTests
 		var reparsed = scope TomlDocument();
 		if (reparsed.Read(output) case .Err(let e2))
 		{
-			defer e2.Dispose();
 			Test.Assert(false, scope $"Re-parse failed: {e2.mMessage}\n{output}");
 		}
 		Test.Assert(TomlDocumentEquals(doc, reparsed));
@@ -1408,7 +1354,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "a = 1\n\n# eof comment";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1441,7 +1386,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = 'old'", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1464,7 +1408,6 @@ static class TomlPreserveStyleWriterTests
 	{
 		if (doc.Read(input, .() { Mode = mode, OnConflict = onConflict, MetadataMode = metadataMode }) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Read failed: {e.mMessage}\n{input}");
 		}
 	}
@@ -1523,7 +1466,6 @@ static class TomlPreserveStyleWriterTests
 			var reparsed = scope:: TomlDocument();
 			if (reparsed.Read(output) case .Err(let e))
 			{
-				defer e.Dispose();
 				Test.Assert(false, scope $"Output does not re-parse: {e.mMessage}\nInput:\n{input}\nOutput:\n{output}");
 				continue;
 			}
@@ -1634,7 +1576,6 @@ static class TomlPreserveStyleWriterTests
 		var reparsed10 = scope TomlDocument();
 		if (reparsed10.Read(v10, .() { Version = .V1_0 }) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"V1_0 output is not valid TOML 1.0: {e.mMessage}\n{v10}");
 		}
 		Test.Assert(!v10.Contains("#"), scope $"Comments cannot be kept in a single-line inline table:\n{v10}");
@@ -1758,7 +1699,6 @@ static class TomlPreserveStyleWriterTests
 		config.MetadataMode = .PreserveStyle;
 		if (doc.Read("a = 1\n\n# about t\n[t] # trailing\nx = 1\ny = 2", config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetTable("t", var t));
@@ -1784,7 +1724,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "t = { s = \"a\\u0020b\", n = 0xFF, d = 1979-05-27 07:32:00Z, sub.f = 1e3 }";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1815,7 +1754,6 @@ static class TomlPreserveStyleWriterTests
 		let input = "e = \"a\\eb\"\nx = \"c\\x41\"\nsafe = \"keep\\\\e\"\nlit = 'lit\\e'\narr = [\"y\\e\", \"z\"]";
 		if (doc.Read(input, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
 		}
 
@@ -1824,7 +1762,6 @@ static class TomlPreserveStyleWriterTests
 		var reparsed = scope TomlDocument();
 		if (reparsed.Read(v10, .() { Version = .V1_0 }) case .Err(let e2))
 		{
-			defer e2.Dispose();
 			Test.Assert(false, scope $"V1_0 output is not valid TOML 1.0: {e2.mMessage}\n{v10}");
 		}
 		Test.Assert(TomlDocumentEquals(doc, reparsed), scope $"V1_0 output changed values:\n{v10}");
@@ -1847,7 +1784,6 @@ static class TomlPreserveStyleWriterTests
 		var fromString = scope TomlDocument();
 		if (fromString.Read(input, config) case .Err(let e1))
 		{
-			defer e1.Dispose();
 			Test.Assert(false, scope $"String parse failed: {e1.mMessage}");
 			return;
 		}
@@ -1858,7 +1794,6 @@ static class TomlPreserveStyleWriterTests
 		var fromStream = scope TomlDocument();
 		if (fromStream.Read(ms, config) case .Err(let e2))
 		{
-			defer e2.Dispose();
 			Test.Assert(false, scope $"Stream parse failed: {e2.mMessage}");
 			return;
 		}

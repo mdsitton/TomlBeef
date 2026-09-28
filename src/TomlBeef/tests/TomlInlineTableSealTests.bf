@@ -16,7 +16,6 @@ static class TomlInlineTableSealTests
 		case .Ok:
 			Test.Assert(false, "Expected error — inline table dotted-key child extended after close");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .InlineTableSealed,
 				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
 		}
@@ -33,7 +32,6 @@ static class TomlInlineTableSealTests
 		case .Ok:
 			Test.Assert(false, "Expected error — inline table child extended");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .InlineTableSealed,
 				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
 		}
@@ -50,7 +48,6 @@ static class TomlInlineTableSealTests
 		case .Ok:
 			Test.Assert(false, "Expected error — nested inline table child extended");
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .InlineTableSealed,
 				scope $"Expected InlineTableSealed, got {e.mKind}: {e.mMessage}");
 		}
@@ -64,7 +61,6 @@ static class TomlInlineTableSealTests
 		let input = "a = { b.c = 1, b.d = 2 }";
 		if (doc.Read(input) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Valid inline table with dotted keys should parse: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("a.b.c", var c) && c == 1);
@@ -79,7 +75,6 @@ static class TomlInlineTableSealTests
 		let input = "a = { b = { c = 1, d = 2 } }";
 		if (doc.Read(input) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Valid nested inline table should parse: {e.mMessage}");
 		}
 		Test.Assert(doc.TryGetInteger("a.b.c", var c) && c == 1);
@@ -97,7 +92,6 @@ static class TomlInlineTableSealTests
 		case .Ok:
 			Test.Assert(false, "Expected error — inline table child extended via [header]");
 		case .Err(let e):
-			defer e.Dispose();
 			// [header] redefines the inline table; caught as DuplicateTable before sealing check.
 			Test.Assert(e.mKind == .DuplicateTable,
 				scope $"Expected DuplicateTable, got {e.mKind}: {e.mMessage}");

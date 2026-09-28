@@ -16,7 +16,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = 1\nb = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxTableEntries limit");
@@ -32,7 +31,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("[t]\na = 1\nb = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxTableEntries limit");
@@ -48,7 +46,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("t = { a = 1, b = 2 }", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxTableEntries limit");
@@ -64,7 +61,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a.b = 1\na.c = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxTableEntries limit");
@@ -80,7 +76,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a.b.c = 1", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxPathSegments limit");
@@ -96,7 +91,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("[a.b.c]\nx = 1", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxPathSegments limit");
@@ -112,7 +106,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("[[a.b.c]]\nx = 1", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxPathSegments limit");
@@ -128,7 +121,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = 1\nb = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxNodes limit");
@@ -144,7 +136,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = 1\nb = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxInputBytes limit");
@@ -160,7 +151,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = [1, 2, 3]", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxArrayItems limit");
@@ -176,7 +166,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("[[a]]\nx = 1\n[[a]]\nx = 2", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxArrayItems limit for array-of-tables");
@@ -192,7 +181,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = \"abc\"", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxStringBytes limit");
@@ -209,7 +197,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = { b = { c = 1 } }", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .MaxDepthExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxDepth limit");
@@ -226,7 +213,6 @@ static class TomlResourceLimitTests
 		switch (doc.ReadBytes(Span<uint8>((uint8*)input.Ptr, input.Length), config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxInputBytes limit for ReadBytes");
@@ -243,7 +229,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read("a = { b.c = 1 }", config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected MaxNodes limit for inline table dotted key");
@@ -285,7 +270,6 @@ static class TomlResourceLimitTests
 		switch (doc.Read(stream, config))
 		{
 		case .Err(let e):
-			defer e.Dispose();
 			Test.Assert(e.mKind == .ResourceLimitExceeded);
 		case .Ok:
 			Test.Assert(false, "Expected ResourceLimitExceeded for stream");
@@ -328,13 +312,11 @@ static class TomlResourceLimitTests
 		defer delete doc;
 		if (doc.Read(input, TomlReadConfig() { MaxNodes = nodeCount }) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Expected {nodeCount} nodes to fit for '{input}': {e.mMessage}");
 		}
 		switch (doc.Read(input, TomlReadConfig() { MaxNodes = nodeCount - 1 }))
 		{
 		case .Err(let limitErr):
-			defer limitErr.Dispose();
 			Test.Assert(limitErr.mKind == .ResourceLimitExceeded, scope $"Expected ResourceLimitExceeded, got {limitErr.mKind}");
 		case .Ok:
 			Test.Assert(false, scope $"Expected MaxNodes = {nodeCount - 1} to reject '{input}'");
@@ -378,7 +360,6 @@ static class TomlResourceLimitTests
 		var config = TomlReadConfig() { MaxInputBytes = bytes.Count };
 		if (doc.Read(stream, config) case .Err(let e))
 		{
-			defer e.Dispose();
 			Test.Assert(false, scope $"Expected stream at exactly MaxInputBytes to parse: {e.mMessage}");
 		}
 		Test.Assert(doc.RootTable.Count == 2);

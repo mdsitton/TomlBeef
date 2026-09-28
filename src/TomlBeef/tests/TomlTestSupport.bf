@@ -183,7 +183,6 @@ public static class TomlTestSupport
 		{
 		case .Ok: Test.Assert(false, "Expected error");
 		case .Err(let e):
-			defer e.Dispose();
 			if (e.mKind != kind)
 				Test.Assert(false, scope $"Expected {kind}, got {e.mKind}: {e.mMessage}");
 		}

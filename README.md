@@ -16,11 +16,11 @@ switch (TomlDocument.Parse(input))
 case .Ok(let parsed):
     doc = parsed;
 case .Err(let err):
-    defer err.Dispose();
     Console.Error.WriteLine($"Parse error at {err.mLine}:{err.mColumn}: {err.mMessage}");
     return;
 }
 defer delete doc;
+// Errors need no cleanup; Try!(TomlDocument.Parse(input)) works too
 
 if (doc.TryGetString("name", var name))
     Console.WriteLine($"Hello, {name}!");
@@ -42,7 +42,6 @@ defer delete doc;
 
 if (doc.Read(input) case .Err(let err))
 {
-    defer err.Dispose();
     // handle error, log, return...
 }
 ```
@@ -77,7 +76,7 @@ When parsing untrusted input, cap resource usage through `TomlReadConfig`. Excee
 
 ```bf
 var config = TomlReadConfig() { MaxInputBytes = 1024 * 1024, MaxNodes = 100000, MaxDepth = 64 };
-if (doc.Read(input, config) case .Err(let err)) { defer err.Dispose(); /* ... */ }
+if (doc.Read(input, config) case .Err(let err)) { /* ... */ }
 ```
 
 | Field | Default | What it limits |
@@ -395,7 +394,7 @@ Assertions in debug builds validate field ranges. Release builds trust the calle
 struct TomlParseError
 {
     TomlErrorKind mKind;   // Category of error
-    String mMessage;       // Human-readable description
+    StringView mMessage;   // Human-readable description (see lifetime below)
     int mLine;             // 1-based line number
     int mColumn;           // 1-based column number
     int mOffset;           // Byte offset into input
@@ -403,12 +402,22 @@ struct TomlParseError
 }
 ```
 
-**Important:** `TomlParseError` must be explicitly disposed to free the message string. When using `Result.Err`, wrap with `defer`:
+`TomlParseError` owns nothing and needs no cleanup, so it can be ignored, matched with `case .Err`, or passed up with `Try!` (including into a plain `Result<T>`, which drops it):
 
 ```bf
-case .Err(let err):
-    defer err.Dispose();
-    // ... handle error ...
+Result<void> LoadConfig(TomlDocument doc)
+{
+    Try!(doc.ReadFile("base.toml"));
+    Try!(doc.ReadFile("local.toml", .() { Mode = .Merge }));
+    return .Ok;
+}
+```
+
+**Message lifetime:** `mMessage` views a per-thread buffer. It stays valid until the next TomlBeef error on the same thread, which replaces it. Copy it if you keep it past another failing call:
+
+```bf
+if (doc.ReadFile(path) case .Err(let err))
+    messages.Add(new String(err.mMessage));
 ```
 
 ### Memory Management

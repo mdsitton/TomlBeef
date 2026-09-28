@@ -48,10 +48,18 @@ public enum TomlErrorKind : uint8
 }
 
 /// A parse error with location information for precise error reporting.
+///
+/// The error owns nothing and needs no cleanup, so it can be dropped freely (including by `Try!`).
+/// `mMessage` views a per-thread buffer: it stays valid until the next TomlParseError is created on the
+/// same thread, which in practice means the next failing TomlBeef call. Copy it to keep it longer.
 public struct TomlParseError
 {
+	/// Per-thread message storage, freed when the thread exits.
+	static LazyTLS<String> sMessageBuffer = new .() ~ delete _;
+
 	public TomlErrorKind mKind;
-	public String mMessage;
+	/// @brief Human-readable description. Valid until the next error on this thread.
+	public StringView mMessage;
 	public int mLine;
 	public int mColumn;
 	public int mOffset;
@@ -67,16 +75,21 @@ public struct TomlParseError
 	public this(TomlErrorKind kind, StringView message, int line, int column, int offset, int length = 1)
 	{
 		mKind = kind;
-		mMessage = new String(message);
 		mLine = line;
 		mColumn = column;
 		mOffset = offset;
 		mLength = length;
-	}
 
-	/// Disposes the error message string.
-	public void Dispose()
-	{
-		delete mMessage;
+		String buffer = sMessageBuffer.Value;
+		// The message may itself be a view of the buffer (an error rebuilt from a previous one)
+		char8* start = buffer.Ptr;
+		if (message.Ptr >= start && message.Ptr < start + buffer.Length)
+		{
+			let copy = scope String(message);
+			buffer.Set(copy);
+		}
+		else
+			buffer.Set(message);
+		mMessage = buffer;
 	}
 }
