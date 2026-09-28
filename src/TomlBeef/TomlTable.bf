@@ -192,10 +192,36 @@ public class TomlTable
 		if (hasMetadata)
 		{
 			if (!presetNodeId.IsValid && !mStore.mSuppressAutoDirty)
+			{
 				MarkChildrenDirty();
+				AdoptNeighbourFormat(nodeId, value);
+			}
 			BindContainerMetadata(value);
 		}
 		return true;
+	}
+
+	/// Nearby style: an entry added in code takes the value format of the nearest earlier entry of the
+	/// same kind that has one (a new integer among hex integers is written in hex; see
+	/// TomlValue.HasSameStyleKind for which kinds take part). Formats are never
+	/// edited in place (style setters add new ones), so sharing the neighbour's is safe. Only with
+	/// PreserveStyle metadata; a later merge still copies the source's own style over it.
+	private void AdoptNeighbourFormat(TomlNodeId nodeId, TomlValue value)
+	{
+		let metadata = SidecarFor(nodeId);
+		if (metadata == null)
+			return;
+		for (int i = mKeyOrder.Count - 2; i >= 0; i--)
+		{
+			let sibling = mEntries[mKeyOrder[i]];
+			if (!sibling.mNodeId.IsValid || !sibling.mValue.HasSameStyleKind(value))
+				continue;
+			let formatRef = metadata.GetNodeStyle(sibling.mNodeId).mValueFormatRef;
+			if (!formatRef.IsValid)
+				continue;
+			metadata.GetNodeStyle(nodeId).mValueFormatRef = formatRef;
+			return;
+		}
 	}
 
 	/// The table's own key string for `key`, or null if the key is missing.
@@ -589,6 +615,10 @@ public class TomlTable
 				Insert(key, copy);
 				if (dstMeta != null)
 				{
+					// Merged values keep their source's formatting, so drop any nearby style Insert
+					// adopted; with srcMeta the source's own format is copied below
+					if (srcMeta == null && TryGetEntryNodeId(key, let newId))
+						dstMeta.GetNodeStyle(newId).mValueFormatRef = .Invalid;
 					// A new slot takes the source's key format and comments along with its value style
 					CopySourceEntryStyle(source, key, srcMeta, dstMeta, true);
 					TomlMetadataTransfer.AdoptValue(copy, incoming, dstMeta, srcMeta);

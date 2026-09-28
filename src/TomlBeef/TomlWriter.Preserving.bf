@@ -395,7 +395,7 @@ extension TomlWriterImpl
 				{
 					arrayFmt.mStyle = .Multiline;
 					arrayFmt.mIndentSize = metadata.mDocumentStyle.mIndentSize;
-					arrayFmt.mTrailingComma = true;
+					arrayFmt.mTrailingComma = metadata.mDocumentStyle.mDefaultArrayTrailingComma;
 					hasArrayFmt = true;
 				}
 				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt);
@@ -486,7 +486,7 @@ extension TomlWriterImpl
 		{
 			var multilineFmt = hasFormat ? fmt : TomlArrayFormat();
 			multilineFmt.mStyle = .Multiline;
-			multilineFmt.mTrailingComma = true;
+			multilineFmt.mTrailingComma = metadata.mDocumentStyle.mDefaultArrayTrailingComma;
 			WriteMultilineArrayPreserving(arr, outStr, version, metadata, multilineFmt);
 			return;
 		}

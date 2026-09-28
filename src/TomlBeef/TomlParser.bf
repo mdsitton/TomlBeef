@@ -57,6 +57,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mStringStyleCount_MultilineLiteral;
 	private int mArrayStyleCount_Inline;
 	private int mArrayStyleCount_Multiline;
+	private int mArrayTrailingCommaCount;
+	private int mArrayNoTrailingCommaCount;
 	private int mCrlfCount;
 	private int mLfOnlyCount;
 
@@ -93,6 +95,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mStringStyleCount_MultilineLiteral = 0;
 		mArrayStyleCount_Inline = 0;
 		mArrayStyleCount_Multiline = 0;
+		mArrayTrailingCommaCount = 0;
+		mArrayNoTrailingCommaCount = 0;
 		mCrlfCount = 0;
 		mLfOnlyCount = 0;
 	}

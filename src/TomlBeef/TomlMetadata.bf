@@ -208,6 +208,8 @@ internal struct TomlDocumentStyle
 	public bool mPreferDottedKeys = false;
 	public TomlStringStyle mDefaultStringStyle = .Basic;
 	public TomlContainerStyle mDefaultArrayStyle = .Inline;
+	/// Whether the document's multi-line arrays mostly end with a trailing comma (new ones follow it).
+	public bool mDefaultArrayTrailingComma = true;
 }
 
 // ================================================================

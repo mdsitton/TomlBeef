@@ -42,7 +42,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() == ']')
 		{
 			mCursor.AdvanceByte();
-			CountArrayStyle(startLine, mCursor.Line);
+			CountArrayStyle(arr, startLine, mCursor.Line);
 			// Empty array: flush comments to the array node itself
 			if (arrayPendingComments != null && arrayPendingComments.Count > 0)
 			{
@@ -88,7 +88,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						}
 					}
 				}
-				CountArrayStyle(startLine, mCursor.Line);
+				CountArrayStyle(arr, startLine, mCursor.Line);
 				return TomlValue.Array(arr);
 			}
 
@@ -211,7 +211,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 							}
 						}
 					}
-					CountArrayStyle(startLine, mCursor.Line);
+					CountArrayStyle(arr, startLine, mCursor.Line);
 					return TomlValue.Array(arr);
 				}
 				continue;
@@ -236,7 +236,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						}
 					}
 				}
-				CountArrayStyle(startLine, mCursor.Line);
+				CountArrayStyle(arr, startLine, mCursor.Line);
 				return TomlValue.Array(arr);
 			}
 			else

@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 279/279 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 279/279 pass |
-| `./test-leaks.sh` | 279/279 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 281/281 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 281/281 pass |
+| `./test-leaks.sh` | 281/281 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -48,12 +48,6 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
-### PreserveStyle gaps
-
-| ID | Gap | Size |
-|----|-----|------|
-| P4 | *Optional.* "Nearby style" for new values: a new key could copy the format of its siblings (e.g. hex like its neighbours) instead of the document-wide default. New multi-line arrays always get a trailing comma rather than following the document's habit | S |
-
 ### Streaming and I/O
 
 | ID | Gap | Size |
@@ -74,5 +68,4 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. P4, if tools write configs back.
-2. The remaining optional items as needed.
+The remaining items are optional; take them as needed.

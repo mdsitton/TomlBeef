@@ -480,13 +480,21 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   and comments before `}` are stored on the inline table's own node and written before the brace.
   A 1.0 write puts the table on one line, where comments cannot be kept.
 - `TomlDocumentStyle`, inferred during the parse: newline style (CRLF if CRLF lines are at least
-  as common as LF-only lines), the dominant string style and the dominant array layout, dotted-key
-  use, and indentation. Indentation (character and size, counted in characters so one tab is size
+  as common as LF-only lines), the dominant string style, the dominant array layout and whether
+  multi-line arrays end with a trailing comma (ties favour the comma), dotted-key use, and indentation. Indentation (character and size, counted in characters so one tab is size
   1) comes from an indented top-level line if there is one, otherwise from the first indented array
   element or inline-table entry. It drives values that have no captured format of their own: new
   strings use the dominant string style, new non-empty arrays the dominant layout (multi-line with
-  the document indent and a trailing comma), and all preserving-writer indentation uses tabs when
-  the source did. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
+  the document indent and the document's trailing-comma habit), and all preserving-writer
+  indentation uses tabs when the source did.
+- **Nearby style**: an integer, float or date/time added in code (`Set`, `Add`) takes the value
+  format of the nearest earlier entry of the same type in the same table, or element in the same
+  array, so a new key among hex values is written in hex. Sharing the neighbour's format ref is
+  safe because formats are never edited in place (style setters add new ones). Strings, arrays and
+  inline tables deliberately keep the document-wide habits above: quoting and layout are habits of
+  the whole file, and copying one neighbour's `'''` string or inline array surprises. Values
+  inserted by a merge keep their source's format (or none, if the source had no metadata), never
+  a neighbour's. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
   headers into dotted keys: one dotted key anywhere would otherwise restyle every new table.
 
 Node identity is stored **beside the values, not in `TomlValue`**. A table's entries are
@@ -555,7 +563,7 @@ that table to the multi-line layout on 1.1 writes, since only that layout can ho
    whether a multi-line string started with a newline. A string with no captured format (e.g. a
    newly added key) uses the document's dominant style. Literal forms fall back to basic when they
    cannot represent the content.
-3. An **integer, float or date/time** with a captured value format: regenerated from the current
+3. An **integer, float or date/time** with a captured (or nearby-style) value format: regenerated from the current
    value using that format (base, digit case and underscore grouping; exponent style, special-value
    sign and `-0.0`; `T`/`t`/space separator, `Z`/`z` vs offset, seconds and fraction precision). The value always
    comes from the semantic model, so an edited number keeps its original formatting. Floats are

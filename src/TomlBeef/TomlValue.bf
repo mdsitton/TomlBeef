@@ -301,6 +301,24 @@ public enum TomlValue
 		return false;
 	}
 
+	/// Whether a new value can take `other`'s format as nearby style: both integers, both floats, or the
+	/// same date/time type. Strings, arrays, and inline tables follow document-wide habits instead
+	/// (quoting and layout are habits of the whole file, and copying one neighbour's multi-line layout
+	/// surprises), and bools have no format.
+	internal bool HasSameStyleKind(TomlValue other)
+	{
+		switch (this)
+		{
+		case .Integer:        return other.IsInteger;
+		case .Float:          return other.IsFloat;
+		case .OffsetDateTime: return other.IsOffsetDateTime;
+		case .LocalDateTime:  return other.IsLocalDateTime;
+		case .LocalDate:      return other.IsLocalDate;
+		case .LocalTime:      return other.IsLocalTime;
+		default:              return false;
+		}
+	}
+
 	/// @brief Deep-copy this value into the given store.
 	internal TomlValue CloneInto(TomlDocumentStore store)
 	{

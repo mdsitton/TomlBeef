@@ -167,8 +167,34 @@ public class TomlArray
 			let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
 			mMetadataContext.AddItemNodeId(nodeId);
 			if (!mStore.mSuppressAutoDirty)
+			{
 				MarkChildrenDirty();
+				AdoptNeighbourFormat(nodeId, value);
+			}
 			BindContainerMetadata(value);
+		}
+	}
+
+	/// Nearby style: an element added in code takes the value format of the nearest earlier element of
+	/// the same kind that has one (a new 0x2A among hex elements is written in hex). See
+	/// TomlTable.AdoptNeighbourFormat. Only with PreserveStyle metadata.
+	private void AdoptNeighbourFormat(TomlNodeId nodeId, TomlValue value)
+	{
+		let metadata = mMetadataContext.mMetadata;
+		if (!metadata.CapturesStyle)
+			return;
+		for (int i = mItems.Count - 2; i >= 0; i--)
+		{
+			if (!mItems[i].HasSameStyleKind(value))
+				continue;
+			TomlNodeId siblingId;
+			if (!mMetadataContext.TryGetItemNodeId(i, out siblingId))
+				continue;
+			let formatRef = metadata.GetNodeStyle(siblingId).mValueFormatRef;
+			if (!formatRef.IsValid)
+				continue;
+			metadata.GetNodeStyle(nodeId).mValueFormatRef = formatRef;
+			return;
 		}
 	}
 

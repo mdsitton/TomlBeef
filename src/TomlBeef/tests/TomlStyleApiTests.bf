@@ -495,4 +495,42 @@ static class TomlStyleApiTests
 		Test.Assert(plain.TryGetArray("a", var plainArray) && !plainArray.SetComment(0, "x"));
 		Test.Assert(!plain.SetFloatNotation("a", .Decimal) && !plain.SetKeyQuoting("a", .Basic));
 	}
+
+	[Test]
+	public static void NearbyStyle_NumbersFollowTheirNeighbours()
+	{
+		let doc = ReadPreserving(scope .(), "mode = 0o755\nmask = 0xFF\nratio = 1.5e3\nflags = [0b01, 0b10]\n[t]\nn = 7\n");
+		doc.RootTable.Set("owner", 10);
+		doc.RootTable.Set("scale", 2.5);
+		Test.Assert(doc.TryGetArray("flags", var flags));
+		flags.Add(4);
+		Test.Assert(doc.TryGetTable("t", var t));
+		t.Set("m", 8);
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		// The nearest earlier integer is the hex mask, not the octal mode
+		AssertContains(output, "owner = 0x0A");
+		AssertContains(output, "scale = 2.5e0");
+		AssertContains(output, "flags = [0b01, 0b10, 0b100]");
+		// Neighbours are looked for in the same table only
+		AssertContains(output, "m = 8");
+	}
+
+	[Test]
+	public static void NearbyStyle_StringsAndArraysFollowDocumentHabits()
+	{
+		let doc = ReadPreserving(scope .(), "a = \"x\"\nb = \"y\"\nc = '''z'''\nd = [\n  1,\n  2\n]\ne = [\n  3\n]\nf = [4]\n");
+		doc.RootTable.Set("s", "w");
+		let added = doc.AddArray("n");
+		added.Add(5);
+
+		String output = scope String();
+		WriteChecked(doc, output);
+		// Not the multi-line literal quoting of the string just before it
+		AssertContains(output, "s = \"w\"");
+		// The dominant multi-line layout, and no trailing comma as this document writes its arrays
+		AssertContains(output, "n = [\n  5\n]");
+		AssertContains(output, "f = [4]");
+	}
 }

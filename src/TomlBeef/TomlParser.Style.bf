@@ -709,13 +709,23 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
-	/// Count array style (inline vs multiline) for document-level inference.
-	private void CountArrayStyle(int startLine, int endLine)
+	/// Count array style (inline vs multiline, and for multi-line arrays the trailing comma) for
+	/// document-level inference.
+	private void CountArrayStyle(TomlArray arr, int startLine, int endLine)
 	{
 		if (mStyle == null)
 			return;
 		if (endLine > startLine)
+		{
 			mArrayStyleCount_Multiline++;
+			if (arr.Count > 0)
+			{
+				if (arr.mHasTrailingComma)
+					mArrayTrailingCommaCount++;
+				else
+					mArrayNoTrailingCommaCount++;
+			}
+		}
 		else
 			mArrayStyleCount_Inline++;
 	}
@@ -778,6 +788,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mStyle.mDocumentStyle.mDefaultArrayStyle = .Multiline;
 		else
 			mStyle.mDocumentStyle.mDefaultArrayStyle = .Inline;
+		// New multi-line arrays follow the document's trailing-comma habit (with a comma on a tie or when
+		// the document has no multi-line arrays)
+		mStyle.mDocumentStyle.mDefaultArrayTrailingComma = mArrayTrailingCommaCount >= mArrayNoTrailingCommaCount;
 
 		// Detect CRLF from cursor
 		if (mCrlfCount > 0 && mCrlfCount >= mLfOnlyCount)
