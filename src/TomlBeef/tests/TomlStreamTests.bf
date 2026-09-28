@@ -406,6 +406,49 @@ static class TomlStreamTests
 		AssertReadErr(.InvalidUtf8, ReadFromByteStream(bytes));
 	}
 
+	static Result<void, TomlParseError> ReadStreamed(TomlDocument doc, StringView input, int bufferBytes)
+	{
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>((uint8*)input.Ptr, input.Length));
+		ms.Position = 0;
+		return doc.Read(ms, .() { StreamBufferBytes = bufferBytes });
+	}
+
+	[Test]
+	public static void ScanRuns_CrossStreamBuffersAndCountCharacterColumns()
+	{
+		// Long keys, strings, comments and bare values, with multi-byte UTF-8, read through a 16-byte stream
+		// buffer: every run crosses refills (some inside a multi-byte character) and must match a string read
+		let input = "# comment héllo wörld — a long comment line that crosses many small buffers\n" +
+			"a_rather_long_bare_key_name_that_spans_buffers = \"basic string with ünïcödé and \\t escapes 日本語 text\"\n" +
+			"'literal key ☃ with spaces' = 'literal ☃ string that is also long enough to cross buffers'\n" +
+			"\"quoted key é\" = 1979-05-27T07:32:00.999999-07:00 # trailing ünïcode comment\n" +
+			"n = 123_456_789\n";
+		var fromString = scope TomlDocument();
+		Test.Assert(fromString.Read(input) case .Ok);
+		for (int bufferBytes in scope int[](16, 17, 31, 64))
+		{
+			var streamed = scope TomlDocument();
+			if (ReadStreamed(streamed, input, bufferBytes) case .Err(let e))
+			{
+				Test.Assert(false, scope $"buffer {bufferBytes}: {e}");
+			}
+			Test.Assert(TomlTableEquals(fromString.RootTable, streamed.RootTable), scope $"buffer {bufferBytes}: stream read differs");
+		}
+		Test.Assert(fromString.TryGetString("a_rather_long_bare_key_name_that_spans_buffers", let basic) && basic == "basic string with ünïcödé and \t escapes 日本語 text");
+		Test.Assert(fromString.TryGetString("[literal key ☃ with spaces]", let literal) && literal == "literal ☃ string that is also long enough to cross buffers");
+
+		// Columns count characters, not bytes: the error after a non-ASCII string is at column 15
+		// (`s = "héllo日本" x`: '"'=5, 'h'=6 ... '本'=12, '"'=13, space=14, 'x'=15; counting bytes would give 20)
+		let bad = "s = \"héllo日本\" x\n";
+		var byString = scope TomlDocument();
+		Test.Assert(byString.Read(bad) case .Err(let stringErr));
+		Test.Assert(stringErr.mLine == 1 && stringErr.mColumn == 15, scope $"string read: {stringErr}");
+		var byStream = scope TomlDocument();
+		Test.Assert(ReadStreamed(byStream, bad, 16) case .Err(let streamErr));
+		Test.Assert(streamErr.mLine == 1 && streamErr.mColumn == 15, scope $"stream read: {streamErr}");
+	}
+
 	[Test]
 	public static void Utf8_OverlongSequenceOnLine2()
 	{

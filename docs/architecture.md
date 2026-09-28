@@ -237,6 +237,17 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
     current position and releases the mark) or `ReleaseMark(mark)`.
   - A slice is only valid until the cursor next advances or peeks. The parser uses it immediately
     or copies it.
+- `ScanRun(stopMask, appendTo)` is the bulk path: it advances over a run of bytes whose
+  `TomlChar.ScanClass` has none of the mask's bits (`StopBasicString`, `StopLiteralString`,
+  `StopComment`, `StopBareKey`, `StopBareValue`), appending them to a string in one copy. Every
+  class stops at `\r` and `\n`, so a run never crosses a line: cursors only add the run's code-point
+  count (non-continuation bytes) to the column. The stream cursor continues a run across refills.
+  Keys, string bodies, comments and bare values are scanned this way; the per-byte loops only handle
+  the stop byte (quote, escape, newline, control character). Strings are copied as raw bytes, which
+  is safe because both paths validate UTF-8 (the whole input up front, or each refill).
+- The parser avoids per-key and per-string allocations: key paths come from a per-nesting-level
+  pool of `TomlKeyPathBuffer`s (list and Strings reused), and string values are decoded into one
+  reused scratch buffer before the single copy into the store.
 - **Generic, not virtual.** The parser is `TomlParserImpl<TCursor> where TCursor : ITomlCursor`,
   and cursors are structs with `[Inline]` hot methods. The interface is only a compile-time
   constraint, so peek/advance calls are never virtual. `TomlDocument.ReadWithCursor<TCursor>` is
@@ -634,7 +645,12 @@ cost the same (the byte cursor is zero-copy over either). The stream path was ~4
 buffered cursor's hot paths were inlined (`EnsureAvailable` split into an inline check and an
 out-of-line `Fill`; inline `AdvanceByte` and ASCII `Advance` with newlines and multi-byte
 sequences out of line; `IsEOF` reading a struct flag instead of the shared state). The remaining
-~15% is the copy into the buffer and incremental UTF-8 validation.
+~15% is the copy into the buffer and incremental UTF-8 validation. Bulk scanning (`ScanRun`) and
+the key-path and string-buffer reuse then gave (5 MB mixed bench, same-run comparison, 2026-09-28)
++17% overall, 2× on string-heavy input, +47% on comments, +20% on integer and header input. Input
+dominated by small arrays or by dotted keys that create a table per line stays slowest (~25–28
+MB/s): its cost is per value and per table (value dispatch, table and dictionary allocation), not
+per byte.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
   `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in

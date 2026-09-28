@@ -66,10 +66,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseBasicString()
 	{
 		mCursor.AdvanceByte();
-		String result = new String();
+		String result = mStringScratch..Clear();
 
-		while (!mCursor.IsEOF)
+		while (true)
 		{
+			// Copy the plain text up to the next quote, backslash, newline or control character
+			mCursor.ScanRun(TomlChar.StopBasicString, result);
+			if (mCursor.IsEOF)
+				break;
 			char8 b = mCursor.PeekByte();
 			if (b == '"')
 			{
@@ -82,7 +86,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				switch (ParseEscapeSequence(result))
 				{
 				case .Err(let err):
-					delete result;
+					result.Clear();
 					return .Err(err);
 				default:
 				}
@@ -90,18 +94,18 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			if (b == '\r' || b == '\n')
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.UnterminatedString, "Unterminated basic string"));
 			}
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.ControlCharInString, "Control character in basic string"));
 			}
 			result.Append(mCursor.Advance());
 		}
 
-		delete result;
+		result.Clear();
 		return .Err(Error(.UnterminatedString, "Unterminated basic string"));
 	}
 
@@ -114,7 +118,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n')
 			mCursor.SkipNewline();
 
-		String result = new String();
+		String result = mStringScratch..Clear();
 
 		while (!mCursor.IsEOF)
 		{
@@ -158,7 +162,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				else
 				{
 					// 6+ consecutive unescaped quotes not allowed
-					delete result;
+					result.Clear();
 					return .Err(Error(.InvalidEscape, "Six or more consecutive quotes in multi-line basic string must be escaped"));
 				}
 			}
@@ -182,7 +186,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					char8 afterWs = mCursor.PeekByte();
 					if (afterWs != '\r' && afterWs != '\n')
 					{
-						delete result;
+						result.Clear();
 						return .Err(TomlParseError(.ReservedEscape, scope $"Reserved escape '\\{next}'", escLine, escColumn, escOffset));
 					}
 					while (!mCursor.IsEOF && (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n'))
@@ -194,7 +198,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				switch (ParseEscapeSequence(result))
 				{
 				case .Err(let err):
-					delete result;
+					result.Clear();
 					return .Err(err);
 				default:
 				}
@@ -211,7 +215,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 				else
 				{
-					delete result;
+					result.Clear();
 					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline basic string"));
 				}
 				continue;
@@ -226,14 +230,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			// Control chars (except tab, LF, CR)
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.ControlCharInString, "Control character in multi-line basic string"));
 			}
 
 			result.Append(mCursor.Advance());
 		}
 
-		delete result;
+		result.Clear();
 		return .Err(Error(.UnterminatedString, "Unterminated multi-line basic string"));
 	}
 
@@ -297,10 +301,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseSingleLineLiteralString()
 	{
 		mCursor.AdvanceByte();
-		String result = new String();
+		String result = mStringScratch..Clear();
 
-		while (!mCursor.IsEOF)
+		while (true)
 		{
+			// Copy the text up to the closing quote, a newline or a control character
+			mCursor.ScanRun(TomlChar.StopLiteralString, result);
+			if (mCursor.IsEOF)
+				break;
 			char8 b = mCursor.PeekByte();
 			if (b == '\'')
 			{
@@ -309,18 +317,18 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			if (b == '\r' || b == '\n')
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.UnterminatedString, "Unterminated literal string"));
 			}
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.ControlCharInString, "Control character in literal string"));
 			}
 			result.Append(mCursor.Advance());
 		}
 
-		delete result;
+		result.Clear();
 		return .Err(Error(.UnterminatedString, "Unterminated literal string"));
 	}
 
@@ -333,7 +341,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n')
 			mCursor.SkipNewline();
 
-		String result = new String();
+		String result = mStringScratch..Clear();
 
 		while (!mCursor.IsEOF)
 		{
@@ -372,7 +380,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 				else
 				{
-					delete result;
+					result.Clear();
 					return .Err(Error(.InvalidEscape, "Six or more consecutive apostrophes in multi-line literal string"));
 				}
 			}
@@ -389,7 +397,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 				else
 				{
-					delete result;
+					result.Clear();
 					return .Err(Error(.ControlCharInString, "Bare CR not allowed in multiline literal string"));
 				}
 				continue;
@@ -403,14 +411,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
 			{
-				delete result;
+				result.Clear();
 				return .Err(Error(.ControlCharInString, "Control character in multi-line literal string"));
 			}
 
 			result.Append(mCursor.Advance());
 		}
 
-		delete result;
+		result.Clear();
 		return .Err(Error(.UnterminatedString, "Unterminated multi-line literal string"));
 	}
 
@@ -439,16 +447,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<TomlValue, TomlParseError> ParseBareValue()
 	{
 		let mark = mCursor.Mark();
-
-		while (!mCursor.IsEOF)
-		{
-			char8 b = mCursor.PeekByte();
-			if (b == '\r' || b == '\n' ||
-				b == '=' || b == '[' || b == ']' || b == '{' || b == '}' ||
-				b == ',' || b == '#')
-				break;
-			mCursor.AdvanceByte();
-		}
+		// Up to a delimiter: '\r', '\n', '=', '[', ']', '{', '}', ',' or '#'
+		mCursor.ScanRun(TomlChar.StopBareValue, null);
 
 		int length = mCursor.Offset - mark.mOffset;
 		if (length == 0)

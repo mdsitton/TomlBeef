@@ -224,6 +224,42 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		}
 	}
 
+	public int ScanRun(uint8 stopMask, String appendTo) mut
+	{
+		int total = 0;
+		while (true)
+		{
+			EnsureAvailable(1);
+			if (mPos >= mEnd)
+				break;
+			// Scan what is buffered; a run that reaches the end of the buffer continues after a refill
+			uint8* data = mBuffer.Ptr;
+			int start = mPos;
+			int pos = start;
+			int end = mEnd;
+			int columns = 0;
+			while (pos < end)
+			{
+				uint8 b = data[pos];
+				if ((TomlChar.ScanClass(b) & stopMask) != 0)
+					break;
+				// Columns count code points: every byte except UTF-8 continuation bytes
+				if ((b & 0xC0) != 0x80)
+					columns++;
+				pos++;
+			}
+			int count = pos - start;
+			if (appendTo != null && count > 0)
+				appendTo.Append((char8*)data + start, count);
+			mPos = pos;
+			mColumn += columns;
+			total += count;
+			if (pos < end)
+				break;
+		}
+		return total;
+	}
+
 	public void SkipNewline() mut
 	{
 		EnsureAvailable(1);

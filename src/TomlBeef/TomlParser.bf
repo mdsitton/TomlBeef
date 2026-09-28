@@ -24,6 +24,12 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private List<String> mPendingComments ~ { if (_ != null) { for (var item in _) delete item; delete _; } };
 	// Pending trailing comment text waiting to be attached to the current node.
 	private String mTrailingCommentText ~ delete _;
+	// Reused buffer for string values while they are decoded; strings never nest, and the finished
+	// value is copied into the store, so one buffer serves the whole parse without per-string allocations.
+	private String mStringScratch ~ delete _;
+	// Key-path buffers by nesting level (see AcquireKeyPath), reused for every key of the parse.
+	private List<TomlKeyPathBuffer> mKeyPathPool ~ DeleteContainerAndItems!(_);
+	private int mKeyPathDepth;
 	// Whether we've seen content (key/val or header) — used to detect file header comments.
 	private bool mSeenContent;
 	// Node ID of the last key/val for trailing comment attachment.
@@ -66,6 +72,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mSourceIndex = (metadata != null) ? metadata.AddSource(config.SourceName) : -1;
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
+		mStringScratch = new String(64);
+		mKeyPathPool = new List<TomlKeyPathBuffer>();
+		mKeyPathDepth = 0;
 		mSeenContent = false;
 		mLastNodeId = .Invalid;
 		mBlankLineSinceComment = false;
@@ -258,9 +267,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		mCursor.SkipWhitespace();
 
-		var path = scope List<String>();
-		defer { ClearAndDeleteItems!(path); }
-		if (ParseKeyPath(path) case .Err(let e))
+		let pathBuffer = AcquireKeyPath();
+		defer ReleaseKeyPath();
+		let path = pathBuffer.mParts;
+		if (ParseKeyPath(pathBuffer) case .Err(let e))
 			return .Err(e);
 
 		mCursor.SkipWhitespace();
@@ -334,9 +344,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mStyle != null)
 			keyStart = mCursor.Mark();
 
-		var keyPath = scope List<String>();
-		defer { ClearAndDeleteItems!(keyPath); }
-		if (ParseKeyPath(keyPath) case .Err(let e))
+		let keyPathBuffer = AcquireKeyPath();
+		defer ReleaseKeyPath();
+		let keyPath = keyPathBuffer.mParts;
+		if (ParseKeyPath(keyPathBuffer) case .Err(let e))
 			return .Err(e);
 
 		// Detect dotted key usage for document style inference
@@ -415,13 +426,26 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Key path parsing
 	// ================================================================
 
-	private Result<void, TomlParseError> ParseKeyPath(List<String> parts)
+	/// Takes the key-path buffer for the current nesting level. Keys nest (an inline table inside a value
+	/// parses its own keys while the enclosing key path is still in use), so there is one buffer per level;
+	/// pair every call with ReleaseKeyPath, e.g. through `defer`.
+	private TomlKeyPathBuffer AcquireKeyPath()
 	{
-		switch (ParseSimpleKey())
-		{
-		case .Err(let err): return .Err(err);
-		case .Ok(let firstKey): parts.Add(firstKey);
-		}
+		if (mKeyPathDepth == mKeyPathPool.Count)
+			mKeyPathPool.Add(new TomlKeyPathBuffer());
+		let buffer = mKeyPathPool[mKeyPathDepth++];
+		buffer.Reset();
+		return buffer;
+	}
+
+	private void ReleaseKeyPath()
+	{
+		mKeyPathDepth--;
+	}
+
+	private Result<void, TomlParseError> ParseKeyPath(TomlKeyPathBuffer parts)
+	{
+		Try!(ParseSimpleKey(parts.Add()));
 
 		while (true)
 		{
@@ -432,115 +456,79 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mCursor.AdvanceByte();
 			mCursor.SkipWhitespace();
 
-			switch (ParseSimpleKey())
-			{
-			case .Err(let err): return .Err(err);
-			case .Ok(let key): parts.Add(key);
-			}
+			Try!(ParseSimpleKey(parts.Add()));
 		}
 
-		Try!(CheckPathSegments(parts.Count));
+		Try!(CheckPathSegments(parts.mParts.Count));
 		return .Ok;
 	}
 
-	private Result<String, TomlParseError> ParseSimpleKey()
+	/// Parses one key segment (bare, "basic" or 'literal') into `key`, which arrives empty.
+	private Result<void, TomlParseError> ParseSimpleKey(String key)
 	{
 		char8 b = mCursor.PeekByte();
 
 		if (b == '"')
-			return ParseBasicStringKey();
+			return ParseBasicStringKey(key);
 		if (b == '\'')
-			return ParseLiteralStringKey();
-		return ParseBareKey();
+			return ParseLiteralStringKey(key);
+		return ParseBareKey(key);
 	}
 
-	private Result<String, TomlParseError> ParseBareKey()
+	private Result<void, TomlParseError> ParseBareKey(String key)
 	{
-		let mark = mCursor.Mark();
-
-		if (!mCursor.IsEOF && TomlChar.IsBareKeyChar(mCursor.PeekByte()))
-		{
-			mCursor.AdvanceByte();
-		}
-		else
-		{
+		if (mCursor.ScanRun(TomlChar.StopBareKey, key) == 0)
 			return .Err(Error(.InvalidKey, "Invalid bare key"));
-		}
-
-		while (!mCursor.IsEOF && TomlChar.IsBareKeyChar(mCursor.PeekByte()))
-			mCursor.AdvanceByte();
-
-		String scratch = scope String();
-		StringView sv = mCursor.Slice(mark, scratch);
-		return new String(sv);
+		return .Ok;
 	}
 
-	private Result<String, TomlParseError> ParseBasicStringKey()
+	private Result<void, TomlParseError> ParseBasicStringKey(String result)
 	{
 		mCursor.AdvanceByte();
 
-		String result = new String();
-
-		while (!mCursor.IsEOF)
+		while (true)
 		{
+			// Copy the plain text up to the next quote, backslash, newline or control character
+			mCursor.ScanRun(TomlChar.StopBasicString, result);
+			if (mCursor.IsEOF)
+				break;
 			char8 b = mCursor.PeekByte();
 			if (b == '"')
 			{
 				mCursor.AdvanceByte();
-				return result;
+				return .Ok;
 			}
 			if (b == '\\')
 			{
 				mCursor.AdvanceByte();
-				switch (ParseEscapeSequence(result))
-				{
-				case .Err(let err):
-					delete result;
-					return .Err(err);
-				default:
-				}
+				Try!(ParseEscapeSequence(result));
 				continue;
 			}
 			if (b == '\r' || b == '\n')
-			{
-				delete result;
 				return .Err(Error(.UnterminatedString, "Unterminated string key"));
-			}
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-			{
-				delete result;
 				return .Err(Error(.ControlCharInString, "Control character in string key"));
-			}
 			result.Append(mCursor.Advance());
 		}
 
-		delete result;
 		return .Err(Error(.UnterminatedString, "Unterminated string key"));
 	}
 
-	private Result<String, TomlParseError> ParseLiteralStringKey()
+	private Result<void, TomlParseError> ParseLiteralStringKey(String key)
 	{
 		mCursor.AdvanceByte(); // skip opening '
-		let mark = mCursor.Mark();
-
-		while (!mCursor.IsEOF)
+		mCursor.ScanRun(TomlChar.StopLiteralString, key);
+		bool eof = mCursor.IsEOF;
+		char8 b = eof ? '\0' : mCursor.PeekByte();
+		if (!eof && b == '\'')
 		{
-			char8 b = mCursor.PeekByte();
-			if (b == '\'')
-			{
-				String scratch = scope String();
-				StringView sv = mCursor.Slice(mark, scratch);
-				mCursor.AdvanceByte(); // skip closing '
-				return new String(sv);
-			}
-			if (b == '\r' || b == '\n')
-				return .Err(Error(.UnterminatedString, "Unterminated string key"));
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(Error(.ControlCharInString, "Control character in string key"));
-			mCursor.AdvanceByte();
+			mCursor.AdvanceByte(); // skip closing '
+			return .Ok;
 		}
-
-		return .Err(Error(.UnterminatedString, "Unterminated string key"));
+		// The run stopped at EOF, a newline, or a control character
+		if (eof || b == '\r' || b == '\n')
+			return .Err(Error(.UnterminatedString, "Unterminated string key"));
+		return .Err(Error(.ControlCharInString, "Control character in string key"));
 	}
 
 	// ================================================================
@@ -633,16 +621,11 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// @brief Copy a scratch string into the document store.
 	/// Always frees the scratch string, including when the string length limit is exceeded.
+	/// Copies a decoded string (the scratch buffer) into the store as a value.
 	private Result<TomlValue, TomlParseError> FinishStringValue(String result)
 	{
-		if (CheckStringLength(result.Length) case .Err(let limitErr))
-		{
-			delete result;
-			return .Err(limitErr);
-		}
-		String owned = mStore.NewString(result);
-		delete result;
-		return .Ok(TomlValue.String(owned));
+		Try!(CheckStringLength(result.Length));
+		return .Ok(TomlValue.String(mStore.NewString(result)));
 	}
 
 	private TomlParseError Error(TomlErrorKind kind, StringView message)

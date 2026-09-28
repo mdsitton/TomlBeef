@@ -17,28 +17,31 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		if (mCursor.PeekByte() != '#') return .Ok;
 		mCursor.AdvanceByte(); // skip #
-
-		while (!mCursor.IsEOF)
-		{
-			char8 b = mCursor.PeekByte();
-			// Handle stream EOF where PeekByte() returns 0 before IsEOF is true
-			if (b == 0 && mCursor.IsEOF)
-				break;
-			if (b == '\r')
-			{
-				if (mCursor.PeekByteAt(1) == '\n')
-					break;
-				return .Err(Error(.ControlCharInDocument, "Bare CR in comment"));
-			}
-			if (b == '\n') break;
-
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(Error(.ControlCharInDocument, "Control character in comment"));
-
-			mCursor.AdvanceByte();
-		}
+		Try!(ScanCommentBody(null));
 		CountAndSkipNewline();
 		return .Ok;
+	}
+
+	/// Consumes a comment's text up to the end of its line (or EOF), appending it to `outText` unless null.
+	/// Control characters other than tab, and a CR not followed by LF, are errors at that character.
+	private Result<void, TomlParseError> ScanCommentBody(String outText)
+	{
+		mCursor.ScanRun(TomlChar.StopComment, outText);
+		if (mCursor.IsEOF)
+			return .Ok;
+		char8 b = mCursor.PeekByte();
+		if (b == '\n')
+			return .Ok;
+		if (b == '\r')
+		{
+			if (mCursor.PeekByteAt(1) == '\n')
+				return .Ok;
+			return .Err(Error(.ControlCharInDocument, "Bare CR in comment"));
+		}
+		// Handle stream EOF where PeekByte() returns 0 before IsEOF is true
+		if (b == 0 && mCursor.IsEOF)
+			return .Ok;
+		return .Err(Error(.ControlCharInDocument, "Control character in comment"));
 	}
 
 	/// @brief Capture comment text from the cursor into outText.
@@ -49,27 +52,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		if (mCursor.PeekByte() != '#') return .Ok;
 		mCursor.AdvanceByte(); // skip #
-
-		while (!mCursor.IsEOF)
-		{
-			char8 b = mCursor.PeekByte();
-			// Handle stream EOF where PeekByte() returns 0 before IsEOF is true
-			if (b == 0 && mCursor.IsEOF)
-				break;
-			if (b == '\r')
-			{
-				if (mCursor.PeekByteAt(1) == '\n')
-					break;
-				return .Err(Error(.ControlCharInDocument, "Bare CR in comment"));
-			}
-			if (b == '\n') break;
-
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(Error(.ControlCharInDocument, "Control character in comment"));
-
-			outText.Append(b);
-			mCursor.AdvanceByte();
-		}
+		Try!(ScanCommentBody(outText));
 		CountAndSkipNewline();
 		// Trim only leading space (the conventional space after #)
 		if (outText.Length > 0 && outText[0] == ' ')

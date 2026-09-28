@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 269/269 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 269/269 pass |
-| `./test-leaks.sh` | 269/269 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 270/270 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 270/270 pass |
+| `./test-leaks.sh` | 270/270 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -61,7 +61,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
 | I3 | *Deferred (2026-09-27).* No streaming writer: `WriteFile` builds the whole output `String` first. A `Write(Stream)` that also builds a full string adds nothing, so this is only worth doing as a real chunked output sink (every writer helper takes an output object instead of `String`; tail checks read a kept tail). Revisit if large outputs matter | M–L |
-| I4 | *Optional.* Parse throughput (~59 MB/s bytes, ~51 MB/s stream; `TomlTester -bench`) is limited by the parser handling one byte per call. Cursor methods that scan runs (whitespace, comments, bare keys, escape-free string text) directly over the buffer would speed up both paths; it touches the parser's hottest loops | M |
+| I4 | *Optional, in progress.* Byte scanning is done (`ScanRun`; key-path and string-buffer reuse). What remains is per-value and per-table overhead: small arrays and dotted keys that create a table per line parse at ~25–28 MB/s. Candidates: cheaper value dispatch for bare values, fewer allocations per table (dictionary and key list), multi-line strings through `ScanRun` | M |
 
 ### API surface
 

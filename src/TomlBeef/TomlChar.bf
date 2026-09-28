@@ -5,6 +5,50 @@ namespace TomlBeef;
 /// Character classification and UTF-8 encoding/decoding helpers for the TOML parser.
 internal static class TomlChar
 {
+	// Byte classes for ITomlCursor.ScanRun: a scan of kind X advances over bytes whose class has no X bit.
+	// Every class stops at '\r' and '\n', so a run never crosses a line and cursors only count columns.
+	/// @brief Stops a basic-string run: '"', '\\', and control characters other than tab (incl. DEL).
+	public const uint8 StopBasicString = 1;
+	/// @brief Stops a literal-string run: '\'' and control characters other than tab (incl. DEL).
+	public const uint8 StopLiteralString = 2;
+	/// @brief Stops a comment run: control characters other than tab (incl. DEL).
+	public const uint8 StopComment = 4;
+	/// @brief Stops a bare-key run: anything that is not A-Z, a-z, 0-9, '-' or '_'.
+	public const uint8 StopBareKey = 8;
+	/// @brief Stops a bare-value run: '\r', '\n', '=', '[', ']', '{', '}', ',' and '#'.
+	public const uint8 StopBareValue = 16;
+
+	static uint8[256] sScanClass = BuildScanClasses();
+
+	static uint8[256] BuildScanClasses()
+	{
+		uint8[256] classes = default;
+		for (int i < 256)
+		{
+			char8 c = (char8)i;
+			bool control = (i < 0x20 && c != '\t') || i == 0x7F;
+			uint8 stop = 0;
+			if (control || c == '"' || c == '\\')
+				stop |= StopBasicString;
+			if (control || c == '\'')
+				stop |= StopLiteralString;
+			if (control)
+				stop |= StopComment;
+			if (!IsBareKeyChar(c))
+				stop |= StopBareKey;
+			if (c == '\r' || c == '\n' || c == '=' || c == '[' || c == ']' || c == '{' || c == '}' || c == ',' || c == '#')
+				stop |= StopBareValue;
+			classes[i] = stop;
+		}
+		return classes;
+	}
+
+	/// @brief The scan-stop bits of byte `b` (see StopBasicString etc.).
+	[Inline]
+	public static uint8 ScanClass(uint8 b)
+	{
+		return sScanClass[b];
+	}
 	[Inline]
 	public static bool IsBareKeyChar(char8 c)
 	{

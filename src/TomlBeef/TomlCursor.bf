@@ -19,6 +19,13 @@ internal interface ITomlCursor
 	void SkipWhitespace() mut;
 	void SkipNewline() mut;
 
+	/// Advances over a run of bytes whose TomlChar.ScanClass has none of `stopMask`'s bits, appending them
+	/// to `appendTo` unless it is null. Every stop class includes '\r' and '\n', so a run stays on one line
+	/// and only the column moves (by one per code point). This is the parser's bulk path for keys, strings,
+	/// comments and bare values, replacing a peek/advance call per byte.
+	/// @return The number of bytes consumed. The run ends at a stop byte or at EOF.
+	int ScanRun(uint8 stopMask, String appendTo) mut;
+
 	/// Marks nest: every Mark() must be released by exactly one Slice() or ReleaseMark(), innermost first.
 	/// Streaming cursors retain input from the outermost active mark until it is released.
 	TomlCursorMark Mark() mut;
@@ -134,38 +141,70 @@ internal struct TomlByteCursor : ITomlCursor
 		return cp;
 	}
 
+	[Inline]
 	public char8 AdvanceByte() mut
 	{
 		if (mOffset >= mData.Length) return 0;
 		char8 b = (char8)mData[mOffset];
-		mOffset++;
-		if (b == '\r')
+		// Common case inline; newline bookkeeping (and CRLF lookahead) out of line
+		if (b != '\n' && b != '\r')
 		{
-			if (mOffset < mData.Length && mData[mOffset] == '\n')
-				mOffset++;
-			mLine++;
-			mColumn = 1;
-		}
-		else if (b == '\n')
-		{
-			mLine++;
-			mColumn = 1;
-		}
-		else
-		{
+			mOffset++;
 			mColumn++;
+			return b;
 		}
+		return AdvanceNewline(b);
+	}
+
+	/// Consumes a '\n', or a '\r' plus a following '\n', and starts a new line.
+	private char8 AdvanceNewline(char8 b) mut
+	{
+		mOffset++;
+		if (b == '\r' && mOffset < mData.Length && mData[mOffset] == '\n')
+			mOffset++;
+		mLine++;
+		mColumn = 1;
 		return b;
 	}
 
 	public void SkipWhitespace() mut
 	{
-		while (mOffset < mData.Length)
+		// Spaces and tabs never start a new line, so step past them directly
+		int pos = mOffset;
+		while (pos < mData.Length)
 		{
-			uint8 b = mData[mOffset];
-			if (b == ' ' || b == '\t') AdvanceByte();
-			else break;
+			uint8 b = mData[pos];
+			if (b != ' ' && b != '\t')
+				break;
+			pos++;
 		}
+		mColumn += pos - mOffset;
+		mOffset = pos;
+	}
+
+	public int ScanRun(uint8 stopMask, String appendTo) mut
+	{
+		uint8* data = mData.Ptr;
+		int start = mOffset;
+		int pos = start;
+		int end = mData.Length;
+		int columns = 0;
+		while (pos < end)
+		{
+			uint8 b = data[pos];
+			if ((TomlChar.ScanClass(b) & stopMask) != 0)
+				break;
+			// Columns count code points: every byte except UTF-8 continuation bytes
+			if ((b & 0xC0) != 0x80)
+				columns++;
+			pos++;
+		}
+		int count = pos - start;
+		if (appendTo != null && count > 0)
+			appendTo.Append((char8*)data + start, count);
+		mOffset = pos;
+		mColumn += columns;
+		return count;
 	}
 
 	public void SkipNewline() mut

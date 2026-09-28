@@ -303,9 +303,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					keyStyle = .QuotedLiteral;
 			}
 
-			var keyPath = scope List<String>();
-			defer { ClearAndDeleteItems!(keyPath); }
-			if (ParseKeyPath(keyPath) case .Err(let keyErr))
+			let keyPathBuffer = AcquireKeyPath();
+			defer ReleaseKeyPath();
+			let keyPath = keyPathBuffer.mParts;
+			if (ParseKeyPath(keyPathBuffer) case .Err(let keyErr))
 				return .Err(keyErr);
 
 			mCursor.SkipWhitespace();
