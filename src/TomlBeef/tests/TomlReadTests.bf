@@ -293,6 +293,40 @@ static class TomlReadTests
 	}
 
 	[Test]
+	public static void DocumentConfig_UsedByOverloadsWithoutConfig()
+	{
+		var doc = scope TomlDocument();
+		doc.ReadConfig.MetadataMode = .PreserveStyle;
+		doc.ReadConfig.Version = .V1_0;
+		doc.WriteConfig.Version = .V1_0;
+		if (doc.Read("a = 0x10") case .Err(let readErr))
+		{
+			defer readErr.Dispose();
+			Test.Assert(false, scope $"Parse failed: {readErr.mMessage}");
+		}
+		Test.Assert(doc.Metadata != null, "ReadConfig applies to Read(input)");
+
+		// A 1.1-only escape is rejected under the document's 1.0 read config
+		var strict = scope TomlDocument();
+		strict.ReadConfig.Version = .V1_0;
+		if (strict.Read("s = \"\\e\"") case .Err(let e))
+			e.Dispose();
+		else
+			Test.Assert(false, "Expected the document's V1_0 read config to reject \\e");
+
+		// WriteConfig applies to Write(output): a 1.1 escape is downgraded for 1.0
+		var writer = scope TomlDocument();
+		writer.RootTable.SetString("s", "\x1B");
+		writer.WriteConfig.Version = .V1_0;
+		String output = scope String();
+		writer.Write(output);
+		Test.Assert(output.Contains("\\u001B") || output.Contains("\\u001b"), scope $"Expected a 1.0 escape:\n{output}");
+
+		// Each document has its own config
+		Test.Assert(scope TomlDocument().ReadConfig.Version == .V1_1);
+	}
+
+	[Test]
 	public static void ReadFile_MissingFileIsIoErrorAndFollowsReadMode()
 	{
 		var replace = scope TomlDocument();

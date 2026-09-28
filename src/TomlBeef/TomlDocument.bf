@@ -67,13 +67,13 @@ public struct TomlWriteConfig
 /// Owns the complete value tree; disposal of the document cleans up everything.
 public class TomlDocument
 {
-	/// @brief Global default read configuration. Set once at startup before any Read() calls.
-	/// Not thread-safe — changing this while other threads are reading produces undefined behavior.
-	public static TomlReadConfig DefaultReadConfig = .();
+	/// @brief This document's read configuration, used by the Read/ReadBytes/ReadFile overloads that take
+	/// no config. Set fields directly: `doc.ReadConfig.MetadataMode = .PreserveStyle;`.
+	public TomlReadConfig ReadConfig = .();
 
-	/// @brief Global default write configuration. Set once at startup before any Write() calls.
-	/// Not thread-safe — changing this while other threads are writing produces undefined behavior.
-	public static TomlWriteConfig DefaultWriteConfig = .();
+	/// @brief This document's write configuration, used by the Write/WriteFile overloads that take no
+	/// config: `doc.WriteConfig.Version = .V1_0;`.
+	public TomlWriteConfig WriteConfig = .();
 
 	/// @brief Stream read buffer size in bytes. Internal so tests can force frequent refills.
 	internal static int sStreamBufferBytes = 8192;
@@ -116,12 +116,12 @@ public class TomlDocument
 		mRootTable = mStore.RootTable;
 	}
 
-	/// @brief Parse a TOML string into this document using the current DefaultReadConfig.
+	/// @brief Parse a TOML string into this document using this document's ReadConfig.
 	/// @param input The TOML text to parse. Must be valid UTF-8.
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(StringView input)
 	{
-		return Read(input, DefaultReadConfig);
+		return Read(input, ReadConfig);
 	}
 
 	/// @brief Parse a TOML string into this document with an explicit configuration.
@@ -146,7 +146,7 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadBytes(Span<uint8> data)
 	{
-		return ReadBytes(data, DefaultReadConfig);
+		return ReadBytes(data, ReadConfig);
 	}
 
 	/// @brief Parse raw UTF-8 bytes with an explicit configuration.
@@ -173,7 +173,7 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream)
 	{
-		return Read(stream, DefaultReadConfig);
+		return Read(stream, ReadConfig);
 	}
 
 	/// @brief Parse TOML from a stream with an explicit configuration.
@@ -376,11 +376,11 @@ public class TomlDocument
 		return MergeIncoming(incoming, incomingMetadata, config);
 	}
 
-	/// @brief Serialize this document to a TOML string using the current DefaultWriteConfig.
+	/// @brief Serialize this document to a TOML string using this document's WriteConfig.
 	/// @param output The destination string to append to.
 	public void Write(String output)
 	{
-		Write(output, DefaultWriteConfig);
+		Write(output, WriteConfig);
 	}
 
 	/// @brief Serialize this document to a TOML string with an explicit configuration.
@@ -925,7 +925,7 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path)
 	{
-		return ReadFile(path, DefaultReadConfig);
+		return ReadFile(path, ReadConfig);
 	}
 
 	/// @brief Parse a TOML file into this document with an explicit configuration.
@@ -946,7 +946,7 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err if the write failed.
 	public Result<void, TomlParseError> WriteFile(StringView path)
 	{
-		return WriteFile(path, DefaultWriteConfig);
+		return WriteFile(path, WriteConfig);
 	}
 
 	/// @brief Write this document to a file with an explicit configuration.

@@ -46,7 +46,14 @@ if (doc.Read(input) case .Err(let err))
 
 `doc.Read` returns `Result<void, TomlParseError>`. On success, the document is populated. On error, the document is left in a defined state: `Replace` failures leave it empty, while `Merge` failures leave existing content unchanged. The caller owns the document and must eventually `delete` it.
 
-A TOML specification version can be passed: `doc.Read(input, .() { Version = .V1_0 })`. Defaults to V1_1.
+A TOML specification version can be passed: `doc.Read(input, .() { Version = .V1_0 })`. Defaults to V1_1. Overloads without a config use the document's own `doc.ReadConfig` / `doc.WriteConfig`, so settings can be made once per document:
+
+```bf
+doc.ReadConfig.MetadataMode = .PreserveStyle;
+doc.WriteConfig.Version = .V1_0;
+doc.ReadFile("config.toml");   // uses doc.ReadConfig
+doc.WriteFile("config.toml");  // uses doc.WriteConfig
+```
 
 Use `Replace` mode (the default) to clear existing content before parsing. Use `Merge` mode to layer another file on top of existing content:
 

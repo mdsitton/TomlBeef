@@ -63,8 +63,8 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 | Mutation | `Set{String,Integer,Float,Bool,OffsetDateTime,LocalDateTime,LocalDate,LocalTime}(path, v)`, `AddTable(key)`, `AddArray(key)`, `Remove(key)`, `Clear()` |
 | Inspection | `RootTable` (read-only property), `Metadata` (null unless PreserveStyle) |
 
-- Overloads without a config use the static `TomlDocument.DefaultReadConfig` /
-  `DefaultWriteConfig`. These are process-global and not thread-safe; set them once at startup.
+- Overloads without a config use the document's own `ReadConfig` / `WriteConfig` fields (there is no
+  process-global default, so documents on different threads never share settings).
 - `ReadFile` loads the whole file (`File.ReadAll`) and parses the bytes with `ReadBytes`, without a
   second copy. Any BOM goes through the normal BOM rules; a missing or unreadable file is `IoError`.
 - `Get`, `GetPath`, `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
