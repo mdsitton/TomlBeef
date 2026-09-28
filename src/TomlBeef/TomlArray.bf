@@ -322,6 +322,19 @@ public class TomlArray
 		return mMetadataContext.mMetadata != null && mMetadataContext.mMetadata.TryGetSourceRange(nodeId, out range);
 	}
 
+	/// @brief Build an error about the element at `index` for your own validation, located where it
+	/// appeared in the source: `ports.MakeError(2, "must be below 65536")` prints (via ToString) as
+	/// `config.toml:4:18: [2]: must be below 65536`. Needs a document read with Positions or
+	/// PreserveStyle for a position.
+	/// @param index The element index.
+	/// @param message What is wrong with it.
+	/// @return An error of kind InvalidValue.
+	public TomlParseError MakeError(int index, StringView message)
+	{
+		TryGetSourceRange(index, var range);
+		return TomlParseError.Located(.InvalidValue, scope $"[{index}]: {message}", range);
+	}
+
 	/// @brief Read a String value at the given index.
 	/// @param index The element index.
 	/// @param value On success, the string value.

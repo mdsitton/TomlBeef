@@ -39,6 +39,28 @@ public enum TomlValue
 	public bool IsArray          => this case .Array;
 	public bool IsTable          => this case .Table;
 
+	/// @brief The TOML name of this value's type as used in error messages: "string", "integer", "float",
+	/// "boolean", "offset datetime", "local datetime", "local date", "local time", "array" or "table".
+	public StringView TypeName
+	{
+		get
+		{
+			switch (this)
+			{
+			case .String:         return "string";
+			case .Integer:        return "integer";
+			case .Float:          return "float";
+			case .Bool:           return "boolean";
+			case .OffsetDateTime: return "offset datetime";
+			case .LocalDateTime:  return "local datetime";
+			case .LocalDate:      return "local date";
+			case .LocalTime:      return "local time";
+			case .Array:          return "array";
+			case .Table:          return "table";
+			}
+		}
+	}
+
 	public StringView AsString
 	{
 		get

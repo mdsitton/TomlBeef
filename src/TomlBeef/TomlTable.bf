@@ -558,7 +558,20 @@ public class TomlTable
 			if (existing.IsTable && incoming.IsTable)
 				Try!(existing.AsTable.ValidateMerge(incoming.AsTable, path));
 			else
-				return .Err(TomlParseError(.DuplicateKey, scope $"Duplicate key '{path}' during merge", 0, 0, 0));
+			{
+				// With positions on the incoming side (a merge read with metadata), point at its key
+				var error = TomlParseError(.DuplicateKey, scope $"Duplicate key '{path}' during merge", 0, 0, 0);
+				if (source.TryGetNodeRange(source.mEntries[key].mNodeId, let range))
+				{
+					error.mLine = range.mLine;
+					error.mColumn = range.mColumn;
+					error.mOffset = range.mOffset;
+					error.mLength = range.mLength;
+					if (!range.mSource.IsEmpty)
+						error.SetSource(range.mSource);
+				}
+				return .Err(error);
+			}
 			path.Length = pathLen;
 		}
 		return .Ok;
@@ -850,7 +863,7 @@ public class TomlTable
 	/// @brief Where the value at `key` appeared in the source: the start of its key (or of its `[header]`
 	/// for a header table, or of the first `[[header]]` for an array of tables), and the length through
 	/// the end of the value or header. Useful for reporting validation errors against the file.
-	/// Requires a document read with Positions or PreserveStyle; values added or merged in code have no position.
+	/// Requires a document read with Positions or PreserveStyle; values added in code have no position.
 	/// @param key The key.
 	/// @param range Receives the 1-based line and column, byte offset, and length.
 	/// @return True if a source position is known.
@@ -879,6 +892,103 @@ public class TomlTable
 		// Positions are recorded in both Positions and PreserveStyle mode, so any sidecar will do
 		let metadata = mMetadataContext?.mMetadata;
 		return metadata != null && metadata.TryGetSourceRange(nodeId, out range);
+	}
+
+	// ================================================================
+	// Validation: errors located in the source
+	// ================================================================
+
+	/// @brief Build an error about the value at `key` for your own validation, located where the value
+	/// appeared in the source: `return .Err(server.MakeError("port", "must be positive"));` prints (via
+	/// ToString) as `config.toml:12:3: port: must be positive`. A missing key is located at this table's
+	/// header. Needs a document read with Positions or PreserveStyle for a position; without one the
+	/// message still names the key.
+	/// @param key The key the problem is about (it need not exist).
+	/// @param message What is wrong with it.
+	/// @return An error of kind InvalidValue.
+	public TomlParseError MakeError(StringView key, StringView message)
+	{
+		return TomlParseError.Located(.InvalidValue, scope $"{key}: {message}", ProblemLocation(key));
+	}
+
+	/// @brief Get a required String: a missing key or a value of another type is a located error
+	/// (MissingKey, at this table's header, or WrongType, at the value).
+	/// @param key The key.
+	/// @return The string (borrowed from the document), or the error.
+	public Result<StringView, TomlParseError> RequireString(StringView key)
+	{
+		return Try!(RequireValue(key, key, "string")).AsString;
+	}
+
+	/// @brief Get a required Integer; see RequireString for the errors.
+	/// @param key The key.
+	/// @return The integer, or the error.
+	public Result<int64, TomlParseError> RequireInteger(StringView key)
+	{
+		return Try!(RequireValue(key, key, "integer")).AsInteger;
+	}
+
+	/// @brief Get a required Float (an integer is not accepted); see RequireString for the errors.
+	/// @param key The key.
+	/// @return The float, or the error.
+	public Result<double, TomlParseError> RequireFloat(StringView key)
+	{
+		return Try!(RequireValue(key, key, "float")).AsFloat;
+	}
+
+	/// @brief Get a required Bool; see RequireString for the errors.
+	/// @param key The key.
+	/// @return The bool, or the error.
+	public Result<bool, TomlParseError> RequireBool(StringView key)
+	{
+		return Try!(RequireValue(key, key, "boolean")).AsBool;
+	}
+
+	/// @brief Get a required Table; see RequireString for the errors.
+	/// @param key The key.
+	/// @return The table, or the error.
+	public Result<TomlTable, TomlParseError> RequireTable(StringView key)
+	{
+		return Try!(RequireValue(key, key, "table")).AsTable;
+	}
+
+	/// @brief Get a required Array; see RequireString for the errors.
+	/// @param key The key.
+	/// @return The array, or the error.
+	public Result<TomlArray, TomlParseError> RequireArray(StringView key)
+	{
+		return Try!(RequireValue(key, key, "array")).AsArray;
+	}
+
+	/// The value at `key` if it has type `typeName` (as TomlValue.TypeName spells it); otherwise a located
+	/// MissingKey or WrongType error naming `path` (the key, or the full dotted path for document calls).
+	internal Result<TomlValue, TomlParseError> RequireValue(StringView key, StringView path, StringView typeName)
+	{
+		if (!TryGetValue(key, let value))
+			return .Err(TomlParseError.Located(.MissingKey, scope $"{path}: missing required {typeName}", ProblemLocation()));
+		if (value.TypeName != typeName)
+			return .Err(TomlParseError.Located(.WrongType, scope $"{path}: expected {typeName}, found {value.TypeName}", ProblemLocation(key)));
+		return value;
+	}
+
+	/// Where to report a problem with this table as a whole (such as a missing key): its header, or for a
+	/// table without one (the root) just the document's source name when it was read from one source.
+	internal TomlSourceRange ProblemLocation()
+	{
+		if (TryGetHeaderSourceRange(let range))
+			return range;
+		let metadata = mMetadataContext?.mMetadata;
+		if (metadata != null && metadata.mSourceNames.Count == 1)
+			return .(0, 0, 0, 0, metadata.mSourceNames[0]);
+		return default;
+	}
+
+	/// Where to report a problem with the value at `key`, falling back to the table's own location.
+	internal TomlSourceRange ProblemLocation(StringView key)
+	{
+		if (TryGetSourceRange(key, let range))
+			return range;
+		return ProblemLocation();
 	}
 
 	/// The node that holds `key`'s entry style (value format, key format).

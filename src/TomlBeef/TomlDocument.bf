@@ -33,6 +33,9 @@ public struct TomlReadConfig
 	public MergeConflict OnConflict = .Error;
 	public TomlVersion Version = .V1_1;
 	public TomlMetadataMode MetadataMode = .None;
+	/// @brief Name of the input for error messages and source ranges, typically its file path (ReadFile
+	/// uses the path when this is empty). Only read during the call; the document keeps its own copy.
+	public StringView SourceName = default;
 
 	/// @brief Maximum nesting depth (tables / arrays). 0 = unlimited.
 	/// Default of 256 matches historical behavior.
@@ -194,6 +197,23 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(StringView input, TomlReadConfig config)
 	{
+		return WithSource(ReadString(input, config), config);
+	}
+
+	/// Tags a failed read's error with the input's source name, unless it already names one.
+	private static Result<void, TomlParseError> WithSource(Result<void, TomlParseError> result, TomlReadConfig config)
+	{
+		if (result case .Err(var error))
+		{
+			if (error.mSource.IsEmpty && !config.SourceName.IsEmpty)
+				error.SetSource(config.SourceName);
+			return .Err(error);
+		}
+		return .Ok;
+	}
+
+	private Result<void, TomlParseError> ReadString(StringView input, TomlReadConfig config)
+	{
 		if (config.MaxInputBytes > 0 && input.Length > config.MaxInputBytes)
 			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {input.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
 
@@ -218,6 +238,11 @@ public class TomlDocument
 	/// @param config Read mode, conflict strategy, and TOML version.
 	/// @return .Ok on success, or .Err with line/column info on failure. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadBytes(Span<uint8> data, TomlReadConfig config)
+	{
+		return WithSource(ReadBytesCore(data, config), config);
+	}
+
+	private Result<void, TomlParseError> ReadBytesCore(Span<uint8> data, TomlReadConfig config)
 	{
 		if (config.MaxInputBytes > 0 && data.Length > config.MaxInputBytes)
 			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {data.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
@@ -245,6 +270,11 @@ public class TomlDocument
 	/// @param config Read mode, conflict strategy, and TOML version.
 	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream, TomlReadConfig config)
+	{
+		return WithSource(ReadStream(stream, config), config);
+	}
+
+	private Result<void, TomlParseError> ReadStream(Stream stream, TomlReadConfig config)
 	{
 		int bufferBytes = config.StreamBufferBytes > 0 ? Math.Max(config.StreamBufferBytes, MinStreamBufferBytes) : DefaultStreamBufferBytes;
 		uint8[] buffer = new uint8[bufferBytes];
@@ -912,6 +942,111 @@ public class TomlDocument
 		return TryGetBool(dottedPath, let value) ? value : defaultValue;
 	}
 
+	// ================================================================
+	// Validation: errors located in the source
+	// ================================================================
+
+	/// @brief Build an error about the value at a dotted path for your own validation, located where the
+	/// value appeared in the source: `return .Err(doc.MakeError("server.port", "must be positive"));`
+	/// prints (via ToString) as `config.toml:12:3: server.port: must be positive`. A missing value is
+	/// located at the deepest table on the path. Needs a document read with Positions or PreserveStyle
+	/// for a position; without one the message still names the path.
+	/// @param dottedPath The path the problem is about (it need not exist).
+	/// @param message What is wrong with it.
+	/// @return An error of kind InvalidValue.
+	public TomlParseError MakeError(StringView dottedPath, StringView message)
+	{
+		WalkToParent(dottedPath, let parent, let key);
+		return TomlParseError.Located(.InvalidValue, scope $"{dottedPath}: {message}", parent.ProblemLocation(key));
+	}
+
+	/// @brief Get a required String at a dotted path. A missing value or a value of another type is a
+	/// located error naming the path: MissingKey (at the deepest table on the path) or WrongType (at the
+	/// value, or at a non-table segment on the way).
+	/// @param dottedPath The path.
+	/// @return The string (borrowed from this document), or the error.
+	public Result<StringView, TomlParseError> RequireString(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "string")).AsString;
+	}
+
+	/// @brief Get a required Integer at a dotted path; see RequireString for the errors.
+	/// @param dottedPath The path.
+	/// @return The integer, or the error.
+	public Result<int64, TomlParseError> RequireInteger(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "integer")).AsInteger;
+	}
+
+	/// @brief Get a required Float at a dotted path (an integer is not accepted); see RequireString.
+	/// @param dottedPath The path.
+	/// @return The float, or the error.
+	public Result<double, TomlParseError> RequireFloat(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "float")).AsFloat;
+	}
+
+	/// @brief Get a required Bool at a dotted path; see RequireString for the errors.
+	/// @param dottedPath The path.
+	/// @return The bool, or the error.
+	public Result<bool, TomlParseError> RequireBool(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "boolean")).AsBool;
+	}
+
+	/// @brief Get a required Table at a dotted path; see RequireString for the errors.
+	/// @param dottedPath The path.
+	/// @return The table, or the error.
+	public Result<TomlTable, TomlParseError> RequireTable(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "table")).AsTable;
+	}
+
+	/// @brief Get a required Array at a dotted path; see RequireString for the errors.
+	/// @param dottedPath The path.
+	/// @return The array, or the error.
+	public Result<TomlArray, TomlParseError> RequireArray(StringView dottedPath)
+	{
+		return Try!(RequireValue(dottedPath, "array")).AsArray;
+	}
+
+	private Result<TomlValue, TomlParseError> RequireValue(StringView dottedPath, StringView typeName)
+	{
+		if (WalkToParent(dottedPath, let parent, let key))
+			return parent.RequireValue(key, dottedPath, typeName);
+		if (key.IsEmpty)
+			return .Err(TomlParseError(.InvalidKey, scope $"Invalid path '{dottedPath}'", 0, 0, 0));
+		// A segment on the way is not a table, or is missing
+		if (parent.TryGetValue(key, let blocking))
+			return .Err(TomlParseError.Located(.WrongType, scope $"{dottedPath}: expected '{key}' to be a table, found {blocking.TypeName}", parent.ProblemLocation(key)));
+		return .Err(TomlParseError.Located(.MissingKey, scope $"{dottedPath}: missing required {typeName}", parent.ProblemLocation()));
+	}
+
+	/// Walks `dottedPath` to the table that holds its last segment. On success `key` is that segment. If
+	/// a segment on the way is missing or not a table, `parent` is the deepest table reached and `key` the
+	/// segment that stopped the walk; for a malformed path `parent` is the root and `key` empty.
+	/// @return True if every parent segment is a table (the last segment itself may still be missing).
+	private bool WalkToParent(StringView dottedPath, out TomlTable parent, out StringView key)
+	{
+		parent = mRootTable;
+		key = default;
+		var segments = scope List<StringView>();
+		if (!ParseDottedPath(dottedPath, segments) || segments.IsEmpty)
+			return false;
+		for (int i = 0; i < segments.Count - 1; i++)
+		{
+			TomlValue value;
+			if (!parent.TryGetValue(segments[i], out value) || !value.IsTable)
+			{
+				key = segments[i];
+				return false;
+			}
+			parent = value.AsTable;
+		}
+		key = segments.Back;
+		return true;
+	}
+
 	/// @brief Parse a TOML file into this document. Convenience wrapper around Read().
 	/// @param path File path to read from.
 	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
@@ -922,23 +1057,28 @@ public class TomlDocument
 
 	/// @brief Parse a TOML file into this document with an explicit configuration.
 	/// @param path File path to read from.
-	/// @param config Read options.
+	/// @param config Read options. An empty SourceName defaults to `path`, which errors and source ranges
+	/// then report.
 	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path, TomlReadConfig config)
 	{
+		var config;
+		if (config.SourceName.IsEmpty)
+			config.SourceName = path;
+
 		// With an explicit stream buffer, stream the file instead of loading it whole
 		if (config.StreamBufferBytes > 0)
 		{
 			let file = scope FileStream();
 			if (file.Open(path, .Read, .Read) case .Err)
-				return ReadFailure(TomlParseError(.IoError, scope $"Cannot read file: {path}", 0, 0, 0), config);
+				return WithSource(ReadFailure(TomlParseError(.IoError, "Cannot read file", 0, 0, 0), config), config);
 			return Read(file, config);
 		}
 
 		// Parse the loaded bytes directly; no second copy into a String
 		let data = scope List<uint8>();
 		if (File.ReadAll(path, data) case .Err)
-			return ReadFailure(TomlParseError(.IoError, scope $"Cannot read file: {path}", 0, 0, 0), config);
+			return WithSource(ReadFailure(TomlParseError(.IoError, "Cannot read file", 0, 0, 0), config), config);
 		return ReadBytes(Span<uint8>(data.Ptr, data.Count), config);
 	}
 
@@ -959,7 +1099,11 @@ public class TomlDocument
 		String output = scope String();
 		Write(output, config);
 		if (File.WriteAllText(path, output) case .Err)
-			return .Err(TomlParseError(.IoError, scope $"Cannot write file: {path}" , 0, 0, 0));
+		{
+			var error = TomlParseError(.IoError, "Cannot write file", 0, 0, 0);
+			error.SetSource(path);
+			return .Err(error);
+		}
 		return .Ok;
 	}
 }

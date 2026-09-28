@@ -329,8 +329,14 @@ Rules enforced (`EnterTable`, `EnterArrayOfTables`, `SetKeyValue`, `NavigateSegm
 
 ### Error model
 
-`TomlParseError { mKind, mMessage, mLine, mColumn, mOffset, mLength }`. Line and column are
-1-based and `mOffset` is a byte offset. `TomlErrorKind` groups:
+`TomlParseError { mKind, mMessage, mSource, mLine, mColumn, mOffset, mLength }`. Line and column
+are 1-based (line 0: no position) and `mOffset` is a byte offset. `mSource` names the input: the
+public `Read*` methods tag a failed read with `TomlReadConfig.SourceName` unless the error already
+names one (`WithSource`), `ReadFile`/`WriteFile` use the path, and `ToString` formats
+`source:line:column: message`. The same type carries validation errors built from a document
+(`MakeError`, `Require*`), located through the node ranges, so parse, merge and validation errors
+print alike. A merge read rejected for a conflicting leaf is located at the incoming key when the
+incoming side has positions. `TomlErrorKind` groups:
 
 - lexical: `UnexpectedChar`, `UnexpectedToken`, `UnterminatedString`, `InvalidEscape`,
   `ReservedEscape`, `InvalidUnicodeScalar`, `ControlCharInString`, `ControlCharInDocument`,
@@ -342,6 +348,7 @@ Rules enforced (`EnterTable`, `EnterArrayOfTables`, `SetKeyValue`, `NavigateSegm
   `AppendToStaticArray`, `ArrayElementOrdering`, `MaxDepthExceeded`, `ResourceLimitExceeded`
 - document: `MissingNewlineAfterKeyVal`, `EmptyBareKey`, `InvalidKey`
 - `IoError`
+- validation: `MissingKey`, `WrongType`, `InvalidValue`
 
 Where each error is reported:
 
@@ -442,7 +449,10 @@ merging with a more capable mode raises it, a lesser one never lowers it.
 - Source ranges (`mRanges`, `TomlPackedRange`: 32-bit line, column, offset, length) indexed by
   `TomlNodeId`, one per allocated node in every mode: the start of the key, header `[`, or array
   element, and the length through the value or header. Exposed through
-  `TryGetSourceRange`/`TryGetHeaderSourceRange`, and left unset for values added or merged in code.
+  `TryGetSourceRange`/`TryGetHeaderSourceRange`, and left unset for values added in code. Each range
+  also records its source: an index into `mSourceNames`, registered per read from
+  `TomlReadConfig.SourceName` (`ReadFile` defaults it to the path). Merges copy ranges with their
+  source (`CopySourceRange`), so a document layered from several files reports each value's own file.
 - `TomlNodeStyle` records, also indexed by `TomlNodeId`, only while capturing style: an
   original-token reference, dirty flags, and key-format and value-format references (16 bytes).
   `GetNodeStyle` returns null without style capture; after an upgrade from Positions it creates the

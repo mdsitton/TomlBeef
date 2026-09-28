@@ -298,12 +298,34 @@ A document read with `PreserveStyle` also knows where each value came from, whic
 
 ```bf
 doc.ReadFile("config.toml", .() { MetadataMode = .Positions });
-if (doc.TryGetInteger("server.port", var port) && port <= 0 &&
-    doc.TryGetSourceRange("server.port", var range))
-    Console.WriteLine($"config.toml:{range.mLine}:{range.mColumn}: port must be positive");
+if (doc.TryGetSourceRange("server.port", var range))
+    Console.WriteLine($"server.port is at {range}");   // config.toml:12:3
 ```
 
-`TomlSourceRange` gives the 1-based line and column, byte offset, and length of the entry (from its key through its value; for a table, its `[header]`). `TomlTable.TryGetSourceRange(key)`, `TomlTable.TryGetHeaderSourceRange()` and `TomlArray.TryGetSourceRange(index)` do the same for tables, `[[array]]` elements, and array items. Values added or merged in code have no position.
+`TomlSourceRange` gives the source name, 1-based line and column, byte offset, and length of the entry (from its key through its value; for a table, its `[header]`). `TomlTable.TryGetSourceRange(key)`, `TomlTable.TryGetHeaderSourceRange()` and `TomlArray.TryGetSourceRange(index)` do the same for tables, `[[array]]` elements, and array items. Values added in code have no position; values merged from another document with metadata keep theirs, including which file they came from.
+
+### Validating Values
+
+The `Require*` getters and `MakeError` turn validation problems into errors that point into the file. They return `TomlParseError`, so they compose with `Try!`, and `ToString` formats them as `source:line:column: message`:
+
+```bf
+Result<int64, TomlParseError> LoadPort(TomlDocument doc)
+{
+    let port = Try!(doc.RequireInteger("server.port"));
+    if (port <= 0)
+        return .Err(doc.MakeError("server.port", "must be positive"));
+    return port;
+}
+
+doc.ReadFile("config.toml", .() { MetadataMode = .Positions });
+if (LoadPort(doc) case .Err(let err))
+    Console.Error.WriteLine($"{err}");   // config.toml:12:3: server.port: must be positive
+```
+
+- `RequireString`, `RequireInteger`, `RequireFloat`, `RequireBool`, `RequireTable` and `RequireArray` exist on `TomlDocument` (dotted path) and `TomlTable` (key). A missing value is a `MissingKey` error at the table that should hold it (`config.toml:10:1: server.port: missing required integer`); a value of another type is a `WrongType` error at the value (`server.port: expected integer, found string`). Integers are not accepted as floats.
+- `MakeError` builds an `InvalidValue` error for your own checks, on `TomlDocument` (dotted path), `TomlTable` (key) and `TomlArray` (index, `[2]: ...`).
+- Positions need `MetadataMode = .Positions` (or `.PreserveStyle`); without them the messages still name the path. `ReadFile` names the source after its path; for other inputs set `TomlReadConfig.SourceName`. After merging several files each value reports its own file, and a merge read rejected for a conflicting key points at that key in the incoming file.
+- `TomlValue.TypeName` gives the TOML type name ("integer", "local date", ...) for your own messages.
 
 ### Building Values Programmatically
 
@@ -396,7 +418,8 @@ struct TomlParseError
 {
     TomlErrorKind mKind;   // Category of error
     StringView mMessage;   // Human-readable description (see lifetime below)
-    int mLine;             // 1-based line number
+    StringView mSource;    // Source name (SourceName, or the ReadFile/WriteFile path); may be empty
+    int mLine;             // 1-based line number (0 when there is no position)
     int mColumn;           // 1-based column number
     int mOffset;           // Byte offset into input
     int mLength;           // Length of erroneous span
@@ -414,7 +437,9 @@ Result<void> LoadConfig(TomlDocument doc)
 }
 ```
 
-**Message lifetime:** `mMessage` views a per-thread buffer. It stays valid until the next TomlBeef error on the same thread, which replaces it. Copy it if you keep it past another failing call:
+`err.ToString(output)` (or `$"{err}"`) formats it as `source:line:column: message`, leaving out the parts that are unknown.
+
+**Message lifetime:** `mMessage` and `mSource` view per-thread buffers. It stays valid until the next TomlBeef error on the same thread, which replaces it. Copy it if you keep it past another failing call:
 
 ```bf
 if (doc.ReadFile(path) case .Err(let err))

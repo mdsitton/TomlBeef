@@ -14,6 +14,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// formats and document style go to mStyle, which is the same sidecar in PreserveStyle and null otherwise.
 	private TomlDocumentMetadata mMetadata;
 	private TomlDocumentMetadata mStyle;
+	// mMetadata's index for this input's SourceName (-1 if unnamed or without metadata)
+	private int32 mSourceIndex;
 	private TomlDocumentStore mStore;
 	private int mDepth = 0;
 	private TomlResourceLimitState mLimits;
@@ -61,6 +63,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mStore = store;
 		mMetadata = metadata;
 		mStyle = (metadata != null && metadata.CapturesStyle) ? metadata : null;
+		mSourceIndex = (metadata != null) ? metadata.AddSource(config.SourceName) : -1;
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
 		mSeenContent = false;

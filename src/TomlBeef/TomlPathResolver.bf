@@ -193,7 +193,7 @@ internal class TomlPathResolver
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot use key '{}' as table — it is a ", key);
-				ValueTypeName(existing, msg);
+				msg.Append(existing.TypeName);
 				return .Err(MakeError(.TypeConflict, msg, mCurrentOffset));
 			}
 		}
@@ -268,7 +268,7 @@ internal class TomlPathResolver
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot define table '{}' — name already used as ", key);
-				ValueTypeName(existing, msg);
+				msg.Append(existing.TypeName);
 				return .Err(MakeError(.TypeConflict, msg, mCurrentOffset));
 			}
 		}
@@ -337,7 +337,7 @@ internal class TomlPathResolver
 			{
 				String msg = scope String();
 				msg.AppendF("Cannot define array-of-tables '[[{}]]' — name already defined as ", key);
-				ValueTypeName(existing, msg);
+				msg.Append(existing.TypeName);
 				return .Err(MakeError(.AppendToStaticArray, msg, mCurrentOffset));
 			}
 		}
@@ -405,21 +405,4 @@ internal class TomlPathResolver
 		mCurrentTable = mRootTable;
 	}
 
-	private void ValueTypeName(TomlValue value, String outStr)
-	{
-		switch (value)
-		{
-		case .String:       outStr.Append("string");
-		case .Integer:      outStr.Append("integer");
-		case .Float:        outStr.Append("float");
-		case .Bool:         outStr.Append("boolean");
-		case .OffsetDateTime: outStr.Append("offset datetime");
-		case .LocalDateTime:  outStr.Append("local datetime");
-		case .LocalDate:      outStr.Append("local date");
-		case .LocalTime:      outStr.Append("local time");
-		case .Array:        outStr.Append("array");
-		case .Table:        outStr.Append("table");
-		default:            outStr.Append("unknown");
-		}
-	}
 }

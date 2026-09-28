@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 262/262 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 262/262 pass |
-| `./test-leaks.sh` | 262/262 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 269/269 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 269/269 pass |
+| `./test-leaks.sh` | 269/269 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -37,7 +37,8 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
 | Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base, and to query source positions (also available alone through the cheaper `Positions` mode) |
-| Error reporting | Line, column, and byte offset for lexical, UTF-8, and semantic errors; `TomlParseError` needs no cleanup (message in a per-thread buffer) and works with `Try!` |
+| Error reporting | Source name, line, column, and byte offset for lexical, UTF-8, semantic and merge errors; `TomlParseError` needs no cleanup (message in a per-thread buffer), works with `Try!`, and formats as `source:line:column: message` |
+| Validation | `Require*` getters (MissingKey/WrongType) and `MakeError` (InvalidValue) on documents, tables and arrays, located in the source with Positions/PreserveStyle; positions keep their source file across merges |
 
 ## Open items
 
@@ -81,7 +82,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | O3 | Plain-mode writer choosing literal strings for backslash- or quote-heavy values | S |
 | O4 | `doc["a.b"]` indexer on `TomlDocument` | S |
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
-| O7 | Bind/type errors that carry source locations automatically (building on `TryGetSourceRange`); metadata text arena instead of `List<String>` | L / S–M |
+| O7 | *Optional.* Metadata text arena instead of `List<String>` for comments and original tokens | S–M |
 
 ## Suggested order
 

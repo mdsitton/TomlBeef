@@ -3,11 +3,12 @@ using internal TomlBeef;
 
 namespace TomlBeef;
 
-/// Carries PreserveStyle metadata across a merge.
+/// Carries Positions/PreserveStyle metadata across a merge.
 ///
 /// Merged values are deep-copied into the destination store, which gives them fresh containers with no
 /// metadata. These helpers attach destination node IDs throughout a copied subtree and, when the source
-/// document has its own sidecar, copy each node's original token, formats, and comments across.
+/// document has its own sidecar, copy each node's source range and (with style) its original token,
+/// formats, and comments across.
 static class TomlMetadataTransfer
 {
 	/// Gives the copied value `dst` (a CloneInto of `src`) node IDs and styles in `dstMeta`.
@@ -69,12 +70,15 @@ static class TomlMetadataTransfer
 		}
 	}
 
-	/// Copies one node's style from `srcMeta` into an existing node in `dstMeta`. The copied node is clean:
-	/// it represents the source text exactly, so its original token is valid for its value.
+	/// Copies one node's source range and style from `srcMeta` into an existing node in `dstMeta`. The copied
+	/// node is clean: it represents the source text exactly, so its original token is valid for its value.
+	/// The range keeps its source name, so a merged document reports each value in the file it came from.
 	/// @param includeSlotStyle Also copy the key format and comments. False when overwriting a value in an
 	/// existing slot, where the key and comments belong to the destination.
 	internal static void CopyNodeStyle(TomlDocumentMetadata srcMeta, TomlNodeId srcId, TomlDocumentMetadata dstMeta, TomlNodeId dstId, bool includeSlotStyle)
 	{
+		dstMeta.CopySourceRange(srcMeta, srcId, dstId);
+
 		let srcStyle = srcMeta.GetNodeStyle(srcId);
 		let dstStyle = dstMeta.GetNodeStyle(dstId);
 		if (srcStyle == null || dstStyle == null)

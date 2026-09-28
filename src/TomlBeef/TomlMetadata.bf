@@ -96,20 +96,40 @@ internal struct TomlStyleRef
 	}
 }
 
-/// @brief Source coordinate range for diagnostics/debugging. Does NOT recover source text.
+/// @brief Where something appeared in the source, for diagnostics. Does NOT recover source text.
 public struct TomlSourceRange
 {
+	/// @brief Name of the source (TomlReadConfig.SourceName, or the path for ReadFile); empty if unnamed.
+	/// Borrowed from the document: valid until it is cleared or deleted.
+	public StringView mSource;
+	/// @brief 1-based line.
 	public int mLine;
+	/// @brief 1-based column.
 	public int mColumn;
+	/// @brief Byte offset into the source.
 	public int mOffset;
+	/// @brief Length in bytes.
 	public int mLength;
 
-	public this(int line, int column, int offset, int length)
+	public this(int line, int column, int offset, int length, StringView source = default)
 	{
+		mSource = source;
 		mLine = line;
 		mColumn = column;
 		mOffset = offset;
 		mLength = length;
+	}
+
+	/// @brief Formats the position as `source:line:column`, or `line:column` without a source name.
+	/// @param strBuffer The string to append to.
+	public override void ToString(String strBuffer)
+	{
+		if (!mSource.IsEmpty)
+		{
+			strBuffer.Append(mSource);
+			strBuffer.Append(':');
+		}
+		strBuffer.AppendF("{}:{}", mLine, mColumn);
 	}
 }
 
@@ -121,6 +141,8 @@ internal struct TomlPackedRange
 	public int32 mColumn;
 	public int32 mOffset;
 	public int32 mLength;
+	/// Index into TomlDocumentMetadata.mSourceNames, or -1 for an unnamed source.
+	public int32 mSource;
 }
 
 /// @brief Style metadata for a single node in the document tree (PreserveStyle only).
@@ -491,6 +513,9 @@ internal class TomlDocumentMetadata
 	/// Per-node source ranges, indexed by TomlNodeId.mIndex. One per allocated node in every mode, so its
 	/// count is the node count.
 	internal List<TomlPackedRange> mRanges ~ delete _;
+	/// Names of the sources ranges were recorded from (one per distinct name, e.g. base and override
+	/// files merged into one document).
+	internal List<String> mSourceNames ~ DeleteContainerAndItems!(_);
 	/// Per-node style records, indexed by TomlNodeId.mIndex. Filled only while capturing style; a sidecar
 	/// upgraded from Positions gets records for its earlier nodes on first access (GetNodeStyle).
 	internal List<TomlNodeStyle> mNodeStyles ~ delete _;
@@ -512,6 +537,7 @@ internal class TomlDocumentMetadata
 		mFooterComments = null;
 		mDocumentStyle = .();
 		mRanges = new List<TomlPackedRange>();
+		mSourceNames = new List<String>();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
 		mOriginalTokens = new List<String>();
@@ -542,17 +568,34 @@ internal class TomlDocumentMetadata
 		return &mNodeStyles[nodeId.mIndex];
 	}
 
+	/// @brief Register a source name for ranges, reusing the index of an equal name.
+	/// @param name The source name; empty means unnamed.
+	/// @return The index to pass to SetSourceRange, or -1 for an unnamed source.
+	internal int32 AddSource(StringView name)
+	{
+		if (name.IsEmpty)
+			return -1;
+		for (int i = 0; i < mSourceNames.Count; i++)
+		{
+			if (mSourceNames[i] == name)
+				return (int32)i;
+		}
+		mSourceNames.Add(new String(name));
+		return (int32)(mSourceNames.Count - 1);
+	}
+
 	/// @brief Record where a node appeared in the source.
-	internal void SetSourceRange(TomlNodeId nodeId, int line, int column, int offset, int length)
+	/// @param source Index from AddSource, or -1.
+	internal void SetSourceRange(TomlNodeId nodeId, int line, int column, int offset, int length, int32 source)
 	{
 		if (!nodeId.IsValid || nodeId.mIndex >= mRanges.Count)
 			return;
 		// Inputs are far below 2 GB (and MaxInputBytes can enforce it), so 32 bits per field suffice
-		mRanges[nodeId.mIndex] = .() { mLine = (int32)line, mColumn = (int32)column, mOffset = (int32)offset, mLength = (int32)length };
+		mRanges[nodeId.mIndex] = .() { mLine = (int32)line, mColumn = (int32)column, mOffset = (int32)offset, mLength = (int32)length, mSource = source };
 	}
 
 	/// @brief Where a node appeared in the source.
-	/// @return False if the ID is invalid or no range was recorded (values added or merged in code).
+	/// @return False if the ID is invalid or no range was recorded (values added in code).
 	internal bool TryGetSourceRange(TomlNodeId nodeId, out TomlSourceRange range)
 	{
 		range = default;
@@ -562,8 +605,17 @@ internal class TomlDocumentMetadata
 		// Lines are 1-based, so an unset range has line 0
 		if (packed.mLine <= 0)
 			return false;
-		range = .(packed.mLine, packed.mColumn, packed.mOffset, packed.mLength);
+		StringView source = (packed.mSource >= 0) ? mSourceNames[packed.mSource] : default;
+		range = .(packed.mLine, packed.mColumn, packed.mOffset, packed.mLength, source);
 		return true;
+	}
+
+	/// @brief Copy a node's range from another sidecar (a merge), keeping which source it came from.
+	internal void CopySourceRange(TomlDocumentMetadata srcMeta, TomlNodeId srcId, TomlNodeId dstId)
+	{
+		if (!srcMeta.TryGetSourceRange(srcId, let range))
+			return;
+		SetSourceRange(dstId, range.mLine, range.mColumn, range.mOffset, range.mLength, AddSource(range.mSource));
 	}
 
 	/// @brief Add an original token copy and return a reference to it.

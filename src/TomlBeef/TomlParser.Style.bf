@@ -12,7 +12,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private void RecordSourceRange(TomlNodeId nodeId, int line, int column, int offset, int endOffset)
 	{
 		if (mMetadata != null)
-			mMetadata.SetSourceRange(nodeId, line, column, offset, Math.Max(endOffset - offset, 0));
+			mMetadata.SetSourceRange(nodeId, line, column, offset, Math.Max(endOffset - offset, 0), mSourceIndex);
 	}
 
 	/// Record PreserveStyle metadata for a parsed key/value: the original token for strings, the value
