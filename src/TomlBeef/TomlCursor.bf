@@ -228,13 +228,59 @@ internal struct TomlByteCursor : ITomlCursor
 		int start = mOffset;
 		int pos = start;
 		int end = mData.Length;
-		while (pos < end && (TomlChar.ScanClass(data[pos]) & stopMask) == 0)
-			pos++;
+		if (stopMask == TomlChar.StopComment || stopMask == TomlChar.StopBasicString || stopMask == TomlChar.StopLiteralString)
+			pos = ScanTextRun(data, pos, end, stopMask);
+		else
+		{
+			while (pos < end && (TomlChar.ScanClass(data[pos]) & stopMask) == 0)
+				pos++;
+		}
 		int count = pos - start;
 		if (appendTo != null && count > 0)
 			appendTo.Append((char8*)data + start, count);
 		mOffset = pos;
 		return count;
+	}
+
+	/// Word-at-a-time scan for comment and string text, whose runs stop only at control characters
+	/// other than tab, DEL, and for strings their quote and backslash. Eight bytes are tested at once
+	/// (as go-toml does): the word test flags any byte below 0x20 (so a tab too), DEL, or the extra
+	/// stop bytes. Only a flagged word is walked byte by byte, which either stops at a real stop byte
+	/// or steps past a tab and resumes. Bytes 0x80 and up are never stops: the input was checked as
+	/// UTF-8 before parsing.
+	/// @return The offset of the first stop byte, or `end`.
+	static int ScanTextRun(uint8* data, int start, int end, uint8 stopMask)
+	{
+		const uint64 ones = 0x0101010101010101UL;
+		const uint64 high = 0x8080808080808080UL;
+		// Up to two extra stop bytes; DEL stands in for "none" (it is tested anyway)
+		uint64 extra1 = ones * (stopMask == TomlChar.StopBasicString ? (uint64)'"' : stopMask == TomlChar.StopLiteralString ? (uint64)'\'' : 0x7F);
+		uint64 extra2 = ones * (stopMask == TomlChar.StopBasicString ? (uint64)'\\' : 0x7F);
+		int pos = start;
+		while (true)
+		{
+			while (pos + 8 <= end)
+			{
+				uint64 word = ?;
+				Internal.MemCpy(&word, data + pos, 8);
+				// (w - n*ones) & ~w has a byte's high bit set if the byte is below n (exact for n <= 128);
+				// with w ^ c it finds bytes equal to c
+				uint64 below = (word - 0x20 * ones) & ~word;
+				uint64 x1 = word ^ extra1;
+				uint64 x2 = word ^ extra2;
+				uint64 del = word ^ (0x7F * ones);
+				uint64 equal = ((x1 - ones) & ~x1) | ((x2 - ones) & ~x2) | ((del - ones) & ~del);
+				if (((below | equal) & high) != 0)
+					break;
+				pos += 8;
+			}
+			int limit = Math.Min(pos + 8, end);
+			while (pos < limit && (TomlChar.ScanClass(data[pos]) & stopMask) == 0)
+				pos++;
+			// Stopped at a stop byte, or reached the end; otherwise the word only held a tab
+			if (pos < limit || pos >= end)
+				return pos;
+		}
 	}
 
 	public void SkipNewline() mut

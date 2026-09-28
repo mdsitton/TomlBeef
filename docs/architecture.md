@@ -274,6 +274,14 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
     profile though untouched).
   - `TomlBufferedStreamCursor` still counts columns per byte: the start of the line may already
     have left its buffer.
+  - With columns gone from the scan, `ScanRun` tests comment and string text **eight bytes at a
+    time** (`ScanTextRun`, the go-toml technique). A word test flags any byte below 0x20, DEL, or
+    the string's quote and backslash. Only a flagged word is walked byte by byte, which either
+    stops or steps past a tab. Bytes 0x80 and up are never stops, since the input is UTF-8 checked
+    first. `ScanRun_WordAtATimeMatchesByteLoop` checks every byte value at every position against
+    the byte loop. Same-build A/B against the build before on-demand columns (MB/s, plain /
+    PreserveStyle): comment-only 1220 → 2900 / 533 → 680, commented config 397 → 547 / 222 → 257,
+    strings 397 → 508 / 256 → 270, mixed 88 → 93 / 51.5 → 54.
 - **`TomlBufferedStreamCursor`** uses a fixed buffer of `TomlReadConfig.StreamBufferBytes` bytes
   (default 8192, minimum 16 because the parser peeks a few bytes ahead; tests use 64 to force
   refills) plus a spill `String`.

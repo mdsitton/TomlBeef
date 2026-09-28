@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 289/289 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 289/289 pass |
-| `./test-leaks.sh` | 289/289 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 290/290 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 290/290 pass |
+| `./test-leaks.sh` | 290/290 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |

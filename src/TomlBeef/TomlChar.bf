@@ -6,7 +6,9 @@ namespace TomlBeef;
 internal static class TomlChar
 {
 	// Byte classes for ITomlCursor.ScanRun: a scan of kind X advances over bytes whose class has no X bit.
-	// Every class stops at '\r' and '\n', so a run never crosses a line and cursors only count columns.
+	// Every class stops at '\r' and '\n', so a run never crosses a line and cursors track no line breaks
+	// in it. TomlByteCursor.ScanTextRun tests the comment and string classes eight bytes at a time and
+	// must stay in step with them.
 	/// @brief Stops a basic-string run: '"', '\\', and control characters other than tab (incl. DEL).
 	public const uint8 StopBasicString = 1;
 	/// @brief Stops a literal-string run: '\'' and control characters other than tab (incl. DEL).

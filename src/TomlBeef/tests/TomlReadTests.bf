@@ -575,6 +575,47 @@ static class TomlReadTests
 	}
 
 	[Test]
+	public static void ScanRun_WordAtATimeMatchesByteLoop()
+	{
+		// TomlByteCursor scans comment and string text eight bytes at a time. Put every byte value at
+		// every position of two words, in runs of every length and with tabs mixed in, and check the
+		// scan stops exactly where the plain byte loop does.
+		uint8[?] masks = .(TomlChar.StopComment, TomlChar.StopBasicString, TomlChar.StopLiteralString);
+		uint8[24] buffer = ?;
+		for (let mask in masks)
+		{
+			for (int length = 0; length <= 17; length++)
+			{
+				for (int fill < 3)
+				{
+					for (int value < 256)
+					{
+						for (int at = 0; at <= length; at++)
+						{
+							// Filler: letters, letters with tabs, or UTF-8 continuation-style high bytes
+							for (int i < buffer.Count)
+								buffer[i] = fill == 0 ? (uint8)'a' : fill == 1 ? ((i % 3 == 0) ? (uint8)'\t' : (uint8)'b') : (uint8)(0x80 + i);
+							if (at < length)
+								buffer[at] = (uint8)value;
+							int expected = 0;
+							while (expected < length && (TomlChar.ScanClass(buffer[expected]) & mask) == 0)
+								expected++;
+
+							var cursor = TomlByteCursor(Span<uint8>(&buffer, length));
+							int scanned = cursor.ScanRun(mask, null);
+							if (scanned != expected)
+							{
+								Test.Assert(false, scope $"mask {mask} length {length} fill {fill} byte 0x{value:X2} at {at}: scanned {scanned}, expected {expected}");
+								return;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	[Test]
 	public static void Integers_FastPathBoundaries()
 	{
 		// Plain decimal integers take a one-pass fast path (sign plus up to 18 digits); everything
