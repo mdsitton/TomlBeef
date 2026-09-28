@@ -1,5 +1,6 @@
 using System;
 using TomlBeef;
+using internal TomlBeef;
 using static TomlBeef.TomlTestSupport;
 
 namespace TomlBeef;

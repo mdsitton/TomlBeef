@@ -46,16 +46,18 @@ public class TomlTable
 		mMetadataContext = null;
 	}
 
-	public TomlTableOrigin Origin
+	/// How the table came to exist; drives the parser's conflict rules and how the table is written.
+	internal TomlTableOrigin Origin
 	{
 		get => mOrigin;
-		internal set => mOrigin = value;
+		set => mOrigin = value;
 	}
 
-	public bool IsInlineSealed
+	/// An inline table (or a table inside one) that can no longer be extended.
+	internal bool IsInlineSealed
 	{
 		get => mIsInlineSealed;
-		internal set => mIsInlineSealed = value;
+		set => mIsInlineSealed = value;
 	}
 
 	/// @brief Metadata context for style-preserving mode. Null in normal mode.

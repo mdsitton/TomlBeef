@@ -4,7 +4,7 @@ using internal TomlBeef;
 namespace TomlBeef;
 
 /// Origin of a TOML table, used for conflict detection during parsing.
-public enum TomlTableOrigin : uint8
+internal enum TomlTableOrigin : uint8
 {
 	Root,
 	Implicit,
