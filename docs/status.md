@@ -58,7 +58,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Idea | Size |
 |----|------|------|
-| O8 | *Optional, perf.* Parsing is ~85 MB/s on the mixed bench and fastest in the comparison (`bench/compare/`, architecture.md "TomlTester") on every input except comment-heavy ones and small arrays, where glaze (and go-toml/toml-c on comments) lead; judged good enough (2026-09-28). Remaining ideas by profile: a faster comment skip when not capturing (bulk scan for `\n`), per-element overhead in arrays, multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
+| O8 | *Optional, perf.* Parsing is ~91 MB/s on the mixed bench and fastest on every input of the comparison (`bench/compare/`, architecture.md "TomlTester"), plain and style-preserving (2026-09-28). Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), per-element overhead in arrays, multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
 
 ## Suggested order
 

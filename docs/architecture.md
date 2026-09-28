@@ -744,32 +744,43 @@ headers ~64, dotted keys ~42, small arrays ~40. A one-pass fast path for plain d
 (`TryParsePlainInteger`: optional sign, 1–18 digits, no leading zero, so valid and unable to
 overflow) then let them skip the keyword, date and two-pass number checks. Everything else,
 including every invalid token, still takes the full parser. Same-build A/B against the pre-change
-build: ints 111 → 150 MB/s, small arrays 41 → 58, headers 64 → 74, dotted 47 → 52.
+build: ints 111 → 150 MB/s, small arrays 41 → 58, headers 64 → 74, dotted 47 → 52. Digit-first
+tokens also skip the `true`/`false`/`inf`/`nan` comparisons (keywords never start with a digit), and
+parsed date/times are built with internal `Validated` factories that skip the public constructors'
+Release-mode asserts (the parser has already checked `TomlDateRules`; Debug still asserts): dates
+~127 → ~131, floats ~85 → ~92. Array element lists start with an 8-slot buffer appended to the list
+object, one heap allocation per small array instead of three: small arrays ~59 → ~64. Allocating
+those lists in the document arena instead was tried and was 23% slower, because fresh arena pages
+per document take page faults that malloc's reused memory avoids.
   - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`). Each
     library parses the same generated inputs (2–9 MB, at most 1000 keys per table) into its own
     schema-less document, in one process per cell: one warm-up parse, then the average of up to 5
     parses within 3 s. C/C++ at `-O3` without `-march=native`, like TomlBeef's Release build.
     Versions: tomlc17 R260821, toml-c 6a38d40, toml11 v4.4.0, toml++ v3.4.0, glaze v9.0.0, Rust
     `toml` 1.1.6 / `toml_edit` 0.25.15, BurntSushi/toml v1.6.0, go-toml v2.4.3, Tomlyn 2.10.1.
-    MB/s, Linux x86-64, 2026-09-28; the last three columns keep comments and formatting:
+    MB/s, Linux x86-64, 2026-09-28, after the changes below; the last three columns keep comments
+    and formatting:
 
     | input | TomlBeef | tomlc17 | toml-c | toml11 | toml++ | glaze | toml (Rust) | BurntSushi | go-toml | Tomlyn | TomlBeef preserve | toml_edit | Tomlyn syntax |
     |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-    | mixed | 85.3 | 6.2 | 5.9 | 2.1 | 23.5 | FAIL | 30.9 | 10.5 | 2.1 | 16.7 | 51.6 | 27.2 | 4.3 |
-    | commented | 398.2 | 41.3 | 53.5 | 5.8 | 52.7 | 417.6 | 208.3 | 39.6 | 26.7 | 64.3 | 229.0 | 143.9 | 16.6 |
-    | comments | 1113.9 | 546.8 | 1230.2 | 12.4 | 64.3 | 2657.3 | 658.9 | 66.1 | 1912.3 | 110.0 | 535.2 | 635.9 | 62.9 |
-    | strings | 399.7 | 38.5 | 34.8 | 7.2 | 42.9 | 238.8 | 136.9 | 42.7 | 40.0 | 85.7 | 233.1 | 154.9 | 24.7 |
-    | ints | 113.2 | 10.2 | 8.4 | 1.8 | 23.1 | 65.9 | 34.4 | 14.3 | 8.4 | 31.2 | 82.4 | 39.6 | 5.8 |
-    | floats | 88.7 | 9.1 | 8.0 | 1.8 | 15.3 | 68.0 | 30.6 | 11.8 | 7.9 | 26.1 | 60.1 | 32.2 | 5.2 |
-    | dates | 118.5 | 14.3 | 11.9 | 2.6 | 27.3 | FAIL | 27.2 | 16.5 | 11.5 | 18.1 | 81.0 | 46.9 | 5.4 |
-    | arrays | 41.2 | 9.5 | 9.1 | 0.4 | 20.0 | 48.9 | 17.4 | 9.4 | 12.4 | 11.3 | 28.0 | 17.4 | 2.0 |
-    | headers | 64.7 | 7.9 | 11.6 | 1.3 | 20.5 | 38.5 | 16.4 | 8.3 | 0.2 | 15.1 | 50.7 | 19.3 | 3.3 |
-    | dotted | 48.2 | 4.6 | 2.5 | 1.7 | 17.5 | 33.7 | 14.1 | 6.4 | 0.2 | 12.9 | 36.5 | 13.0 | 3.3 |
+    | mixed | 90.7 | 6.2 | 6.0 | 2.1 | 23.5 | FAIL | 30.6 | 10.7 | 2.2 | 17.3 | 54.1 | 27.2 | 4.2 |
+    | commented | 534.2 | 44.2 | 55.3 | 5.8 | 53.1 | 420.1 | 204.9 | 41.4 | 27.2 | 66.7 | 238.8 | 142.6 | 17.4 |
+    | comments | 2754.3 | 555.8 | 1222.1 | 12.3 | 63.4 | 2580.0 | 653.7 | 65.4 | 2227.2 | 109.8 | 699.8 | 639.7 | 63.0 |
+    | strings | 490.9 | 38.5 | 34.6 | 7.0 | 44.8 | 246.4 | 136.5 | 41.6 | 40.2 | 82.0 | 265.1 | 150.4 | 24.8 |
+    | ints | 150.8 | 10.4 | 8.5 | 1.8 | 23.6 | 67.1 | 34.3 | 14.3 | 8.5 | 30.4 | 102.0 | 39.8 | 5.7 |
+    | floats | 87.4 | 9.0 | 8.1 | 1.8 | 14.6 | 67.2 | 31.2 | 11.9 | 8.0 | 26.1 | 59.5 | 31.7 | 5.2 |
+    | dates | 129.3 | 15.0 | 12.0 | 2.9 | 26.8 | FAIL | 26.9 | 16.5 | 11.5 | 18.1 | 85.1 | 47.5 | 5.5 |
+    | arrays | 63.8 | 9.6 | 9.2 | 0.5 | 19.7 | 51.3 | 17.3 | 10.0 | 12.2 | 11.4 | 34.4 | 17.5 | 2.1 |
+    | headers | 74.6 | 7.9 | 11.6 | 1.3 | 20.3 | 39.6 | 16.1 | 7.7 | 0.2 | 14.8 | 51.6 | 19.1 | 3.3 |
+    | dotted | 52.0 | 4.7 | 2.5 | 1.8 | 17.5 | 33.7 | 13.7 | 6.4 | 0.2 | 12.3 | 39.0 | 13.0 | 3.3 |
 
-    TomlBeef leads on every input except comment-heavy ones and small arrays. glaze, go-toml and
-    toml-c skip comments with bulk scans and keep nothing, so they are faster on comment-only input.
-    glaze also leads on `commented` and `arrays`. With formatting kept, `toml_edit` is ahead only
-    on comment-only input. Notes:
+    TomlBeef leads on every input in both groups. The first run of this comparison lost on
+    comment-heavy input (glaze 2657, go-toml 1912, toml-c 1230 vs 1114 MB/s; `toml_edit` 636 vs 535
+    preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41). Studying
+    those libraries led to the changes described under `TomlByteCursor` (columns on demand, eight
+    bytes at a time) and the integer, keyword/date and array-allocation changes below. glaze and
+    toml-c do not validate UTF-8 and glaze accepts some invalid TOML (see its notes); go-toml and
+    `toml_edit` validate fully. Notes:
     - glaze reads TOML into known C++ types. Its schema-less value is JSON-shaped, has no date/time,
       and fails on dates (FAIL). Reading into that value picks the type from the first byte, so a
       document starting with `[table]` is taken for an array; the harness reads into the generic
