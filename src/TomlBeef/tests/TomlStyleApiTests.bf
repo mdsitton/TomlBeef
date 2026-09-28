@@ -181,6 +181,88 @@ static class TomlStyleApiTests
 		AssertContains(output, "d = '''\nx'''");
 	}
 
+	/// Asserts `range` points at the `occurrence`-th match of `needle` in `input` (line/column/offset).
+	static void AssertRangeAt(TomlSourceRange range, StringView input, StringView needle, int occurrence = 0)
+	{
+		int offset = -1;
+		int from = 0;
+		for (int i = 0; i <= occurrence; i++)
+		{
+			offset = input.IndexOf(needle, from);
+			Test.Assert(offset >= 0, scope $"Test setup: '{needle}' not found");
+			from = offset + 1;
+		}
+		int line = 1;
+		int lineStart = 0;
+		for (int i = 0; i < offset; i++)
+		{
+			if (input[i] == '\n')
+			{
+				line++;
+				lineStart = i + 1;
+			}
+		}
+		let column = offset - lineStart + 1;
+		Test.Assert(range.mLine == line && range.mColumn == column && range.mOffset == offset,
+			scope $"'{needle}': expected {line}:{column} @{offset}, got {range.mLine}:{range.mColumn} @{range.mOffset}");
+	}
+
+	[Test]
+	public static void SourceRange_ReportsWhereValuesWereDefined()
+	{
+		let input = "title = \"x\"\n\n[server]\n  port = 8080\n  tags = [ \"a\",\n    \"b\" ]\n  inline = { k = 1, j = 2 }\n  a.b = true\n\n[[items]]\nn = 1\n\n[[items]]\nn = 2\n";
+		let doc = ReadPreserving(scope .(), input);
+
+		TomlSourceRange range;
+		Test.Assert(doc.TryGetSourceRange("title", out range));
+		AssertRangeAt(range, input, "title");
+		Test.Assert(range.mLength == "title = \"x\"".Length, scope $"Length spans the key/value, got {range.mLength}");
+
+		Test.Assert(doc.TryGetSourceRange("server", out range));
+		AssertRangeAt(range, input, "[server]");
+		Test.Assert(range.mLength == "[server]".Length);
+
+		Test.Assert(doc.TryGetSourceRange("server.port", out range));
+		AssertRangeAt(range, input, "port");
+		Test.Assert(range.mLength == "port = 8080".Length);
+
+		Test.Assert(doc.TryGetSourceRange("server.a.b", out range));
+		AssertRangeAt(range, input, "a.b");
+
+		Test.Assert(doc.TryGetTable("server.inline", var inlineTable) && inlineTable.TryGetSourceRange("j", out range));
+		AssertRangeAt(range, input, "j = 2");
+
+		Test.Assert(doc.TryGetArray("server.tags", var tags) && tags.TryGetSourceRange(1, out range));
+		AssertRangeAt(range, input, "\"b\"");
+
+		// An array of tables: the key reports its first header, each element its own
+		Test.Assert(doc.TryGetSourceRange("items", out range));
+		AssertRangeAt(range, input, "[[items]]", 0);
+		Test.Assert(doc.TryGetArray("items", var items) && items.TryGetSourceRange(1, out range));
+		AssertRangeAt(range, input, "[[items]]", 1);
+		Test.Assert(items.TryGetTable(1, var second) && second.TryGetSourceRange("n", out range));
+		AssertRangeAt(range, input, "n = 2");
+	}
+
+	[Test]
+	public static void SourceRange_UnknownForNewValuesAndWithoutMetadata()
+	{
+		let doc = ReadPreserving(scope .(), "a = 1\n");
+		doc.RootTable.SetInteger("added", 2);
+		TomlSourceRange range;
+		Test.Assert(!doc.TryGetSourceRange("added", out range), "Values added in code have no source position");
+		Test.Assert(!doc.TryGetSourceRange("missing", out range));
+		Test.Assert(!doc.TryGetSourceRange("a..b", out range));
+
+		var plain = scope TomlDocument();
+		if (plain.Read("a = 1") case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false);
+		}
+		Test.Assert(!plain.TryGetSourceRange("a", out range), "Positions are recorded only with PreserveStyle");
+	}
+
 	[Test]
 	public static void Style_IntegerBaseChangesOutput()
 	{

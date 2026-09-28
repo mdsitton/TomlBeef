@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 245/245 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 245/245 pass |
+| `beefbuild -test` (Debug checks) | 249/249 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 249/249 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -34,7 +34,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Ownership model | Document-owned arena; non-owning `TomlValue`; typed setters/getters are the public mutation API |
 | Path access | Dotted and bracketed-segment paths for getters and setters |
 | Resource limits | All `TomlReadConfig` limits enforced on every input path; documented in README |
-| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base |
+| Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments, string style, and integer base, and to query source positions |
 | Error reporting | Line, column, and byte offset for lexical, UTF-8, and semantic errors |
 
 ## Open items
@@ -49,10 +49,9 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| P2 | Intermediate tables created during a parse (by dotted keys, before the root's metadata context exists) get no metadata context, so keys added or edited inside them later are not dirty-tracked and get default styling. Output is still correct. Fix: attach the root context before parsing (changes node counts that several metadata tests assert) | S–M |
 | P3 | Style editing covers string style and integer base only. Possible additions: float style (decimal/scientific), date-time separator/`Z`, array layout (inline/multi-line), inline-table layout, key quoting; and comments on array elements (`TomlArray.SetComment(index, ...)`) | S–M |
 | P4 | *Optional.* "Nearby style" for new values: a new key could copy the format of its siblings (e.g. hex like its neighbours) instead of the document-wide default. New multi-line arrays always get a trailing comma rather than following the document's habit | S |
-| P5 | `TomlNodeStyle.mRange` source locations are never populated | S |
+| P5 | Source positions require `PreserveStyle`, which also copies tokens and formats. A lighter metadata mode that records only positions would suit read-only validation of large files | S–M |
 
 ### Streaming and I/O
 
@@ -88,10 +87,10 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | O4 | `doc["a.b"]` indexer on `TomlDocument` | S |
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
 | O6 | Split `TomlParser.bf` (~3000 lines) and `TomlWriter.bf` (~1500 lines) into smaller units | L |
-| O7 | Bind/type errors with source locations (depends on P5); metadata text arena instead of `List<String>` | L / S–M |
+| O7 | Bind/type errors that carry source locations automatically (building on `TryGetSourceRange`); metadata text arena instead of `List<String>` | L / S–M |
 
 ## Suggested order
 
-1. P2 (metadata for intermediate tables), P5 (source locations), then P3/P4 additions as needed.
-2. I1–I4 and A2, A5–A7 as needed.
+1. I1–I4 (streaming and writer output) and A2, A5–A7 (API) as needed.
+2. P3–P5 additions as needed.
 3. Optional items.

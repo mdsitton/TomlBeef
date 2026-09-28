@@ -277,6 +277,16 @@ if (doc.TryGetTable("server", var server))
 
 The same methods exist on `TomlTable` taking a key, along with `TryGetComment` and `TryGetTrailingComment` for reading comments back. Comment text is given without the `#` marker, one line per `\n`.
 
+A document read with `PreserveStyle` also knows where each value came from, which is handy for reporting validation errors against the file:
+
+```bf
+if (doc.TryGetInteger("server.port", var port) && port <= 0 &&
+    doc.TryGetSourceRange("server.port", var range))
+    Console.WriteLine($"config.toml:{range.mLine}:{range.mColumn}: port must be positive");
+```
+
+`TomlSourceRange` gives the 1-based line and column, byte offset, and length of the entry (from its key through its value; for a table, its `[header]`). `TomlTable.TryGetSourceRange(key)`, `TomlTable.TryGetHeaderSourceRange()` and `TomlArray.TryGetSourceRange(index)` do the same for tables, `[[array]]` elements, and array items. Values added or merged in code have no position.
+
 ### Building Values Programmatically
 
 ```bf

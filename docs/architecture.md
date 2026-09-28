@@ -392,7 +392,10 @@ the normal path. Output is appended to the caller's `String`, and writing never 
 
 The metadata is a **sidecar**, so normal mode pays nothing for it. `TomlDocumentMetadata` holds:
 
-- `TomlNodeStyle` records indexed by `TomlNodeId`. Each has a source range, an original-token
+- `TomlNodeStyle` records indexed by `TomlNodeId`. Each has a source range (start line, column and
+  offset of the key, header `[`, or array element, and the length through the value or header;
+  exposed through `TryGetSourceRange`/`TryGetHeaderSourceRange`, and left unset for values added or
+  merged in code), an original-token
   reference, dirty flags, and key-format and value-format references.
 - Owned copies of original string tokens (`mOriginalTokens`). **Source spans are never used to
   recover text**, because the input buffer or stream is gone after the parse.
@@ -417,7 +420,10 @@ Node identity is stored **beside the slots, not in `TomlValue`**. Each table and
 `TomlContainerMetadataContext` (only in PreserveStyle) that maps entry key or item index to a
 `TomlNodeId` and holds the container's own node ID. This keeps `TomlValue` small and lets style
 follow the slot or path. New entries inserted after the parse get node IDs automatically, and
-`Rename` moves the ID to the new key. Inline tables get their context as soon as the parser opens
+`Rename` moves the ID to the new key. The root table's context is attached before parsing, so every
+table created during the parse (including intermediate tables of dotted keys) inherits one. A
+`[header]` table is a single node: the parent's entry ID and the table's own context ID are the same
+(the resolver registers it before inserting). Inline tables get their context as soon as the parser opens
 them, so every field (including dotted sub-tables inside the braces) is captured like a top-level
 key/value (`CaptureValueMetadata`). `TomlTable.Clear()` keeps the table's own context (node ID,
 header comments) and only drops the entry mappings. The root table is not an entry of anything, so

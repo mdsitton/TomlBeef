@@ -270,7 +270,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(Error(.UnexpectedToken, "Expected ']'"));
 			mCursor.AdvanceByte();
 		}
-
+		int headerEnd = mCursor.Offset;
 
 		mCursor.SkipWhitespace();
 		if (!mCursor.IsEOF)
@@ -299,6 +299,8 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mPathResolver.EnterTable(path, &nodeId) case .Err(let tblErr))
 				return .Err(tblErr);
 		}
+		// The header's position was synced to the resolver at the top of this method
+		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, headerEnd);
 
 		// Attach pending leading comments and trailing comment to the table node
 		if (mMetadata != null && nodeId.IsValid)
@@ -372,6 +374,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		case .Ok(let val): value = val;
 		}
 
+		int valueEnd = mCursor.Offset;
 		// The resolver reports errors at the key start, synced at the top of this method
 		TomlNodeId nodeId = .Invalid;
 		if (mPathResolver.SetKeyValue(keyPath, value, &nodeId) case .Err(let insertErr))
@@ -379,6 +382,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			return .Err(insertErr);
 		}
+		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, valueEnd);
 
 		// Capture raw value token and format metadata. Slicing always releases the value mark.
 		if (capturingToken)
@@ -1611,13 +1615,18 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			var elemStart = TomlCursorMark();
 			if (mMetadata != null)
 				elemStart = mCursor.Mark();
+			let elemLine = mCursor.Line;
+			let elemColumn = mCursor.Column;
+			let elemOffset = mCursor.Offset;
 
+			int elemEnd = 0;
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
-				
+
 				return .Err(valErr);
 			case .Ok(let val):
+				elemEnd = mCursor.Offset;
 				Try!(CheckArrayItem(arr));
 				arr.Add(val);
 				// Capture metadata for this element
@@ -1629,6 +1638,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			TomlNodeId elemNodeId = .Invalid;
 			if (arr.MetadataContext != null)
 				arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out elemNodeId);
+			RecordSourceRange(elemNodeId, elemLine, elemColumn, elemOffset, elemEnd);
 
 			// Flush pending comments as leading comments for this element
 			if (arrayPendingComments != null && arrayPendingComments.Count > 0 && elemNodeId.IsValid)
@@ -1798,6 +1808,9 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		{
 			Try!(SkipInlineTableWs(pendingComments));
 
+			let fieldLine = mCursor.Line;
+			let fieldColumn = mCursor.Column;
+			let fieldOffset = mCursor.Offset;
 			// Key style only depends on the key's first byte
 			TomlKeyStyle keyStyle = .Bare;
 			if (mMetadata != null)
@@ -1861,6 +1874,7 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				if (target.MetadataContext != null)
 					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out fieldNodeId);
 				CaptureValueMetadata(fieldNodeId, val, rawToken, keyStyle, keyPath.Count > 1);
+				RecordSourceRange(fieldNodeId, fieldLine, fieldColumn, fieldOffset, mCursor.Offset);
 			}
 			FlushCommentsToLeading(pendingComments, fieldNodeId);
 
@@ -2074,6 +2088,17 @@ class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			break;
 		}
 		return .Ok;
+	}
+
+	/// Records where a node appeared in the source: its start (key, header `[`, or array element value)
+	/// and the length through the end of its value or header.
+	private void RecordSourceRange(TomlNodeId nodeId, int line, int column, int offset, int endOffset)
+	{
+		if (mMetadata == null || !nodeId.IsValid)
+			return;
+		let style = mMetadata.GetNodeStyle(nodeId);
+		if (style != null)
+			style.mRange = TomlSourceRange(line, column, offset, Math.Max(endOffset - offset, 0));
 	}
 
 	/// Record PreserveStyle metadata for a parsed key/value: the original token for strings, the value

@@ -1176,6 +1176,36 @@ static class TomlPreserveStyleMetadataTests
 	}
 
 	[Test]
+	public static void PreserveStyle_TablesCreatedByDottedKeysAreTracked()
+	{
+		let doc = ReadPreserveStyle(scope .(), "a.b.c = 0x10\n");
+		Test.Assert(doc.TryGetTable("a.b", var ab));
+		Test.Assert(ab.MetadataContext != null, "Intermediate dotted-key tables get a metadata context during the parse");
+
+		ab.SetInteger("d", 5);
+		Test.Assert(NodeIdFor(doc, "a.b.d").IsValid, "Keys added inside a dotted-key table get node IDs");
+		Test.Assert((doc.Metadata.GetNodeStyle(ab.MetadataContext.mNodeId).mDirtyFlags & .Children) != 0);
+		Test.Assert(doc.SetComment("a.b.d", "added"));
+
+		String output = scope String();
+		doc.Write(output);
+		Test.Assert(output == "a.b.c = 0x10\n# added\na.b.d = 5\n", scope $"Unexpected output:\n{output}");
+	}
+
+	[Test]
+	public static void PreserveStyle_HeaderTableIsOneNode()
+	{
+		// The parent's entry for a [header] table and the table's own context share one node ID
+		let doc = ReadPreserveStyle(scope .(), "[t]\nx = 1\n[a.b]\ny = 2\n[a]\nz = 3\n");
+		Test.Assert(doc.TryGetTable("t", var t));
+		Test.Assert(NodeIdFor(doc, "t") == t.MetadataContext.mNodeId);
+		Test.Assert(doc.TryGetTable("a", var a));
+		Test.Assert(NodeIdFor(doc, "a") == a.MetadataContext.mNodeId, "Re-opened implicit header table keeps one node");
+		Test.Assert(doc.TryGetTable("a.b", var ab));
+		Test.Assert(NodeIdFor(doc, "a.b") == ab.MetadataContext.mNodeId);
+	}
+
+	[Test]
 	public static void PreserveStyle_ArrayAddMarksChildrenDirtyAfterParse()
 	{
 		let doc = ReadPreserveStyle(scope .(), "arr = [1]");

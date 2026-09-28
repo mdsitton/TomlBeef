@@ -345,6 +345,30 @@ public class TomlArray
 		return mItems[index];
 	}
 
+	/// @brief Where the element at `index` appeared in the source: the start of the value, or of its
+	/// `[[header]]` for an array-of-tables element. Requires a document read with PreserveStyle.
+	/// @param index The element index.
+	/// @param range Receives the 1-based line and column, byte offset, and length.
+	/// @return True if a source position is known.
+	public bool TryGetSourceRange(int index, out TomlSourceRange range)
+	{
+		range = default;
+		if (index < 0 || index >= mItems.Count)
+			return false;
+		if (mItems[index] case .Table(let element) && element.Origin == .ArrayElement)
+			return element.TryGetHeaderSourceRange(out range);
+		if (mMetadataContext == null)
+			return false;
+		TomlNodeId nodeId;
+		if (!mMetadataContext.TryGetItemNodeId(index, out nodeId))
+			return false;
+		let style = mMetadataContext.mMetadata?.GetNodeStyle(nodeId);
+		if (style == null || style.mRange.mLine <= 0)
+			return false;
+		range = style.mRange;
+		return true;
+	}
+
 	/// @brief Read a String value at the given index.
 	/// @param index The element index.
 	/// @param value On success, the string value.

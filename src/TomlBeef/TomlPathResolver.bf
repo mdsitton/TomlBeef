@@ -246,16 +246,17 @@ class TomlPathResolver
 					existingTable.Origin = .ExplicitHeader;
 				}
 
-				mCurrentTable = existingTable;
-				// Allocate node ID for existing table if requested
+				// A header table is one node: its own context and the parent's entry share the ID. Reuse
+				// the ID the table already has (e.g. from being created implicitly by `[x.y.z]`).
 				if (mMetadata != null && outNodeId != null)
 				{
-					let nodeId = mMetadata.AllocateNodeId();
-					*outNodeId = nodeId;
 					let ctx = EnsureTableContext(existingTable);
-					if (ctx != null)
-						ctx.mNodeId = nodeId;
+					if (!ctx.mNodeId.IsValid)
+						ctx.mNodeId = mMetadata.AllocateNodeId();
+					*outNodeId = ctx.mNodeId;
+					EnsureTableContext(mCurrentTable).SetEntryNodeId(key, ctx.mNodeId);
 				}
+				mCurrentTable = existingTable;
 				return .Ok;
 			}
 			else if (existing case .Array(let arr))
@@ -276,23 +277,23 @@ class TomlPathResolver
 			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
 
 		Try!(CheckNodeCount());
-		TomlTable newTable = 
+		TomlTable newTable =
 			mStore.NewTable(origin, true);
 		TomlValue tableVal = TomlValue.Table(newTable);
 		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
-		mCurrentTable.Insert(key, tableVal);
-		mCurrentTable = newTable;
 
-		// Allocate node ID for new table if requested
+		// A header table is one node: register its ID as both the table's own and the parent's entry
+		// before inserting, so Insert neither allocates an entry ID nor binds a second context
 		if (mMetadata != null && outNodeId != null)
 		{
 			let nodeId = mMetadata.AllocateNodeId();
 			*outNodeId = nodeId;
-			let ctx = EnsureTableContext(newTable);
-			if (ctx != null)
-				ctx.mNodeId = nodeId;
+			newTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, nodeId, false);
+			EnsureTableContext(mCurrentTable).SetEntryNodeId(key, nodeId);
 		}
 
+		mCurrentTable.Insert(key, tableVal);
+		mCurrentTable = newTable;
 		return .Ok;
 	}
 

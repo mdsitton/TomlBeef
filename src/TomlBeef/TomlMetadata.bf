@@ -439,10 +439,14 @@ internal class TomlContainerMetadataContext
 		}
 	}
 
-	/// @brief Register a node ID for a table entry key. Copies the key.
+	/// @brief Register (or replace) the node ID for a table entry key. Copies the key when it is new.
 	internal void SetEntryNodeId(StringView key, TomlNodeId nodeId)
 	{
-		if (mEntryNodeIds != null)
+		if (mEntryNodeIds == null)
+			return;
+		if (mEntryNodeIds.TryGetAlt(key, let existingKey, let _))
+			mEntryNodeIds[existingKey] = nodeId;
+		else
 			mEntryNodeIds[new String(key)] = nodeId;
 	}
 

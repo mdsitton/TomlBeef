@@ -262,7 +262,10 @@ public class TomlDocument
 
 		TomlDocumentMetadata incomingMetadata = null;
 		if (config.MetadataMode == .PreserveStyle)
+		{
 			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
+		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 
 		let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
@@ -338,14 +341,16 @@ public class TomlDocument
 				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
 			let parser = scope TomlParserImpl<TCursor>(config, mStore, wantsMetadata ? mMetadata : null, limits);
 			mRootTable.mSuppressAutoDirty = true;
+			// Attach the root context before parsing so every table created during the parse (including
+			// intermediate tables of dotted keys) inherits a context and its keys get node IDs
+			if (wantsMetadata && mRootTable.MetadataContext == null)
+				mRootTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, .Invalid, false);
 			let resolver = scope TomlPathResolver(mRootTable, mMetadata, mStore, limits);
 			if (parser.Parse(cursor, resolver) case .Err(let parseErr))
 			{
 				Clear();
 				return .Err(parseErr);
 			}
-			if (wantsMetadata && mRootTable.MetadataContext == null)
-				mRootTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, .Invalid, false);
 			mRootTable.ClearAutoDirtySuppression();
 			return .Ok;
 		}
@@ -357,7 +362,10 @@ public class TomlDocument
 		incoming.mSuppressAutoDirty = true;
 		TomlDocumentMetadata incomingMetadata = null;
 		if (wantsMetadata)
+		{
 			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
+		}
 		defer { if (incomingMetadata != null) delete incomingMetadata; }
 		{
 			let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
@@ -592,6 +600,19 @@ public class TomlDocument
 		TomlTable parent;
 		StringView key;
 		return TryResolveForStyle(dottedPath, out parent, out key) && parent.SetIntegerBase(key, integerBase);
+	}
+
+	/// @brief Where the value at a dotted path appeared in the source. See TomlTable.TryGetSourceRange.
+	/// Example: report `port must be positive (line {range.mLine})`.
+	/// @param dottedPath The path of the value (bracketed segments allowed).
+	/// @param range Receives the 1-based line and column, byte offset, and length.
+	/// @return True if the path resolves and a source position is known (requires PreserveStyle).
+	public bool TryGetSourceRange(StringView dottedPath, out TomlSourceRange range)
+	{
+		range = default;
+		TomlTable parent;
+		StringView key;
+		return TryResolveForStyle(dottedPath, out parent, out key) && parent.TryGetSourceRange(key, out range);
 	}
 
 	private bool TryResolveForStyle(StringView dottedPath, out TomlTable parent, out StringView finalKey)

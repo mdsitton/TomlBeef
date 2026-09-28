@@ -833,6 +833,43 @@ public class TomlTable
 		return ApplyStyle(nodeId, .Integer(fmt));
 	}
 
+	/// @brief Where the value at `key` appeared in the source: the start of its key (or of its `[header]`
+	/// for a header table, or of the first `[[header]]` for an array of tables), and the length through
+	/// the end of the value or header. Useful for reporting validation errors against the file.
+	/// Requires a document read with PreserveStyle; values added or merged in code have no position.
+	/// @param key The key.
+	/// @param range Receives the 1-based line and column, byte offset, and length.
+	/// @return True if a source position is known.
+	public bool TryGetSourceRange(StringView key, out TomlSourceRange range)
+	{
+		range = default;
+		if (!TryGetValue(key, let val))
+			return false;
+		if (val case .Array(let arr) && !arr.IsStatic && arr.Count > 0 && arr.GetValueAt(0) case .Table(let first))
+			return first.TryGetHeaderSourceRange(out range);
+		return TryGetNodeRange(CommentNodeFor(key), out range);
+	}
+
+	/// @brief Where this table's own `[header]` or `[[header]]` line appeared in the source (for example an
+	/// array-of-tables element). Requires a document read with PreserveStyle.
+	/// @param range Receives the 1-based line and column, byte offset, and length of the header.
+	/// @return True if a source position is known.
+	public bool TryGetHeaderSourceRange(out TomlSourceRange range)
+	{
+		return TryGetNodeRange(mMetadataContext?.mNodeId ?? .Invalid, out range);
+	}
+
+	internal bool TryGetNodeRange(TomlNodeId nodeId, out TomlSourceRange range)
+	{
+		range = default;
+		let style = SidecarFor(nodeId)?.GetNodeStyle(nodeId);
+		// Lines are 1-based, so an unset range has line 0
+		if (style == null || style.mRange.mLine <= 0)
+			return false;
+		range = style.mRange;
+		return true;
+	}
+
 	/// The node that holds `key`'s entry style (value format, key format).
 	private TomlNodeId EntryNodeFor(StringView key)
 	{
