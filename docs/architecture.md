@@ -35,16 +35,22 @@ workspace startup project is `TomlTester/`.
 | `TomlDateTime.bf` | `TomlOffsetDateTime`, `TomlLocalDateTime`, `TomlLocalDate`, `TomlLocalTime`. Public fields; constructors assert field ranges |
 | `TomlCursor.bf` | `ITomlCursor` interface, `TomlCursorMark`, and `TomlByteCursor` (zero-copy over contiguous bytes) |
 | `TomlBufferedStreamCursor.bf` | `TomlBufferedStreamCursor` (fixed buffer, nested marks, spill) and `TomlStreamState` (incremental UTF-8 validation, I/O and size-limit flags) |
-| `TomlParser.bf` | `TomlParserImpl<TCursor>`: recursive-descent parser, version gates, and PreserveStyle capture (tokens, formats, comments, document style inference) |
+| `TomlParser.bf` | `TomlParserImpl<TCursor>`: fields, `Parse`, document loop, `[header]`s, key/value statements, key paths, whitespace skipping, error and limit helpers. The class is split across files with `extension TomlParserImpl<TCursor>`: |
+| `TomlParser.Values.bf` | value dispatch, strings and escapes, booleans, bare tokens, numbers |
+| `TomlParser.DateTime.bf` | offset/local date-times, dates and times |
+| `TomlParser.Containers.bf` | arrays and inline tables |
+| `TomlParser.Comments.bf` | comment skipping, capture, and attachment to nodes |
+| `TomlParser.Style.bf` | PreserveStyle capture: source ranges, value/key/container formats, style counts, document style inference |
 | `TomlPathResolver.bf` | Table-tree navigation for headers and dotted keys, implicit table creation, all structural conflict rules |
 | `TomlResourceLimitState.bf` | Per-read limit counters and `Check*` helpers shared by the parser and the resolver |
 | `TomlMetadataTransfer.bf` | Carries PreserveStyle metadata across a merge: attaches node IDs to copied subtrees and copies tokens, formats and comments between sidecars |
 | `TomlMetadata.bf` | The PreserveStyle sidecar: `TomlMetadataMode`, node IDs, `TomlNodeStyle`, dirty flags, comment sets, format structs, `TomlContainerMetadataContext`, `TomlDocumentMetadata` |
-| `TomlWriter.bf` | `TomlWriterImpl`: the normal writer and the preserving writer |
-| `TomlChar.bf` | Character classes, UTF-8 decode/encode, and whole-buffer `ValidateUtf8` (with BOM handling) |
+| `TomlWriter.bf` | `TomlWriterImpl`: entry point and the normal (canonical) writer, plus shared value, string, date and key helpers. Split with `extension TomlWriterImpl`: |
+| `TomlWriter.Preserving.bf` | the PreserveStyle writer: table walk, token reuse, per-node styles, dotted keys, arrays and inline tables, comments and blank lines |
+| `TomlWriter.Formats.bf` | regenerating numbers and date/times from captured formats |
+| `TomlChar.bf` | Internal character classes, UTF-8 decode/encode, and whole-buffer `ValidateUtf8` (with BOM handling) |
 | `TomlError.bf` | `TomlErrorKind` and `TomlParseError` |
 | `TomlVersion.bf` | `TomlVersion { V1_0, V1_1 }` |
-| `TomlMixins.bf` | Placeholder for container-cleanup mixins (currently empty) |
 
 Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `tests/valid` and
 `tests/invalid`, the CLI is `TomlTester/src/Program.bf`, and the acceptance scripts are

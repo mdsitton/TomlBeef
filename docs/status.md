@@ -58,7 +58,8 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Gap | Size |
 |----|-----|------|
 | I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
-| I3 | No writer sinks: no `Write(Stream)`/`WriteBytes`; `WriteFile` builds the whole output `String` first | M |
+| I3 | *Deferred (2026-09-27).* No streaming writer: `WriteFile` builds the whole output `String` first. A `Write(Stream)` that also builds a full string adds nothing, so this is only worth doing as a real chunked output sink (every writer helper takes an output object instead of `String`; tail checks read a kept tail). Revisit if large outputs matter | M–L |
+| A8 | *API decision.* `doc.Metadata` is public, which makes the whole sidecar's types public (`TomlDocumentMetadata`, `TomlNodeStyle`, node/style refs, format structs). The supported surface is now the comment/style/source-range methods plus `TomlStringStyle`, `TomlIntegerBase`, `TomlSourceRange`, `TomlMetadataMode`; the rest could become internal (tests use `using internal`) | S |
 | I4 | *Optional.* Parse throughput (~59 MB/s bytes, ~51 MB/s stream; `TomlTester -bench`) is limited by the parser handling one byte per call. Cursor methods that scan runs (whitespace, comments, bare keys, escape-free string text) directly over the buffer would speed up both paths; it touches the parser's hottest loops | M |
 
 ### API surface
@@ -81,7 +82,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | O3 | Plain-mode writer choosing literal strings for backslash- or quote-heavy values | S |
 | O4 | `doc["a.b"]` indexer on `TomlDocument` | S |
 | O5 | Single-pass UTF-8 validation for string/byte input (currently a separate `ValidateUtf8` pass) | M |
-| O6 | Split `TomlParser.bf` (~3000 lines) and `TomlWriter.bf` (~1500 lines) into smaller units | L |
 | O7 | Bind/type errors that carry source locations automatically (building on `TryGetSourceRange`); metadata text arena instead of `List<String>` | L / S–M |
 
 ## Suggested order

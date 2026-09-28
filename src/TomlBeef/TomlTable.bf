@@ -309,8 +309,8 @@ public class TomlTable
 		return arr;
 	}
 
-	/// @brief Check if entries in this table prefer dotted-key emission.
-	public bool HasDottedPreference(TomlDocumentMetadata metadata)
+	/// @brief Check if this table should be written as dotted keys rather than a [header] (PreserveStyle writer).
+	internal bool HasDottedPreference(TomlDocumentMetadata metadata)
 	{
 		// A table created by a dotted key (`a.b.c = 1` creates `a` and `b`) had no header in the source.
 		// Checked first: intermediate tables created during the parse may have no metadata context.

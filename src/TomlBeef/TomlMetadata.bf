@@ -595,14 +595,6 @@ public class TomlDocumentMetadata
 		return TomlStyleRef(index);
 	}
 
-	/// @brief Mark a node dirty with the given flags.
-	internal void MarkDirty(TomlNodeId nodeId, TomlDirtyFlags flags)
-	{
-		let style = GetNodeStyle(nodeId);
-		if (style != null)
-			style.mDirtyFlags |= flags;
-	}
-
 	/// @brief Get or create the comment set for a node. Allocates the comment list entry if needed.
 	/// @param nodeId The node to get comments for.
 	/// @return The comment set, or null if nodeId is invalid.

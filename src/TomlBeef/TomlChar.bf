@@ -3,7 +3,7 @@ using System;
 namespace TomlBeef;
 
 /// Character classification and UTF-8 encoding/decoding helpers for the TOML parser.
-public static class TomlChar
+internal static class TomlChar
 {
 	[Inline]
 	public static bool IsBareKeyChar(char8 c)
