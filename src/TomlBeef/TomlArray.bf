@@ -336,6 +336,15 @@ public class TomlArray
 
 	public int Count => mItems.Count;
 
+	/// @brief Iterate the elements in order: `for (let value in array) { if (value.IsTable) ... }`.
+	/// Each value borrows document-owned storage. Assigning elements while iterating is fine; adding or
+	/// removing elements is not (it is a fatal error).
+	/// @return An enumerator of TomlValue.
+	public TomlArrayEnumerator GetEnumerator()
+	{
+		return .(this);
+	}
+
 	/// @brief Get the value at the given index, for reading elements of any type (e.g. when walking a document).
 	/// The returned TomlValue borrows document-owned storage. Prefer the typed TryGet* methods when the type is known.
 	/// @param index The element index.
@@ -593,5 +602,31 @@ public class TomlArray
 			if (style != null)
 				style.mDirtyFlags |= .Children;
 		}
+	}
+}
+
+/// @brief Enumerates a TomlArray's elements in order (see TomlArray.GetEnumerator).
+public struct TomlArrayEnumerator : IEnumerator<TomlValue>
+{
+	private TomlArray mArray;
+	private int mIndex;
+	private int mCount;
+
+	internal this(TomlArray array)
+	{
+		mArray = array;
+		mIndex = 0;
+		mCount = array.Count;
+	}
+
+	/// @brief Advance to the next element.
+	/// @return The next element, or .Err when the iteration is finished.
+	public Result<TomlValue> GetNext() mut
+	{
+		if (mArray.Count != mCount)
+			Runtime.FatalError("TomlArray modified (elements added or removed) during iteration");
+		if (mIndex >= mCount)
+			return .Err;
+		return mArray.GetValueAt(mIndex++);
 	}
 }

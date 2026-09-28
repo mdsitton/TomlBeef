@@ -251,6 +251,56 @@ static class TomlMutationApiTests
 	}
 
 	[Test]
+	public static void Iteration_TablesAndArraysWithForeach()
+	{
+		var doc = scope TomlDocument();
+		if (doc.Read("b = 1\na = \"x\"\n[t]\nk = 2\n[[p]]\nn = 1\n[[p]]\nn = 2\n") case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+
+		// Entries come in insertion order, with typed readers and the raw value
+		String keys = scope String();
+		int tables = 0;
+		for (let entry in doc.RootTable)
+		{
+			keys.Append(entry.Key);
+			keys.Append(' ');
+			if (entry.GetValue().IsTable)
+				tables++;
+		}
+		Test.Assert(keys == "b a t p ", scope $"Got '{keys}'");
+		Test.Assert(tables == 1);
+
+		// Assigning values while iterating is allowed
+		for (var entry in doc.RootTable)
+		{
+			if (entry.TryGetInteger(let n))
+				entry.Value = n * 10;
+		}
+		Test.Assert(doc.TryGetInteger("b", var b) && b == 10);
+
+		// Arrays yield their elements; array-of-tables elements are tables
+		Test.Assert(doc.TryGetArray("p", var p));
+		int64 sum = 0;
+		for (let element in p)
+		{
+			if (element case .Table(let tbl) && tbl.TryGetInteger("n", let n))
+				sum += n;
+		}
+		Test.Assert(sum == 3);
+
+		// An empty table or array iterates zero times
+		int count = 0;
+		for (let entry in doc.AddTable("empty"))
+			count++;
+		for (let element in doc.AddArray("none"))
+			count++;
+		Test.Assert(count == 0);
+	}
+
+	[Test]
 	public static void Array_EmptiedArrayOfTablesWrittenAsEmptyArray()
 	{
 		for (let mode in TomlMetadataMode[](.None, .PreserveStyle))

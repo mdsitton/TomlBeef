@@ -217,28 +217,33 @@ value.AsLocalDate       value.AsLocalTime
 ### Iterating Tables
 
 ```bf
-// Entry proxy — typed access without raw TomlValue
-for (int i = 0; i < table.Count; i++)
+// Entries come in insertion order as TomlTableEntry proxies
+for (let entry in table)
 {
-    var entry = table[i];
     Console.WriteLine(entry.Key);
-
-    StringView s = ?;
-    if (entry.TryGetString(out s))
+    if (entry.TryGetString(let s))
         Console.WriteLine(s);
+    else if (entry.GetValue().IsTable)
+        Console.WriteLine("  (sub-table)");
 }
 ```
+
+Assigning values (`entry.Value = 42`) and renaming keys are fine while iterating; adding or removing keys is a fatal error. `table[i]` gives the same proxy by index.
 
 ### Iterating Arrays
 
 ```bf
-// Typed readers — no raw TomlValue needed:
-StringView s = ?;
-if (arr.TryGetString(0, out s)) { }
+for (let value in arr)
+{
+    if (value.TryGetInteger(let n)) { /* ... */ }
+    else if (value case .Table(let element)) { /* array-of-tables element */ }
+}
 
-int64 n = ?;
-if (arr.TryGetInteger(1, out n)) { }
+// Or typed readers by index:
+if (arr.TryGetString(0, let s)) { }
 ```
+
+Values yielded while iterating are borrowed from the document (valid until it is cleared).
 
 ### Writing TOML
 

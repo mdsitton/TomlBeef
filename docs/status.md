@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 249/249 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 249/249 pass |
+| `beefbuild -test` (Debug checks) | 250/250 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 250/250 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -68,7 +68,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|-----|------|
 | A2 | No public cross-document copy (`CloneInto(TomlDocument)` or similar); only internal `CloneInto(store)` and `TomlTable.MergeFrom`. Implement or declare out of scope | M |
 | A5 | `DefaultReadConfig`/`DefaultWriteConfig` are global mutable statics; consider per-document defaults | S–M |
-| A6 | Neither tables nor arrays have an enumerator; walking a document means index loops over `Count` with `GetKeyAt`/`GetValueAt` | S |
 | A7 | `TomlTester` reads all stdin into memory and exposes no limit flags | S |
 
 ### Tooling
@@ -91,6 +90,6 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 ## Suggested order
 
-1. I1–I4 (streaming and writer output) and A2, A5–A7 (API) as needed.
+1. I1–I4 (streaming and writer output) and A2, A5, A7 (API) as needed.
 2. P3–P5 additions as needed.
 3. Optional items.

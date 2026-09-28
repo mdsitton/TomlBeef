@@ -93,6 +93,15 @@ public class TomlTable
 		get => TomlTableEntry(this, index);
 	}
 
+	/// @brief Iterate the entries in insertion order: `for (let entry in table) { entry.Key ... }`.
+	/// Assigning values and renaming keys while iterating is fine; adding or removing keys is not
+	/// (it is a fatal error, as it would skip or repeat entries).
+	/// @return An enumerator of TomlTableEntry.
+	public TomlTableEnumerator GetEnumerator()
+	{
+		return .(this);
+	}
+
 	public bool ContainsKey(StringView key)
 	{
 		if (mEntries != null)
@@ -1099,6 +1108,14 @@ public struct TomlTableEntry
 	/// @brief The entry's key.
 	public StringView Key => mTable.GetKeyAt(mIndex);
 
+	/// @brief The entry's value, of any type (check it with IsString, IsTable, ...). The value borrows
+	/// document-owned storage: valid until the document is cleared. Prefer the typed TryGet* readers.
+	/// @return The entry value.
+	public TomlValue GetValue()
+	{
+		return mTable.GetValueAt(mIndex);
+	}
+
 	// ---- Typed readers ----
 
 	/// @brief Read the entry value as a string.
@@ -1223,5 +1240,31 @@ public struct TomlTableEntry
 	public void Remove()
 	{
 		mTable.RemoveAt(mIndex);
+	}
+}
+
+/// @brief Enumerates a TomlTable's entries in insertion order (see TomlTable.GetEnumerator).
+public struct TomlTableEnumerator : IEnumerator<TomlTableEntry>
+{
+	private TomlTable mTable;
+	private int mIndex;
+	private int mCount;
+
+	internal this(TomlTable table)
+	{
+		mTable = table;
+		mIndex = 0;
+		mCount = table.Count;
+	}
+
+	/// @brief Advance to the next entry.
+	/// @return The next entry, or .Err when the iteration is finished.
+	public Result<TomlTableEntry> GetNext() mut
+	{
+		if (mTable.Count != mCount)
+			Runtime.FatalError("TomlTable modified (keys added or removed) during iteration");
+		if (mIndex >= mCount)
+			return .Err;
+		return TomlTableEntry(mTable, mIndex++);
 	}
 }

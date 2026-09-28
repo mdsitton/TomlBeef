@@ -25,12 +25,14 @@ class TomlSerializer
 			return;
 		}
 
-		for (int i = 0; i < tbl.Count; i++)
+		bool first = true;
+		for (let entry in tbl)
 		{
-			if (i > 0) outStr.Append(',');
-			WriteString(tbl.GetKeyAt(i), outStr);
+			if (!first) outStr.Append(',');
+			first = false;
+			WriteString(entry.Key, outStr);
 			outStr.Append(':');
-			SerializeValue(tbl.GetValueAt(i), outStr);
+			SerializeValue(entry.GetValue(), outStr);
 		}
 
 		outStr.Append('}');
@@ -139,10 +141,12 @@ class TomlSerializer
 		outStr.Append('[');
 		if (arr != null)
 		{
-			for (int i = 0; i < arr.Count; i++)
+			bool first = true;
+			for (let element in arr)
 			{
-				if (i > 0) outStr.Append(',');
-				SerializeValue(arr.GetValueAt(i), outStr);
+				if (!first) outStr.Append(',');
+				first = false;
+				SerializeValue(element, outStr);
 			}
 		}
 		outStr.Append(']');

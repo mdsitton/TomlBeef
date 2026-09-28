@@ -122,7 +122,11 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 - `table[i]` returns a `TomlTableEntry` struct proxy (table plus index). It provides `Key`, typed
   `TryGet*`, `Value = <scalar>` assignment, `SetTable()`/`SetArray()` (replace with a new empty
   container), `Rename(newKey)` (keeps the position and the metadata node ID; fails with
-  `DuplicateKey` on a collision) and `Remove()`.
+  `DuplicateKey` on a collision), `Remove()`, and `GetValue()` (the borrowed `TomlValue`).
+- `for (let entry in table)` yields those proxies in insertion order (`TomlTableEnumerator`) and
+  `for (let value in array)` yields borrowed `TomlValue`s (`TomlArrayEnumerator`). Assignments and
+  renames during iteration are fine; adding or removing keys/elements is a fatal error because the
+  index-based enumerators would skip or repeat entries.
 - `TomlArray` provides typed `Add*`, `Add(TomlInputValue)`, `AddTable()`, `AddArray()`, index
   assignment `arr[i] = <scalar>`, `SetTable(i)`/`SetArray(i)`, `RemoveAt`, `Clear`, typed
   `TryGet*(index, out v)`, and `IsStatic` (true for `[...]` arrays, false for `[[...]]`
