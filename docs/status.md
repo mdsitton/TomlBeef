@@ -10,8 +10,8 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 252/252 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 252/252 pass |
+| `beefbuild -test` (Debug checks) | 253/253 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 253/253 pass |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -57,8 +57,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Gap | Size |
 |----|-----|------|
-| I1 | No streaming option for files: `ReadFile` loads the whole file (then parses the bytes directly). A `ReadFile` mode that wraps a `FileStream` in `Read(Stream)` would bound memory for large files | S |
-| I2 | Stream buffer is fixed at 8 KiB: no growth policy, no config for buffer size, no `MaxTokenBytes`/`MaxKeys` limits | M |
+| I2 | *Optional.* No `MaxTokenBytes` limit: a token longer than the stream buffer is accumulated in the spill string, bounded only by `MaxInputBytes` / `MaxStringBytes` | S |
 | I3 | No writer sinks: no `Write(Stream)`/`WriteBytes`; `WriteFile` builds the whole output `String` first | M |
 | I4 | No benchmarks, so byte-cursor performance and generic-parser code size are unmeasured | S |
 

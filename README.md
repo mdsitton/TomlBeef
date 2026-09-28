@@ -87,6 +87,8 @@ if (doc.Read(input, config) case .Err(let err)) { defer err.Dispose(); /* ... */
 
 A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set*`/`Add*`.
 
+For large files, set `StreamBufferBytes` (e.g. `65536`): `Read(Stream)` uses a buffer of that size, and `ReadFile` then streams the file through it instead of loading it whole.
+
 ### Reading Values
 
 **Path-based lookup** — dotted keys with bracket support for segments containing dots:

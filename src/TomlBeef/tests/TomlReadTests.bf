@@ -346,6 +346,17 @@ static class TomlReadTests
 		if (merge.ReadFile("tests/does-not-exist.toml", .() { Mode = .Merge }) case .Err(let e2))
 			e2.Dispose();
 		Test.Assert(merge.TryGetInteger("old", var old) && old == 1, "A failed Merge read leaves the document unchanged");
+
+		// The streamed file path reports the same error
+		var streamed = scope TomlDocument();
+		switch (streamed.ReadFile("tests/does-not-exist.toml", .() { StreamBufferBytes = 256 }))
+		{
+		case .Ok:
+			Test.Assert(false, "Expected IoError for a missing file (streamed)");
+		case .Err(let e3):
+			defer e3.Dispose();
+			Test.Assert(e3.mKind == .IoError);
+		}
 	}
 
 	// ================================================================

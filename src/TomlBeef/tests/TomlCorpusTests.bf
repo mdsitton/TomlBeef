@@ -38,13 +38,15 @@ static class TomlCorpusTests
 			let fromString = scope TomlDocument();
 			let fromBytes = scope TomlDocument();
 			let fromStream = scope TomlDocument();
+			let fromFileStreamed = scope TomlDocument();
 			let ms = scope MemoryStream(data, false);
 			let results = scope Result<void, TomlParseError>[](
 				fromString.Read(text),
 				fromBytes.ReadBytes(Span<uint8>(data.Ptr, data.Count)),
-				fromStream.Read(ms));
-			let pathNames = scope String[]("Read(string)", "ReadBytes", "Read(Stream)");
-			let docs = scope TomlDocument[](fromString, fromBytes, fromStream);
+				fromStream.Read(ms),
+				fromFileStreamed.ReadFile(path, .() { StreamBufferBytes = 64 }));
+			let pathNames = scope String[]("Read(string)", "ReadBytes", "Read(Stream)", "ReadFile(streamed)");
+			let docs = scope TomlDocument[](fromString, fromBytes, fromStream, fromFileStreamed);
 			for (int i < results.Count)
 			{
 				if (results[i] case .Err(let e))
@@ -108,12 +110,9 @@ static class TomlCorpusTests
 	{
 		let validDir = scope $"{TestBaseDir}/valid";
 		Test.Assert(Directory.Exists(validDir), scope $"Test directory not found: {validDir}");
-		let savedBufferBytes = TomlDocument.sStreamBufferBytes;
-		TomlDocument.sStreamBufferBytes = 64;
-		defer { TomlDocument.sStreamBufferBytes = savedBufferBytes; }
-
 		var config = TomlReadConfig();
 		config.MetadataMode = .PreserveStyle;
+		config.StreamBufferBytes = 64;
 		int compared = 0;
 		WalkTomlFiles(validDir, null, scope [&] (path) =>
 		{

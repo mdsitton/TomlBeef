@@ -278,6 +278,23 @@ static class TomlStreamTests
 	}
 
 	[Test]
+	public static void Stream_TinyConfiguredBufferIsRaisedToMinimum()
+	{
+		// A 1-byte buffer would break the parser's lookahead; it is raised to the minimum
+		List<uint8> bytes = scope List<uint8>();
+		AddAscii(bytes, "s = \"\"\"long enough to need many refills\"\"\"\nd = 1979-05-27T07:32:00Z\n");
+		let ms = scope MemoryStream(bytes, false);
+		var doc = scope TomlDocument();
+		if (doc.Read(ms, .() { StreamBufferBytes = 1 }) case .Err(let e))
+		{
+			defer e.Dispose();
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}");
+		}
+		Test.Assert(doc.TryGetString("s", var s) && s == "long enough to need many refills");
+		Test.Assert(doc.TryGetOffsetDateTime("d", var d) && d.mYear == 1979);
+	}
+
+	[Test]
 	public static void Stream_LongBareValueCrossesBufferBoundary()
 	{
 		List<uint8> bytes = scope List<uint8>();

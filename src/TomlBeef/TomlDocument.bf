@@ -55,6 +55,12 @@ public struct TomlReadConfig
 
 	/// @brief Maximum total value nodes (scalars + tables + arrays). 0 = unlimited.
 	public int MaxNodes = 0;
+
+	/// @brief Buffer size in bytes for Read(Stream). 0 = default (8 KiB); values below 16 are raised
+	/// to 16. Setting it also makes ReadFile stream the file through a buffer of this size instead of
+	/// loading it whole, bounding memory for large files (the parsed document still grows with the
+	/// content). Tokens longer than the buffer are handled, at the cost of an extra copy.
+	public int StreamBufferBytes = 0;
 }
 
 /// Configuration for writing a document to a TOML string.
@@ -75,8 +81,10 @@ public class TomlDocument
 	/// config: `doc.WriteConfig.Version = .V1_0;`.
 	public TomlWriteConfig WriteConfig = .();
 
-	/// @brief Stream read buffer size in bytes. Internal so tests can force frequent refills.
-	internal static int sStreamBufferBytes = 8192;
+	/// Default stream buffer size when TomlReadConfig.StreamBufferBytes is 0.
+	const int DefaultStreamBufferBytes = 8192;
+	/// The parser peeks a few bytes ahead, so the buffer must hold at least this many.
+	const int MinStreamBufferBytes = 16;
 
 	private TomlDocumentStore mStore ~ delete _;
 	private TomlTable mRootTable; // borrowed from mStore.RootTable
@@ -182,7 +190,8 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> Read(Stream stream, TomlReadConfig config)
 	{
-		uint8[] buffer = new uint8[sStreamBufferBytes];
+		int bufferBytes = config.StreamBufferBytes > 0 ? Math.Max(config.StreamBufferBytes, MinStreamBufferBytes) : DefaultStreamBufferBytes;
+		uint8[] buffer = new uint8[bufferBytes];
 		defer delete buffer;
 		String spill = new String();
 		defer delete spill;
@@ -934,6 +943,15 @@ public class TomlDocument
 	/// @return .Ok on success, or .Err on file or parse error. Replace failures leave this document empty; Merge failures leave existing content unchanged.
 	public Result<void, TomlParseError> ReadFile(StringView path, TomlReadConfig config)
 	{
+		// With an explicit stream buffer, stream the file instead of loading it whole
+		if (config.StreamBufferBytes > 0)
+		{
+			let file = scope FileStream();
+			if (file.Open(path, .Read, .Read) case .Err)
+				return ReadFailure(TomlParseError(.IoError, scope $"Cannot read file: {path}", 0, 0, 0), config);
+			return Read(file, config);
+		}
+
 		// Parse the loaded bytes directly; no second copy into a String
 		let data = scope List<uint8>();
 		if (File.ReadAll(path, data) case .Err)

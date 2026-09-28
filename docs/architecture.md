@@ -66,7 +66,9 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 - Overloads without a config use the document's own `ReadConfig` / `WriteConfig` fields (there is no
   process-global default, so documents on different threads never share settings).
 - `ReadFile` loads the whole file (`File.ReadAll`) and parses the bytes with `ReadBytes`, without a
-  second copy. Any BOM goes through the normal BOM rules; a missing or unreadable file is `IoError`.
+  second copy. With `TomlReadConfig.StreamBufferBytes` set it instead opens a `FileStream` and uses
+  `Read(Stream)`, so input memory stays bounded by the buffer. Any BOM goes through the normal BOM
+  rules; a missing or unreadable file is `IoError`.
 - `Get`, `GetPath`, `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
   `TomlArray.GetValueAt` return a borrowed `TomlValue` of any type, for generic walking (the
   `TomlTester` serializer uses them). Typed `TryGet*` accessors are preferred when the type is known.
@@ -222,8 +224,9 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
   the shared driver.
 - **`TomlByteCursor`** wraps a `Span<uint8>` and is zero-copy. `Slice` returns a view into the
   caller's input, and marks cost nothing.
-- **`TomlBufferedStreamCursor`** uses a fixed buffer of `TomlDocument.sStreamBufferBytes` bytes
-  (internal, 8192; tests lower it to force refills) plus a spill `String`.
+- **`TomlBufferedStreamCursor`** uses a fixed buffer of `TomlReadConfig.StreamBufferBytes` bytes
+  (default 8192, minimum 16 because the parser peeks a few bytes ahead; tests use 64 to force
+  refills) plus a spill `String`.
   - `mMarkDepth` counts active marks. `mRetainStart` is the absolute offset of the **outermost**
     mark. While any mark is active, bytes from `mRetainStart` onward are retained.
   - On refill, `CompactForRefill` shifts the retained bytes to the front of the buffer. If the
