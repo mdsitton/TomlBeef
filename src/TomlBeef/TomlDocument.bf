@@ -95,9 +95,14 @@ public class TomlDocument
 	/// @brief The document's root table (read-only). Use Set, AddTable and AddArray to modify content.
 	public TomlTable RootTable => mRootTable;
 
-	/// @brief True when the document carries style metadata (it was last read with
-	/// MetadataMode = PreserveStyle). Comment and style setters only work in this mode.
-	public bool PreservesStyle => mMetadata != null;
+	/// @brief True when the document carries style metadata (it was read with MetadataMode =
+	/// PreserveStyle). Comment and style setters only work in this mode, and only then is the
+	/// original formatting written back.
+	public bool PreservesStyle => mMetadata != null && mMetadata.CapturesStyle;
+
+	/// @brief True when the document records source positions (it was read with MetadataMode =
+	/// Positions or PreserveStyle), so TryGetSourceRange can answer for parsed values.
+	public bool HasSourcePositions => mMetadata != null;
 
 	/// @brief Style metadata sidecar, or null if MetadataMode is None.
 	internal TomlDocumentMetadata Metadata => mMetadata;
@@ -313,7 +318,7 @@ public class TomlDocument
 		incoming.mSuppressAutoDirty = true;
 
 		TomlDocumentMetadata incomingMetadata = null;
-		if (config.MetadataMode == .PreserveStyle)
+		if (config.MetadataMode != .None)
 		{
 			incomingMetadata = new TomlDocumentMetadata(config.MetadataMode);
 			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
@@ -351,7 +356,11 @@ public class TomlDocument
 		if (incomingMetadata != null && incoming.MetadataContext == null)
 			incoming.MetadataContext = new TomlContainerMetadataContext(incomingMetadata, .Invalid, false);
 		incoming.ClearAutoDirtySuppression();
-		return mRootTable.MergeFrom(incoming, config.OnConflict);
+		Try!(mRootTable.MergeFrom(incoming, config.OnConflict));
+		// Styles and comments merged from a PreserveStyle read make a Positions document preserve style
+		if (mMetadata != null && incomingMetadata != null)
+			mMetadata.Upgrade(incomingMetadata.mMode);
+		return .Ok;
 	}
 
 	private bool ShouldParseDirectly(TomlReadConfig config)
@@ -371,7 +380,7 @@ public class TomlDocument
 	private Result<void, TomlParseError> ReadWithCursor<TCursor>(TCursor cursor, TomlReadConfig config) where TCursor : ITomlCursor
 	{
 		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
-		bool wantsMetadata = config.MetadataMode == .PreserveStyle;
+		bool wantsMetadata = config.MetadataMode != .None;
 
 		// Fast path: nothing to preserve — parse directly into root
 		if (ShouldParseDirectly(config))
@@ -382,6 +391,8 @@ public class TomlDocument
 			// store reset); Replace has just cleared it.
 			if (wantsMetadata && mMetadata == null)
 				mMetadata = new TomlDocumentMetadata(config.MetadataMode);
+			else if (wantsMetadata)
+				mMetadata.Upgrade(config.MetadataMode);
 			let parser = scope TomlParserImpl<TCursor>(config, mStore, wantsMetadata ? mMetadata : null, limits);
 			mRootTable.mSuppressAutoDirty = true;
 			// Attach the root context before parsing so every table created during the parse (including
@@ -489,7 +500,7 @@ public class TomlDocument
 	/// @return False if the document has no PreserveStyle metadata or the text contains control characters.
 	public bool SetFileHeaderComment(StringView comment)
 	{
-		if (mMetadata == null || !IsValidCommentText(comment))
+		if (!PreservesStyle || !IsValidCommentText(comment))
 			return false;
 		ReplaceCommentLines(mMetadata.GetOrCreateRootComments(), comment);
 		return true;
@@ -500,7 +511,7 @@ public class TomlDocument
 	/// @return False if the document has no PreserveStyle metadata or the text contains control characters.
 	public bool SetFileFooterComment(StringView comment)
 	{
-		if (mMetadata == null || !IsValidCommentText(comment))
+		if (!PreservesStyle || !IsValidCommentText(comment))
 			return false;
 		ReplaceCommentLines(mMetadata.GetOrCreateFooterComments(), comment);
 		return true;
@@ -555,7 +566,7 @@ public class TomlDocument
 	/// Example: report `port must be positive (line {range.mLine})`.
 	/// @param dottedPath The path of the value (bracketed segments allowed).
 	/// @param range Receives the 1-based line and column, byte offset, and length.
-	/// @return True if the path resolves and a source position is known (requires PreserveStyle).
+	/// @return True if the path resolves and a source position is known (requires Positions or PreserveStyle).
 	public bool TryGetSourceRange(StringView dottedPath, out TomlSourceRange range)
 	{
 		range = default;

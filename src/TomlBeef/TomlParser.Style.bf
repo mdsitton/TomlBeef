@@ -22,12 +22,12 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// format for numbers, date/times, arrays and inline tables, and the key format.
 	private void CaptureValueMetadata(TomlNodeId nodeId, TomlValue value, StringView rawToken, TomlKeyStyle keyStyle, bool isDotted)
 	{
-		if (mMetadata == null || !nodeId.IsValid)
+		if (mStyle == null || !nodeId.IsValid)
 			return;
 		if (value.IsString)
 		{
-			let tokenRef = mMetadata.AddOriginalToken(rawToken);
-			let style = mMetadata.GetNodeStyle(nodeId);
+			let tokenRef = mStyle.AddOriginalToken(rawToken);
+			let style = mStyle.GetNodeStyle(nodeId);
 			if (style != null)
 				style.mOriginalValueToken = tokenRef;
 			CaptureStringFormat(nodeId, rawToken);
@@ -47,7 +47,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Capture string format metadata for a parsed string value.
 	private void CaptureStringFormat(TomlNodeId nodeId, StringView rawToken)
 	{
-		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
 		var fmt = TomlStringFormat();
@@ -84,8 +84,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 		}
 
-		let valueFormat = mMetadata.AddValueFormat(.String(fmt));
-		let style = mMetadata.GetNodeStyle(nodeId);
+		let valueFormat = mStyle.AddValueFormat(.String(fmt));
+		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = valueFormat;
 	}
@@ -96,7 +96,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// A bare value is scanned up to a delimiter such as '#', so the slice can end in whitespace
 		StringView rawToken = rawTokenIn;
 		rawToken.Trim();
-		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
 		// Detect special float sign style
@@ -122,8 +122,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				var fmt = TomlFloatFormat();
 				fmt.mStyle = .Special;
 				fmt.mSpecialSign = specialSign;
-				let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
-				let style = mMetadata.GetNodeStyle(nodeId);
+				let fmtRef = mStyle.AddValueFormat(.Float(fmt));
+				let style = mStyle.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
 				return;
 			}
@@ -155,8 +155,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						if (c >= 'A' && c <= 'F') { fmt.mUppercaseDigits = true; break; }
 					}
 				}
-				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
-				let style = mMetadata.GetNodeStyle(nodeId);
+				let fmtRef = mStyle.AddValueFormat(.Integer(fmt));
+				let style = mStyle.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
 				return;
 			}
@@ -166,8 +166,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				fmt.mBase = .Octal;
 				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
 				DetectMinimumDigits(rawToken, pos + 2, ref fmt);
-				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
-				let style = mMetadata.GetNodeStyle(nodeId);
+				let fmtRef = mStyle.AddValueFormat(.Integer(fmt));
+				let style = mStyle.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
 				return;
 			}
@@ -177,8 +177,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				fmt.mBase = .Binary;
 				DetectUnderscoreGrouping(rawToken, pos + 2, ref fmt);
 				DetectMinimumDigits(rawToken, pos + 2, ref fmt);
-				let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
-				let style = mMetadata.GetNodeStyle(nodeId);
+				let fmtRef = mStyle.AddValueFormat(.Integer(fmt));
+				let style = mStyle.GetNodeStyle(nodeId);
 				if (style != null) style.mValueFormatRef = fmtRef;
 				return;
 			}
@@ -239,8 +239,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			// Detect underscore grouping in integer and fractional parts
 			DetectFloatUnderscoreGrouping(rawToken, pos, ref fmt);
-			let fmtRef = mMetadata.AddValueFormat(.Float(fmt));
-			let style = mMetadata.GetNodeStyle(nodeId);
+			let fmtRef = mStyle.AddValueFormat(.Float(fmt));
+			let style = mStyle.GetNodeStyle(nodeId);
 			if (style != null) style.mValueFormatRef = fmtRef;
 			return;
 		}
@@ -250,8 +250,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			var fmt = TomlIntegerFormat();
 			fmt.mBase = .Decimal;
 			DetectUnderscoreGrouping(rawToken, pos, ref fmt);
-			let fmtRef = mMetadata.AddValueFormat(.Integer(fmt));
-			let style = mMetadata.GetNodeStyle(nodeId);
+			let fmtRef = mStyle.AddValueFormat(.Integer(fmt));
+			let style = mStyle.GetNodeStyle(nodeId);
 			if (style != null) style.mValueFormatRef = fmtRef;
 		}
 	}
@@ -388,7 +388,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Store key format metadata from pre-detected style and dotted path preference.
 	private void CaptureKeyFormat(TomlNodeId nodeId, TomlKeyStyle keyStyle, bool isDotted)
 	{
-		if (mMetadata == null || !nodeId.IsValid)
+		if (mStyle == null || !nodeId.IsValid)
 			return;
 
 		var fmt = TomlKeyFormat();
@@ -396,8 +396,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (isDotted)
 			fmt.mPreferDottedPath = true;
 
-		let fmtRef = mMetadata.AddKeyFormat(fmt);
-		let style = mMetadata.GetNodeStyle(nodeId);
+		let fmtRef = mStyle.AddKeyFormat(fmt);
+		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mKeyFormatRef = fmtRef;
 	}
@@ -409,7 +409,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// (which would otherwise be mistaken for a space date-time separator)
 		StringView rawToken = rawTokenIn;
 		rawToken.Trim();
-		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
 		var fmt = TomlDateTimeFormat();
@@ -466,8 +466,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		fmt.mHasSeconds = colonCount >= 2;
 		fmt.mFractionalDigits = (uint8)fracDigits;
 
-		let fmtRef = mMetadata.AddValueFormat(.DateTime(fmt));
-		let style = mMetadata.GetNodeStyle(nodeId);
+		let fmtRef = mStyle.AddValueFormat(.DateTime(fmt));
+		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = fmtRef;
 	}
@@ -477,7 +477,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// accounting for any trailing comment text between the comma and the bracket.
 	private void CaptureArrayFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
 	{
-		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
 		var fmt = TomlArrayFormat();
@@ -525,10 +525,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 		}
 		if (fmt.mIndentSize == 0)
-			fmt.mIndentSize = mMetadata.mDocumentStyle.mIndentSize;
+			fmt.mIndentSize = mStyle.mDocumentStyle.mIndentSize;
 
-		let fmtRef = mMetadata.AddValueFormat(.Array(fmt));
-		let style = mMetadata.GetNodeStyle(nodeId);
+		let fmtRef = mStyle.AddValueFormat(.Array(fmt));
+		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = fmtRef;
 	}
@@ -536,7 +536,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Detect inline table format metadata from a raw token.
 	private void CaptureTableFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
 	{
-		if (mMetadata == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
 			return;
 
 		if (rawToken[0] != '{')
@@ -625,13 +625,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			fmt.mEntryIndent = (uint8)maxIndent;
 		NoteIndentSize(maxIndent);
 
-		let fmtRef = mMetadata.AddValueFormat(.Table(fmt));
-		let style = mMetadata.GetNodeStyle(nodeId);
+		let fmtRef = mStyle.AddValueFormat(.Table(fmt));
+		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = fmtRef;
 	}
 
-	/// Capture metadata for a single array element value.
+	/// Give the element just added to `arr` a node ID and, in PreserveStyle, capture its token and format.
+	/// `elemStart` is only marked (and must only be sliced or released) when style is captured.
 	private void CaptureArrayElement(TomlArray arr, TomlValue val, TomlCursorMark elemStart)
 	{
 		if (mMetadata == null)
@@ -657,13 +658,16 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			arr.MetadataContext.AddItemNodeId(nodeId);
 		}
 
+		if (mStyle == null)
+			return;
+
 		// Capture string token and format
 		if (val.IsString)
 		{
 			String scratch = scope String();
 			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			let tokenRef = mMetadata.AddOriginalToken(rawToken);
-			let style = mMetadata.GetNodeStyle(nodeId);
+			let tokenRef = mStyle.AddOriginalToken(rawToken);
+			let style = mStyle.GetNodeStyle(nodeId);
 			if (style != null)
 				style.mOriginalValueToken = tokenRef;
 			CaptureStringFormat(nodeId, rawToken);
@@ -697,7 +701,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Called from all string parse methods, not just key/val paths.
 	private void CountStringStyle(TomlStringStyle style)
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 			return;
 		switch (style)
 		{
@@ -711,7 +715,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Count array style (inline vs multiline) for document-level inference.
 	private void CountArrayStyle(int startLine, int endLine)
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 			return;
 		if (endLine > startLine)
 			mArrayStyleCount_Multiline++;
@@ -726,10 +730,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Records the document's indentation character from the first indented container line seen.
 	private void NoteIndentChar(char8 c)
 	{
-		if (mIndentCharKnown || mMetadata == null)
+		if (mIndentCharKnown || mStyle == null)
 			return;
 		mIndentCharKnown = true;
-		mMetadata.mDocumentStyle.mUseTabs = c == '\t';
+		mStyle.mDocumentStyle.mUseTabs = c == '\t';
 	}
 
 	/// Records the document's indent size (in characters: with tabs, 1 means one tab) from the first
@@ -737,17 +741,17 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// containers are indented with it.
 	private void NoteIndentSize(int count)
 	{
-		if (mIndentSizeKnown || mInferredIndentFromContent || mMetadata == null || count <= 0 || count > 255)
+		if (mIndentSizeKnown || mInferredIndentFromContent || mStyle == null || count <= 0 || count > 255)
 			return;
 		mIndentSizeKnown = true;
-		mMetadata.mDocumentStyle.mIndentSize = (uint8)count;
+		mStyle.mDocumentStyle.mIndentSize = (uint8)count;
 	}
 
 	/// Infer document-level style from accumulated parsing state.
 	/// Called once at the end of ParseDocument.
 	private void InferDocumentStyle()
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 			return;
 
 		// Determine dominant string style
@@ -770,18 +774,18 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			dominant = .MultilineLiteral;
 		}
 
-		mMetadata.mDocumentStyle.mDefaultStringStyle = dominant;
+		mStyle.mDocumentStyle.mDefaultStringStyle = dominant;
 
 		// Determine dominant array style
 		if (mArrayStyleCount_Multiline > mArrayStyleCount_Inline)
-			mMetadata.mDocumentStyle.mDefaultArrayStyle = .Multiline;
+			mStyle.mDocumentStyle.mDefaultArrayStyle = .Multiline;
 		else
-			mMetadata.mDocumentStyle.mDefaultArrayStyle = .Inline;
+			mStyle.mDocumentStyle.mDefaultArrayStyle = .Inline;
 
 		// Detect CRLF from cursor
 		if (mCrlfCount > 0 && mCrlfCount >= mLfOnlyCount)
-			mMetadata.mDocumentStyle.mNewlineStyle = .CRLF;
+			mStyle.mDocumentStyle.mNewlineStyle = .CRLF;
 		else
-			mMetadata.mDocumentStyle.mNewlineStyle = .LF;
+			mStyle.mDocumentStyle.mNewlineStyle = .LF;
 	}
 }

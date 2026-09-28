@@ -8,7 +8,8 @@ static class TomlWriterImpl
 {
 	public static void Write(TomlDocument doc, String outStr, TomlVersion version = .V1_1)
 	{
-		if (doc.Metadata != null)
+		// Positions-only metadata carries no formats or comments, so it writes canonically
+		if (doc.PreservesStyle)
 			WritePreserving(doc, outStr, version, doc.Metadata);
 		else
 			WriteTable(doc.RootTable, "", outStr, version);

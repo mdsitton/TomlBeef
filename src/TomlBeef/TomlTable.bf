@@ -125,7 +125,15 @@ public class TomlTable
 		return false;
 	}
 
-	internal void Insert(StringView key, TomlValue value)
+	/// The table's own key string for `key` (store-owned, stable until the document is cleared), or null.
+	internal String GetOwnedKey(StringView key)
+	{
+		return mEntries.TryGetAlt(key, let ownedKey, let _) ? ownedKey : null;
+	}
+
+	/// Insert or replace an entry. A new entry gets `presetNodeId` as its metadata node ID when valid (the
+	/// parser allocates IDs up front); otherwise one is allocated and the table is marked Children-dirty.
+	internal void Insert(StringView key, TomlValue value, TomlNodeId presetNodeId = .Invalid)
 	{
 		if (mEntries.TryGetAlt(key, let existingKey, let existingVal))
 		{
@@ -141,15 +149,16 @@ public class TomlTable
 		mEntries[ownedKey] = value;
 		mKeyOrder.Add(ownedKey);
 
-		// Auto node-ID allocation for new entries when metadata context exists.
-		// The parser pre-registers node IDs, so skip allocation if one already exists.
-		// Only mark dirty for genuinely new entries (not parser-inserted ones).
+		// Node-ID registration for new entries when a metadata context exists. Parser-inserted entries
+		// arrive with their ID; only genuinely new entries allocate one and mark the table dirty.
 		if (mMetadataContext != null && mMetadataContext.mMetadata != null)
 		{
-			if (!mMetadataContext.TryGetEntryNodeId(key, let _))
+			if (presetNodeId.IsValid)
+				mMetadataContext.SetEntryNodeId(ownedKey, presetNodeId);
+			else if (!mMetadataContext.TryGetEntryNodeId(key, let _))
 			{
 				let nodeId = mMetadataContext.mMetadata.AllocateNodeId();
-				mMetadataContext.SetEntryNodeId(key, nodeId);
+				mMetadataContext.SetEntryNodeId(ownedKey, nodeId);
 				if (!mSuppressAutoDirty)
 					MarkChildrenDirty();
 			}
@@ -775,9 +784,9 @@ public class TomlTable
 		if (!TryGetValue(key, let val) || !val.IsString)
 			return false;
 		let nodeId = EntryNodeFor(key);
-		if (!nodeId.IsValid)
+		let metadata = SidecarFor(nodeId);
+		if (metadata == null)
 			return false;
-		let metadata = mMetadataContext.mMetadata;
 		var fmt = TomlStringFormat();
 		fmt.mStartsWithNewline = true;
 		let current = metadata.GetNodeStyle(nodeId).mValueFormatRef;
@@ -801,9 +810,9 @@ public class TomlTable
 		if (!TryGetValue(key, let val) || !val.IsInteger)
 			return false;
 		let nodeId = EntryNodeFor(key);
-		if (!nodeId.IsValid)
+		let metadata = SidecarFor(nodeId);
+		if (metadata == null)
 			return false;
-		let metadata = mMetadataContext.mMetadata;
 		var fmt = TomlIntegerFormat();
 		let current = metadata.GetNodeStyle(nodeId).mValueFormatRef;
 		if (current.IsValid && metadata.mValueFormats[current.mIndex] case .Integer(let existing))
@@ -815,7 +824,7 @@ public class TomlTable
 	/// @brief Where the value at `key` appeared in the source: the start of its key (or of its `[header]`
 	/// for a header table, or of the first `[[header]]` for an array of tables), and the length through
 	/// the end of the value or header. Useful for reporting validation errors against the file.
-	/// Requires a document read with PreserveStyle; values added or merged in code have no position.
+	/// Requires a document read with Positions or PreserveStyle; values added or merged in code have no position.
 	/// @param key The key.
 	/// @param range Receives the 1-based line and column, byte offset, and length.
 	/// @return True if a source position is known.
@@ -830,7 +839,7 @@ public class TomlTable
 	}
 
 	/// @brief Where this table's own `[header]` or `[[header]]` line appeared in the source (for example an
-	/// array-of-tables element). Requires a document read with PreserveStyle.
+	/// array-of-tables element). Requires a document read with Positions or PreserveStyle.
 	/// @param range Receives the 1-based line and column, byte offset, and length of the header.
 	/// @return True if a source position is known.
 	public bool TryGetHeaderSourceRange(out TomlSourceRange range)
@@ -841,7 +850,9 @@ public class TomlTable
 	internal bool TryGetNodeRange(TomlNodeId nodeId, out TomlSourceRange range)
 	{
 		range = default;
-		let style = SidecarFor(nodeId)?.GetNodeStyle(nodeId);
+		// Positions are recorded in both Positions and PreserveStyle mode, so any sidecar will do
+		let metadata = nodeId.IsValid ? mMetadataContext?.mMetadata : null;
+		let style = metadata?.GetNodeStyle(nodeId);
 		// Lines are 1-based, so an unset range has line 0
 		if (style == null || style.mRange.mLine <= 0)
 			return false;
@@ -871,9 +882,11 @@ public class TomlTable
 		return EntryNodeFor(key);
 	}
 
+	/// The sidecar for comment and style edits: null unless it captures style (PreserveStyle).
 	private TomlDocumentMetadata SidecarFor(TomlNodeId nodeId)
 	{
-		return nodeId.IsValid ? mMetadataContext?.mMetadata : null;
+		let metadata = nodeId.IsValid ? mMetadataContext?.mMetadata : null;
+		return (metadata != null && metadata.CapturesStyle) ? metadata : null;
 	}
 
 	/// Comment text becomes `# text` lines, so it must not contain control characters (tab allowed).
@@ -1043,20 +1056,17 @@ public class TomlTable
 				mMetadataContext.TryGetEntryNodeId(oldKey, out nodeId);
 
 			mEntries.Remove(existingKey);
-
-			// Re-register node ID under new key
 			if (mMetadataContext != null)
-			{
 				mMetadataContext.RemoveEntryNodeId(oldKey);
-				if (nodeId.IsValid)
-					mMetadataContext.SetEntryNodeId(newKey, nodeId);
-			}
+
+			// Insert the value with the new key, preserving position, and re-register the node ID under it
+			String ownedKey = mStore.NewString(newKey);
+			mEntries[ownedKey] = val;
+			mKeyOrder[index] = ownedKey;
+			if (mMetadataContext != null && nodeId.IsValid)
+				mMetadataContext.SetEntryNodeId(ownedKey, nodeId);
+			MarkEntryDirty(ownedKey);
 		}
-		// Insert the value with the new key, preserving position
-		String ownedKey = mStore.NewString(newKey);
-		mEntries[ownedKey] = val;
-		mKeyOrder[index] = ownedKey;
-		MarkEntryDirty(ownedKey);
 		return .Ok;
 	}
 }

@@ -303,7 +303,7 @@ public class TomlArray
 	}
 
 	/// @brief Where the element at `index` appeared in the source: the start of the value, or of its
-	/// `[[header]]` for an array-of-tables element. Requires a document read with PreserveStyle.
+	/// `[[header]]` for an array-of-tables element. Requires a document read with Positions or PreserveStyle.
 	/// @param index The element index.
 	/// @param range Receives the 1-based line and column, byte offset, and length.
 	/// @return True if a source position is known.

@@ -10,7 +10,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private TCursor mCursor;
 	private TomlPathResolver mPathResolver;
 	private TomlVersion mVersion;
+	// Node IDs and source ranges go to mMetadata (Positions or PreserveStyle). Comments, original tokens,
+	// formats and document style go to mStyle, which is the same sidecar in PreserveStyle and null otherwise.
 	private TomlDocumentMetadata mMetadata;
+	private TomlDocumentMetadata mStyle;
 	private TomlDocumentStore mStore;
 	private int mDepth = 0;
 	private TomlResourceLimitState mLimits;
@@ -48,7 +51,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int mLfOnlyCount;
 
 	/// @param store The store that owns every value the parser creates. Required.
-	/// @param metadata The PreserveStyle sidecar to capture into, or null when not capturing.
+	/// @param metadata The sidecar to capture into, or null when not capturing. Its mode decides whether
+	/// style is captured or only positions.
 	public this(TomlReadConfig config, TomlDocumentStore store, TomlDocumentMetadata metadata, TomlResourceLimitState externalLimits = null)
 	{
 		Runtime.Assert(store != null, "TomlParserImpl requires a store");
@@ -56,6 +60,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mLimits = externalLimits;
 		mStore = store;
 		mMetadata = metadata;
+		mStyle = (metadata != null && metadata.CapturesStyle) ? metadata : null;
 		mPendingComments = new List<String>();
 		mTrailingCommentText = null;
 		mSeenContent = false;
@@ -118,7 +123,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				// If a blank line separated these comments from the next content,
 				// and we haven't seen content yet, flush to root (file header comments)
-				if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+				if (mBlankLineSinceComment && !mSeenContent && mStyle != null && mPendingComments.Count > 0)
 					AttachPendingCommentsToRoot();
 				mBlankLineSinceComment = false;
 
@@ -131,7 +136,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				// Track blank lines: before any pending comment they separate the next node from what came
 				// before (mSeparatedByBlankLine); after a comment they are kept inside the comment block as a
 				// null entry (consecutive blank lines collapse to one)
-				if (mMetadata != null)
+				if (mStyle != null)
 				{
 					if (mPendingComments.Count > 0)
 					{
@@ -150,23 +155,23 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				// If a blank line separated pending comments from this header,
 				// and we haven't seen content yet, flush to root (file header comments)
-				if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+				if (mBlankLineSinceComment && !mSeenContent && mStyle != null && mPendingComments.Count > 0)
 					AttachPendingCommentsToRoot();
 				mBlankLineSinceComment = false;
 
 				// Save blank line count for header comment attachment, then reset
-				if (mMetadata != null)
+				if (mStyle != null)
 					mSavedBlankLineCount = mBlankLineCount;
 				mBlankLineCount = 0;
 
 				// Detect indentation from whitespace before first content
-				if (!mInferredIndent && mMetadata != null)
+				if (!mInferredIndent && mStyle != null)
 				{
 					// SkipWhitespace was already called at loop top.
 					// Use cursor column as indent depth. Only update if indented.
 					if (mCursor.Column > 1)
 					{
-						mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+						mStyle.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
 						mInferredIndentFromContent = true;
 					}
 					mInferredIndent = true;
@@ -179,19 +184,19 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			// If a blank line separated pending comments from this key/val,
 			// and we haven't seen content yet, flush to root (file header comments)
-			if (mBlankLineSinceComment && !mSeenContent && mMetadata != null && mPendingComments.Count > 0)
+			if (mBlankLineSinceComment && !mSeenContent && mStyle != null && mPendingComments.Count > 0)
 				AttachPendingCommentsToRoot();
 			mBlankLineSinceComment = false;
-			if (mMetadata != null)
+			if (mStyle != null)
 				mSavedBlankLineCount = mBlankLineCount;
 			mBlankLineCount = 0;
 
 			// Detect indentation from whitespace before first content
-			if (!mInferredIndent && mMetadata != null)
+			if (!mInferredIndent && mStyle != null)
 			{
 				if (mCursor.Column > 1)
 				{
-					mMetadata.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
+					mStyle.mDocumentStyle.mIndentSize = (uint8)(mCursor.Column - 1);
 					mInferredIndentFromContent = true;
 				}
 				mInferredIndent = true;
@@ -209,7 +214,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					if (CaptureTrailingComment() case .Err(let commentErr))
 						return .Err(commentErr);
 					// Attach trailing comment to the last key/val node
-					if (mMetadata != null && mLastNodeId.IsValid)
+					if (mStyle != null && mLastNodeId.IsValid)
 						AttachTrailingComment(mLastNodeId);
 				}
 				else if (afterB != '\r' && afterB != '\n')
@@ -222,7 +227,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 
 		// Attach any remaining pending comments
-		if (mMetadata != null && mPendingComments.Count > 0)
+		if (mStyle != null && mPendingComments.Count > 0)
 		{
 			if (mSeenContent)
 				AttachPendingCommentsToFooter();
@@ -303,7 +308,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, headerEnd);
 
 		// Attach pending leading comments and trailing comment to the table node
-		if (mMetadata != null && nodeId.IsValid)
+		if (mStyle != null && nodeId.IsValid)
 		{
 			AttachPendingComments(nodeId);
 			AttachTrailingComment(nodeId);
@@ -323,7 +328,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		// Mark key start for raw key text capture
 		var keyStart = TomlCursorMark();
-		if (mMetadata != null)
+		if (mStyle != null)
 			keyStart = mCursor.Mark();
 
 		var keyPath = scope List<String>();
@@ -332,15 +337,15 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return .Err(e);
 
 		// Detect dotted key usage for document style inference
-		if (mMetadata != null && keyPath.Count > 1)
-			mMetadata.mDocumentStyle.mPreferDottedKeys = true;
+		if (mStyle != null && keyPath.Count > 1)
+			mStyle.mDocumentStyle.mPreferDottedKeys = true;
 
 		// Capture raw key text for key format detection
 		// Slice now before value parsing can invalidate the stream buffer
 		StringView rawKeyText = StringView();
 		String rawKeyScratch = scope String();
 		TomlKeyStyle keyStyle = .Bare;
-		if (mMetadata != null)
+		if (mStyle != null)
 		{
 			rawKeyText = mCursor.Slice(keyStart, rawKeyScratch);
 			// Detect key style immediately while the view is valid
@@ -363,7 +368,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		// Mark value start for raw token capture
 		var valueStart = TomlCursorMark();
-		bool capturingToken = mMetadata != null;
+		bool capturingToken = mStyle != null;
 		if (capturingToken)
 			valueStart = mCursor.Mark();
 
@@ -393,7 +398,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 
 		// Attach pending leading comments and track this node for trailing comments
-		if (mMetadata != null && nodeId.IsValid)
+		if (mStyle != null && nodeId.IsValid)
 		{
 			AttachPendingComments(nodeId);
 			mLastNodeId = nodeId;
@@ -559,7 +564,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// Skip whitespace and newlines (for arrays), capturing comments into the provided list.
-	/// When outComments is null or mMetadata is null, behaves like SkipWsAndComments(true).
+	/// When outComments is null or style is not captured, behaves like SkipWsAndComments(true).
 	/// @param outComments Optional list to collect captured comment text. Ownership remains with caller.
 	/// @param outBlankLine Set to true if a blank line was encountered (consecutive newlines).
 	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<String> outComments, out bool outBlankLine)
@@ -571,7 +576,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == ' ' || b == '\t') { mCursor.AdvanceByte(); continue; }
 			if (b == '#')
 			{
-				if (outComments != null && mMetadata != null)
+				if (outComments != null && mStyle != null)
 				{
 					String text = new String();
 					if (CaptureCommentText(text) case .Err(let e))
@@ -592,7 +597,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				// Track blank lines
 				CountAndSkipNewline();
-				if (outComments != null && mMetadata != null)
+				if (outComments != null && mStyle != null)
 				{
 					// Check for additional newlines = blank line
 					mCursor.SkipWhitespace();

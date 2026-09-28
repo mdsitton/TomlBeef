@@ -19,7 +19,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		arr.IsStatic = true;
 
 		// Array-local pending comment list for PreserveStyle mode
-		List<String> arrayPendingComments = (mMetadata != null) ? new List<String>() : null;
+		List<String> arrayPendingComments = (mStyle != null) ? new List<String>() : null;
 		// Tracks whether the preceding comma was followed by a blank line
 		bool arraySawBlankLine = false;
 		defer
@@ -47,7 +47,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (arrayPendingComments != null && arrayPendingComments.Count > 0)
 			{
 				EnsureArrayContext(arr);
-				let commentSet = mMetadata.GetOrCreateCommentSet(arr.MetadataContext.mNodeId);
+				let commentSet = mStyle.GetOrCreateCommentSet(arr.MetadataContext.mNodeId);
 				if (commentSet != null)
 				{
 					for (int ci = 0; ci < arrayPendingComments.Count; ci++)
@@ -79,7 +79,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
 					if (lastId.IsValid)
 					{
-						let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+						let commentSet = mStyle.GetOrCreateCommentSet(lastId);
 						if (commentSet != null)
 						{
 							for (int ci = 0; ci < arrayPendingComments.Count; ci++)
@@ -94,7 +94,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			// Mark value start for raw token capture
 			var elemStart = TomlCursorMark();
-			if (mMetadata != null)
+			if (mStyle != null)
 				elemStart = mCursor.Mark();
 			let elemLine = mCursor.Line;
 			let elemColumn = mCursor.Column;
@@ -110,7 +110,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				elemEnd = mCursor.Offset;
 				Try!(CheckArrayItem(arr));
 				arr.Add(val);
-				// Capture metadata for this element
+				// Give the element a node ID (and, in PreserveStyle, capture its token and format)
 				if (mMetadata != null)
 					CaptureArrayElement(arr, val, elemStart);
 			}
@@ -124,7 +124,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			// Flush pending comments as leading comments for this element
 			if (arrayPendingComments != null && arrayPendingComments.Count > 0 && elemNodeId.IsValid)
 			{
-				let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+				let commentSet = mStyle.GetOrCreateCommentSet(elemNodeId);
 				if (commentSet != null)
 				{
 					for (int ci = 0; ci < arrayPendingComments.Count; ci++)
@@ -133,9 +133,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 			}
 			// Set blank line flag from array-level tracking (e.g., blank line before this element)
-			if (arraySawBlankLine && elemNodeId.IsValid)
+			if (arraySawBlankLine && elemNodeId.IsValid && mStyle != null)
 			{
-				let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+				let commentSet = mStyle.GetOrCreateCommentSet(elemNodeId);
 				if (commentSet != null)
 					commentSet.mSeparatedByBlankLine = true;
 				arraySawBlankLine = false;
@@ -164,9 +164,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						
 						return .Err(tcErr);
 					}
-					if (elemNodeId.IsValid && mMetadata != null)
+					if (elemNodeId.IsValid && mStyle != null)
 					{
-						let commentSet = mMetadata.GetOrCreateCommentSet(elemNodeId);
+						let commentSet = mStyle.GetOrCreateCommentSet(elemNodeId);
 						if (commentSet != null)
 						{
 							if (commentSet.mTrailing != null)
@@ -202,7 +202,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 							arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
 						if (lastId.IsValid)
 						{
-							let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+							let commentSet = mStyle.GetOrCreateCommentSet(lastId);
 							if (commentSet != null)
 							{
 								for (int ci = 0; ci < arrayPendingComments.Count; ci++)
@@ -227,7 +227,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						arr.MetadataContext.TryGetItemNodeId(arr.Count - 1, out lastId);
 					if (lastId.IsValid)
 					{
-						let commentSet = mMetadata.GetOrCreateCommentSet(lastId);
+						let commentSet = mStyle.GetOrCreateCommentSet(lastId);
 						if (commentSet != null)
 						{
 							for (int ci = 0; ci < arrayPendingComments.Count; ci++)
@@ -265,15 +265,15 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		TomlTable tbl = mStore.NewTable(.InlineTable, true);
-		// In PreserveStyle, give the table a metadata context up front so each field gets a node ID
-		// (and dotted sub-tables inherit contexts through Insert) before its format is captured.
+		// With metadata, give the table a context up front so each field gets a node ID (and dotted
+		// sub-tables inherit contexts through Insert) before its range and format are recorded.
 		if (mMetadata != null)
 			tbl.MetadataContext = new TomlContainerMetadataContext(mMetadata, mMetadata.AllocateNodeId(), false);
 
 		// Comments can only appear inside inline tables in TOML 1.1 (they need newlines). In PreserveStyle
 		// they are collected here and attached: lines above a field become its leading comments, a comment
 		// on the field's own line its trailing comment, and comments before `}` the table's closing comments.
-		List<String> pendingComments = (mMetadata != null && mVersion != .V1_0) ? scope:: List<String>() : null;
+		List<String> pendingComments = (mStyle != null && mVersion != .V1_0) ? scope:: List<String>() : null;
 		defer { if (pendingComments != null) ClearAndDeleteItems!(pendingComments); }
 
 		Try!(SkipInlineTableWs(pendingComments));
@@ -294,7 +294,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			let fieldOffset = mCursor.Offset;
 			// Key style only depends on the key's first byte
 			TomlKeyStyle keyStyle = .Bare;
-			if (mMetadata != null)
+			if (mStyle != null)
 			{
 				char8 first = mCursor.PeekByte();
 				if (first == '"')
@@ -315,7 +315,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			mCursor.SkipWhitespace();
 			var valueStart = TomlCursorMark();
-			if (mMetadata != null)
+			if (mStyle != null)
 				valueStart = mCursor.Mark();
 
 			TomlValue val;
@@ -346,16 +346,20 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				}
 			}
 
-			// Capture the field's token and formats against its node ID. Slicing releases the mark.
+			// Record the field's range, and in PreserveStyle its token and formats, against its node ID.
+			// Slicing releases the mark.
 			TomlNodeId fieldNodeId = .Invalid;
 			if (mMetadata != null)
 			{
-				String scratch = scope String();
-				StringView rawToken = mCursor.Slice(valueStart, scratch);
 				if (target.MetadataContext != null)
 					target.MetadataContext.TryGetEntryNodeId(keyPath[keyPath.Count - 1], out fieldNodeId);
-				CaptureValueMetadata(fieldNodeId, val, rawToken, keyStyle, keyPath.Count > 1);
 				RecordSourceRange(fieldNodeId, fieldLine, fieldColumn, fieldOffset, mCursor.Offset);
+			}
+			if (mStyle != null)
+			{
+				String scratch = scope String();
+				StringView rawToken = mCursor.Slice(valueStart, scratch);
+				CaptureValueMetadata(fieldNodeId, val, rawToken, keyStyle, keyPath.Count > 1);
 			}
 			FlushCommentsToLeading(pendingComments, fieldNodeId);
 
@@ -430,7 +434,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			delete text;
 			return .Ok;
 		}
-		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
 		delete commentSet.mTrailing;
 		commentSet.mTrailing = text;
 		return .Ok;
@@ -441,7 +445,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		if (pendingComments == null || pendingComments.IsEmpty || !nodeId.IsValid)
 			return;
-		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
 		for (let text in pendingComments)
 			commentSet.mLeading.Add(text);
 		pendingComments.Clear();

@@ -204,12 +204,39 @@ static class TomlStyleApiTests
 			scope $"'{needle}': expected {line}:{column} @{offset}, got {range.mLine}:{range.mColumn} @{range.mOffset}");
 	}
 
+	const String cRangeInput = "# header comment\ntitle = \"x\"\n\n[server]\n  port = 8080\n  tags = [ \"a\",\n    \"b\" ]  # tags\n  inline = { k = 1, j = 2 }\n  a.b = true\n\n[[items]]\nn = 1\n\n[[items]]\nn = 2\n";
+
+	static TomlDocument ReadWithMode(TomlDocument doc, StringView input, TomlMetadataMode mode)
+	{
+		if (doc.Read(input, .() { MetadataMode = mode }) case .Err(let e))
+		{
+			Test.Assert(false, scope $"Parse failed: {e.mMessage}\n{input}");
+		}
+		return doc;
+	}
+
 	[Test]
 	public static void SourceRange_ReportsWhereValuesWereDefined()
 	{
-		let input = "title = \"x\"\n\n[server]\n  port = 8080\n  tags = [ \"a\",\n    \"b\" ]\n  inline = { k = 1, j = 2 }\n  a.b = true\n\n[[items]]\nn = 1\n\n[[items]]\nn = 2\n";
-		let doc = ReadPreserving(scope .(), input);
+		AssertSourceRanges(ReadPreserving(scope .(), cRangeInput), cRangeInput);
+	}
 
+	[Test]
+	public static void SourceRange_PositionsModeRecordsTheSameRanges()
+	{
+		AssertSourceRanges(ReadWithMode(scope .(), cRangeInput, .Positions), cRangeInput);
+
+		// The streamed input path records the same positions
+		let stream = scope System.IO.MemoryStream();
+		stream.TryWrite(.((uint8*)cRangeInput.Ptr, cRangeInput.Length));
+		stream.Position = 0;
+		let streamed = scope TomlDocument();
+		Test.Assert(streamed.Read(stream, .() { MetadataMode = .Positions, StreamBufferBytes = 16 }) case .Ok);
+		AssertSourceRanges(streamed, cRangeInput);
+	}
+
+	static void AssertSourceRanges(TomlDocument doc, StringView input)
+	{
 		TomlSourceRange range;
 		Test.Assert(doc.TryGetSourceRange("title", out range));
 		AssertRangeAt(range, input, "title");
@@ -256,7 +283,66 @@ static class TomlStyleApiTests
 		{
 			Test.Assert(false);
 		}
-		Test.Assert(!plain.TryGetSourceRange("a", out range), "Positions are recorded only with PreserveStyle");
+		Test.Assert(!plain.TryGetSourceRange("a", out range), "Positions are recorded only with Positions or PreserveStyle");
+		Test.Assert(!plain.HasSourcePositions && !plain.PreservesStyle);
+	}
+
+	[Test]
+	public static void PositionsMode_KeepsNoStyleAndWritesCanonically()
+	{
+		let input = "# file header\n\ns = 'literal'  # trailing\nhex = 0xFF\n\n[t]\n  arr = [\n    1,\n    2,\n  ]\n";
+		let doc = ReadWithMode(scope .(), input, .Positions);
+		Test.Assert(doc.HasSourcePositions && !doc.PreservesStyle);
+
+		// Comments are not captured and style edits have nothing to act on
+		let text = scope String();
+		Test.Assert(!doc.RootTable.TryGetTrailingComment("s", text));
+		Test.Assert(!doc.SetComment("s", "note"));
+		Test.Assert(!doc.SetTrailingComment("s", "note"));
+		Test.Assert(!doc.SetFileHeaderComment("header"));
+		Test.Assert(!doc.SetFileFooterComment("footer"));
+		Test.Assert(!doc.SetStringStyle("s", .Basic));
+		Test.Assert(!doc.SetIntegerBase("hex", .Decimal));
+		Test.Assert(doc.TryGetTable("t", var table) && !table.SetHeaderComment("table"));
+
+		// Output is the canonical writer's, exactly as for a document read without metadata
+		let plain = ReadWithMode(scope .(), input, .None);
+		let expected = scope String();
+		plain.Write(expected);
+		let output = scope String();
+		doc.Write(output);
+		Test.Assert(output == expected, scope $"Positions output differs from canonical:\n{output}\n--- expected:\n{expected}");
+
+		// Mutations keep working, and parsed values keep their positions
+		Test.Assert(doc.Set("t.added", 3));
+		TomlSourceRange range;
+		Test.Assert(doc.TryGetSourceRange("hex", out range) && range.mLine == 4);
+		Test.Assert(!doc.TryGetSourceRange("t.added", out range));
+	}
+
+	[Test]
+	public static void PositionsMode_UpgradesToPreserveStyle()
+	{
+		// A PreserveStyle merge brings comments and formats, so the document now preserves style
+		let doc = ReadWithMode(scope .(), "a = 1\n", .Positions);
+		Test.Assert(doc.Read("# about b\nb = 0x10\n", .() { Mode = .Merge, MetadataMode = .PreserveStyle }) case .Ok);
+		Test.Assert(doc.PreservesStyle);
+		let output = scope String();
+		doc.Write(output);
+		Test.Assert(output.Contains("# about b") && output.Contains("0x10"), scope $"Merged style is written:\n{output}");
+		TomlSourceRange range;
+		Test.Assert(doc.TryGetSourceRange("a", out range) && range.mLine == 1, "Earlier positions survive the upgrade");
+
+		// A lesser mode never downgrades a sidecar
+		let preserving = ReadPreserving(scope .(), "a = 1\n");
+		Test.Assert(preserving.Read("b = 2\n", .() { Mode = .Merge, MetadataMode = .Positions }) case .Ok);
+		Test.Assert(preserving.PreservesStyle);
+
+		// Merging into an empty document reuses (and upgrades) its sidecar
+		let empty = ReadWithMode(scope .(), "", .Positions);
+		Test.Assert(empty.Read("# c\nc = 3\n", .() { Mode = .Merge, MetadataMode = .PreserveStyle }) case .Ok);
+		let comment = scope String();
+		Test.Assert(empty.PreservesStyle && empty.RootTable.TryGetComment("c", comment) && comment == "c");
 	}
 
 	[Test]

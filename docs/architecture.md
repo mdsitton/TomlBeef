@@ -44,7 +44,7 @@ workspace startup project is `TomlTester/`.
 | `TomlPathResolver.bf` | Table-tree navigation for headers and dotted keys, implicit table creation, all structural conflict rules |
 | `TomlResourceLimitState.bf` | Per-read limit counters and `Check*` helpers shared by the parser and the resolver |
 | `TomlMetadataTransfer.bf` | Carries PreserveStyle metadata across a merge: attaches node IDs to copied subtrees and copies tokens, formats and comments between sidecars |
-| `TomlMetadata.bf` | The PreserveStyle sidecar: `TomlMetadataMode`, node IDs, `TomlNodeStyle`, dirty flags, comment sets, format structs, `TomlContainerMetadataContext`, `TomlDocumentMetadata` |
+| `TomlMetadata.bf` | The Positions/PreserveStyle sidecar: `TomlMetadataMode`, node IDs, `TomlNodeStyle`, dirty flags, comment sets, format structs, `TomlContainerMetadataContext`, `TomlDocumentMetadata` |
 | `TomlWriter.bf` | `TomlWriterImpl`: entry point and the normal (canonical) writer, plus shared value, string, date and key helpers. Split with `extension TomlWriterImpl`: |
 | `TomlWriter.Preserving.bf` | the PreserveStyle writer: table walk, token reuse, per-node styles, dotted keys, arrays and inline tables, comments and blank lines |
 | `TomlWriter.Formats.bf` | regenerating numbers and date/times from captured formats |
@@ -86,7 +86,7 @@ Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `t
 
 `TomlReadConfig`: `Mode` (`Replace` by default | `Merge`), `OnConflict` (`Error` by default |
 `Skip` | `Overwrite`), `Version` (`V1_1` by default), `MetadataMode` (`None` by default |
-`PreserveStyle`), plus the resource limits in section 6. `TomlWriteConfig`: `Version` only.
+`Positions` | `PreserveStyle`), plus the resource limits in section 6. `TomlWriteConfig`: `Version` only.
 
 ### Replace vs Merge, and failure guarantees
 
@@ -323,8 +323,9 @@ Rules enforced (`EnterTable`, `EnterArrayOfTables`, `SetKeyValue`, `NavigateSegm
   table afterwards fails with `InlineTableSealed` (or `DuplicateTable` from a header). Recursive
   sealing was needed because `{ name.first = "x" }` creates a nested table that the outer seal
   alone would not cover.
-- The resolver also runs the limit checks for tables and nodes it creates. In PreserveStyle mode
-  it allocates node IDs for headers, array-of-tables elements and key/value entries.
+- The resolver also runs the limit checks for tables and nodes it creates. With metadata (Positions
+  or PreserveStyle) it allocates node IDs for headers, array-of-tables elements and key/value
+  entries, and passes each to `TomlTable.Insert`, which registers it under the table's own key.
 
 ### Error model
 
@@ -419,9 +420,23 @@ the normal path. Output is appended to the caller's `String`, and writing never 
 ### PreserveStyle mode
 
 The metadata is a **sidecar**, so normal mode pays nothing for it. It is entirely `internal`: callers
-see only `doc.PreservesStyle` and the comment/style/source-range methods, whose public types are
-`TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange`. Tests reach the
-sidecar through `using internal TomlBeef;`. `TomlDocumentMetadata` holds:
+see only `doc.PreservesStyle`, `doc.HasSourcePositions` and the comment/style/source-range methods,
+whose public types are `TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and
+`TomlSourceRange`. Tests reach the sidecar through `using internal TomlBeef;`.
+
+**Positions mode** uses the same sidecar but captures only node IDs and source ranges. The parser
+keeps two references to it: `mMetadata` (set in both modes) for node IDs and ranges, and `mStyle`
+(set only in PreserveStyle, `TomlDocumentMetadata.CapturesStyle`) for comments, tokens, formats and
+document style, so style code keeps its plain null checks and Positions skips the cursor marks and
+slices too. The writer's preserving path and the comment/style setters require `CapturesStyle`;
+`TryGetSourceRange` accepts any sidecar. A sidecar's mode only upgrades (`Upgrade`): reading or
+merging with a more capable mode raises it, a lesser one never lowers it.
+  - *Cost:* on a 5 MB synthetic file (`TomlTester -bench`), None reads at ~46 MB/s, Positions ~35,
+    PreserveStyle ~28. Most of the metadata cost is the shared node machinery (a context with a
+    key → node ID dictionary per table, one `TomlNodeStyle` per node), not comments or tokens.
+    Contexts borrow the table's own store-owned key strings instead of copying each key.
+
+`TomlDocumentMetadata` holds:
 
 - `TomlNodeStyle` records indexed by `TomlNodeId`. Each has a source range (start line, column and
   offset of the key, header `[`, or array element, and the length through the value or header;

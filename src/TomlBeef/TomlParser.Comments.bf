@@ -80,9 +80,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Capture a comment line and add it to the pending leading comments list.
 	private Result<void, TomlParseError> CapturePendingComment()
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 		{
-			// No metadata — just skip the comment
+			// Not capturing style — just skip the comment
 			return SkipCommentText();
 		}
 
@@ -100,7 +100,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Stores it in mTrailingCommentText for later attachment.
 	private Result<void, TomlParseError> CaptureTrailingComment()
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 		{
 			return SkipCommentText();
 		}
@@ -125,14 +125,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach pending leading comments to a node.
 	private void AttachPendingComments(TomlNodeId nodeId)
 	{
-		if (mMetadata == null)
+		if (mStyle == null)
 			return;
 
 		// If there are comments or a blank line preceded this node, create a comment set
 		if (mPendingComments.Count == 0 && mSavedBlankLineCount == 0)
 			return;
 
-		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
 		if (commentSet != null)
 		{
 			if (mPendingComments.Count > 0)
@@ -151,10 +151,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach the stored trailing comment to a node.
 	private void AttachTrailingComment(TomlNodeId nodeId)
 	{
-		if (mMetadata == null || mTrailingCommentText == null)
+		if (mStyle == null || mTrailingCommentText == null)
 			return;
 
-		let commentSet = mMetadata.GetOrCreateCommentSet(nodeId);
+		let commentSet = mStyle.GetOrCreateCommentSet(nodeId);
 		if (commentSet != null)
 		{
 			if (commentSet.mTrailing != null)
@@ -172,12 +172,12 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach any remaining pending comments as file header comments on the root node.
 	private void AttachPendingCommentsToRoot()
 	{
-		if (mMetadata == null || mPendingComments.Count == 0)
+		if (mStyle == null || mPendingComments.Count == 0)
 			return;
 
 		// The writer always separates file-header comments from content, so a trailing blank marker is implied
 		TrimTrailingBlankMarkers();
-		let commentSet = mMetadata.GetOrCreateRootComments();
+		let commentSet = mStyle.GetOrCreateRootComments();
 		// A second block reaches the root only after a blank line, so keep that separation
 		if (!commentSet.mLeading.IsEmpty && !mPendingComments.IsEmpty)
 			commentSet.mLeading.Add(null);
@@ -189,12 +189,12 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Attach any remaining pending comments as footer/EOF comments.
 	private void AttachPendingCommentsToFooter()
 	{
-		if (mMetadata == null || mPendingComments.Count == 0)
+		if (mStyle == null || mPendingComments.Count == 0)
 			return;
 
 		// Blank lines at the very end of the file are not kept
 		TrimTrailingBlankMarkers();
-		let commentSet = mMetadata.GetOrCreateFooterComments();
+		let commentSet = mStyle.GetOrCreateFooterComments();
 		for (int i = 0; i < mPendingComments.Count; i++)
 			commentSet.mLeading.Add(mPendingComments[i]);
 		if (mBlankLineCount > 0)
@@ -213,7 +213,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Use for document-structure newlines; string parsing should use plain SkipNewline().
 	private void CountAndSkipNewline()
 	{
-		if (mMetadata != null)
+		if (mStyle != null)
 		{
 			char8 b = mCursor.PeekByte();
 			if (b == '\r' && mCursor.PeekByteAt(1) == '\n')

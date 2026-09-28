@@ -294,9 +294,10 @@ if (doc.TryGetTable("server", var server))
 
 The same methods exist on `TomlTable` taking a key, along with `TryGetComment` and `TryGetTrailingComment` for reading comments back. Comment text is given without the `#` marker, one line per `\n`.
 
-A document read with `PreserveStyle` also knows where each value came from, which is handy for reporting validation errors against the file:
+A document read with `PreserveStyle` also knows where each value came from, which is handy for reporting validation errors against the file. When you only need positions (validating a config you will not write back), read with `MetadataMode = .Positions` instead: it records the same source ranges without capturing comments, tokens or formats, and writes canonical TOML. `doc.HasSourcePositions` and `doc.PreservesStyle` tell the modes apart.
 
 ```bf
+doc.ReadFile("config.toml", .() { MetadataMode = .Positions });
 if (doc.TryGetInteger("server.port", var port) && port <= 0 &&
     doc.TryGetSourceRange("server.port", var range))
     Console.WriteLine($"config.toml:{range.mLine}:{range.mColumn}: port must be positive");

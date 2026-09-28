@@ -4,13 +4,16 @@ using internal TomlBeef;
 
 namespace TomlBeef;
 
-/// @brief Controls whether style metadata is captured during parsing.
+/// @brief Controls what metadata is captured during parsing. Each mode includes the ones before it.
 public enum TomlMetadataMode : uint8
 {
 	/// @brief Normal parse mode. No extra style metadata, no comment preservation, no original-token copies.
 	None,
-	/// @brief Capture comments, selected original value tokens, and broad formatting metadata during parsing.
-	/// Does not guarantee byte-for-byte output.
+	/// @brief Record only where each key/value, header and array element came from, for TryGetSourceRange.
+	/// Much cheaper than PreserveStyle; the document is still written in canonical style.
+	Positions,
+	/// @brief Capture comments, selected original value tokens, and broad formatting metadata during parsing,
+	/// in addition to positions. Does not guarantee byte-for-byte output.
 	PreserveStyle
 }
 
@@ -396,7 +399,9 @@ internal class TomlContainerMetadataContext
 	internal TomlNodeId mNodeId;
 
 	// Exactly one is populated, depending on container kind.
-	internal Dictionary<String, TomlNodeId> mEntryNodeIds ~ DeleteDictionaryAndKeys!(_);
+	// Entry keys are borrowed: they are the table's own key strings, which live in the document store
+	// and are never freed individually, so they outlive this context (cleared before any store reset).
+	internal Dictionary<String, TomlNodeId> mEntryNodeIds ~ delete _;
 	internal List<TomlNodeId> mItemNodeIds ~ delete _;
 
 	internal this(TomlDocumentMetadata metadata, TomlNodeId nodeId, bool isArray)
@@ -427,28 +432,24 @@ internal class TomlContainerMetadataContext
 		return false;
 	}
 
-	/// Remove a node ID mapping for a table entry key. Deletes the owned key.
+	/// Remove a node ID mapping for a table entry key.
 	internal void RemoveEntryNodeId(StringView key)
 	{
-		if (mEntryNodeIds != null)
-		{
-			if (mEntryNodeIds.TryGetAlt(key, let existingKey, let _))
-			{
-				mEntryNodeIds.Remove(existingKey);
-				delete existingKey;
-			}
-		}
+		if (mEntryNodeIds != null && mEntryNodeIds.TryGetAlt(key, let existingKey, let _))
+			mEntryNodeIds.Remove(existingKey);
 	}
 
-	/// @brief Register (or replace) the node ID for a table entry key. Copies the key when it is new.
-	internal void SetEntryNodeId(StringView key, TomlNodeId nodeId)
+	/// @brief Register (or replace) the node ID for a table entry.
+	/// @param tableKey The table's own key string for the entry (see TomlTable.GetOwnedKey). It is borrowed.
+	/// @param nodeId The node ID to register.
+	internal void SetEntryNodeId(String tableKey, TomlNodeId nodeId)
 	{
 		if (mEntryNodeIds == null)
 			return;
-		if (mEntryNodeIds.TryGetAlt(key, let existingKey, let _))
+		if (mEntryNodeIds.TryGetAlt(tableKey, let existingKey, let _))
 			mEntryNodeIds[existingKey] = nodeId;
 		else
-			mEntryNodeIds[new String(key)] = nodeId;
+			mEntryNodeIds[tableKey] = nodeId;
 	}
 
 	/// @brief Get the node ID for an array element by index.
@@ -489,11 +490,7 @@ internal class TomlContainerMetadataContext
 	internal void ClearEntryNodeIds()
 	{
 		if (mEntryNodeIds != null)
-		{
-			for (let key in mEntryNodeIds.Keys)
-				delete key;
 			mEntryNodeIds.Clear();
-		}
 	}
 }
 
@@ -501,7 +498,7 @@ internal class TomlContainerMetadataContext
 // Document metadata sidecar
 // ================================================================
 
-/// @brief Optional metadata sidecar attached to a TomlDocument when PreserveStyle mode is enabled.
+/// @brief Optional metadata sidecar attached to a TomlDocument read with Positions or PreserveStyle.
 /// Owns all style records, comment strings, and original token copies.
 internal class TomlDocumentMetadata
 {
@@ -509,6 +506,19 @@ internal class TomlDocumentMetadata
 
 	/// @brief Metadata capture mode for this sidecar.
 	public TomlMetadataMode Mode => mMode;
+
+	/// @brief True when comments, tokens and formats are captured and written back (PreserveStyle).
+	/// With Positions only node IDs and source ranges are recorded.
+	internal bool CapturesStyle => mMode == .PreserveStyle;
+
+	/// @brief Raise the mode after reading with a more capable one. A sidecar never downgrades: nodes that
+	/// already carry style keep it, and nodes read under a lesser mode simply have none.
+	/// @param mode The mode of the read that is about to use (or has merged into) this sidecar.
+	internal void Upgrade(TomlMetadataMode mode)
+	{
+		if (mode > mMode)
+			mMode = mode;
+	}
 
 	/// @brief Root/document-level comments.
 	internal TomlCommentSet mRootComments ~ delete _;

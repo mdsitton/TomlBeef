@@ -254,7 +254,7 @@ internal class TomlPathResolver
 					if (!ctx.mNodeId.IsValid)
 						ctx.mNodeId = mMetadata.AllocateNodeId();
 					*outNodeId = ctx.mNodeId;
-					EnsureTableContext(mCurrentTable).SetEntryNodeId(key, ctx.mNodeId);
+					EnsureTableContext(mCurrentTable).SetEntryNodeId(mCurrentTable.GetOwnedKey(key), ctx.mNodeId);
 				}
 				mCurrentTable = existingTable;
 				return .Ok;
@@ -282,17 +282,18 @@ internal class TomlPathResolver
 		TomlValue tableVal = TomlValue.Table(newTable);
 		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 
-		// A header table is one node: register its ID as both the table's own and the parent's entry
-		// before inserting, so Insert neither allocates an entry ID nor binds a second context
+		// A header table is one node: its ID is both the table's own and the parent's entry. The context is
+		// set before inserting so Insert does not bind a second one, and Insert registers the entry ID.
+		TomlNodeId headerNodeId = .Invalid;
 		if (mMetadata != null && outNodeId != null)
 		{
-			let nodeId = mMetadata.AllocateNodeId();
-			*outNodeId = nodeId;
-			newTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, nodeId, false);
-			EnsureTableContext(mCurrentTable).SetEntryNodeId(key, nodeId);
+			headerNodeId = mMetadata.AllocateNodeId();
+			*outNodeId = headerNodeId;
+			newTable.MetadataContext = new TomlContainerMetadataContext(mMetadata, headerNodeId, false);
+			EnsureTableContext(mCurrentTable);
 		}
 
-		mCurrentTable.Insert(key, tableVal);
+		mCurrentTable.Insert(key, tableVal, headerNodeId);
 		mCurrentTable = newTable;
 		return .Ok;
 	}
@@ -372,19 +373,17 @@ internal class TomlPathResolver
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
 
+		TomlNodeId nodeId = .Invalid;
 		if (mMetadata != null && outNodeId != null)
 		{
-			let nodeId = mMetadata.AllocateNodeId();
+			nodeId = mMetadata.AllocateNodeId();
 			*outNodeId = nodeId;
-
-			// Ensure current table has a metadata context
-			let ctx = EnsureTableContext(mCurrentTable);
-			if (ctx != null)
-				ctx.SetEntryNodeId(key, nodeId);
+			// Insert registers the ID once the current table has a context
+			EnsureTableContext(mCurrentTable);
 		}
 
 		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
-		mCurrentTable.Insert(key, value);
+		mCurrentTable.Insert(key, value, nodeId);
 		return .Ok;
 	}
 

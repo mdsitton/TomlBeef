@@ -37,7 +37,7 @@ static class TomlMetadataTransfer
 			if (!dstCtx.TryGetEntryNodeId(key, out dstId))
 			{
 				dstId = dstMeta.AllocateNodeId();
-				dstCtx.SetEntryNodeId(key, dstId);
+				dstCtx.SetEntryNodeId(dst.GetOwnedKey(key), dstId);
 			}
 			if (srcCtx != null && srcCtx.TryGetEntryNodeId(key, let srcId))
 				CopyNodeStyle(srcMeta, srcId, dstMeta, dstId, true);

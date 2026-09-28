@@ -14,6 +14,7 @@ namespace TomlTester;
 /// Options:
 ///   -toml 1.0|1.1                 TOML version to read and write (default 1.1)
 ///   -preserve                     Read with MetadataMode = PreserveStyle
+///   -positions                    Read with MetadataMode = Positions (source ranges only)
 ///   -max-input-bytes N, -max-depth N, -max-string-bytes N, -max-array-items N,
 ///   -max-table-entries N, -max-path-segments N, -max-nodes N
 ///                                 Resource limits (TomlReadConfig; 0 = unlimited)
@@ -35,6 +36,8 @@ class Program
 				fromJson = true;
 			else if (arg == "-preserve")
 				config.MetadataMode = .PreserveStyle;
+			else if (arg == "-positions")
+				config.MetadataMode = .Positions;
 			else if (arg == "-bench" && i + 1 < args.Count)
 			{
 				switch (int.Parse(args[++i]))
@@ -167,7 +170,7 @@ class Program
 	static int UsageError(StringView message)
 	{
 		Console.Error.WriteLine(message);
-		Console.Error.WriteLine("Usage: TomlTester [-encode | -from-json] [-toml 1.0|1.1] [-preserve] [-max-<limit> N ...] < input");
+		Console.Error.WriteLine("Usage: TomlTester [-encode | -from-json] [-toml 1.0|1.1] [-preserve | -positions] [-max-<limit> N ...] < input");
 		return 2;
 	}
 }
