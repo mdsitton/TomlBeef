@@ -58,6 +58,7 @@ workspace startup project is `TomlTester/`.
 | `TomlBind.bf` | Runtime helpers the generated code calls, one per value kind (lookup, type and range checks, located errors) |
 | `TomlSerializer.bf` | `TomlSerializer.Read`/`Write`, the entry points for `[TomlObject]` types |
 | `ITomlSerializable.bf` | The interface `[TomlObject]` adds (`TomlRead`, `TomlWrite`) |
+| `ITomlConverter.bf` | `ITomlConverter<T>`, `TomlConvertContext`, and the `[TomlConverter]` registration and `[TomlUseConverter]` field attributes |
 
 Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `tests/valid` and
 `tests/invalid`, the CLI is `TomlTester/src/Program.bf`, and the acceptance scripts are
@@ -704,6 +705,19 @@ around them.
   `int64.MaxValue`), float/double (integers accepted), String, simple enums, the four date/time
   types, `[TomlObject]` types (tables) and `List<T>` of those (a list of objects is an array of
   tables). Anything else stops the build with a message naming the field.
+- *Converters for other types.* An `ITomlConverter<T>` (static `Read(TomlValue, TomlConvertContext,
+  ref T)` and `Write(T, TomlConvertContext)`) handles a type the serializer does not know.
+  `[TomlConverter(typeof(T))]` on the converter registers it: when the generator meets a field or
+  list item of a non-scalar type, it scans `Type.TypeDeclarations` (the one type enumeration Beef
+  allows at compile time) for a registration the compiling project can see (declared in it or a
+  dependency), before the built-in enum, object and List handling; two visible registrations for
+  one type stop the build. `[TomlUseConverter(typeof(C))]` on a field overrides everything for
+  that field. `TomlConvertContext` is "key in a table" or "item of an array": located errors, and
+  `Set`/`AddTable`/`AddArray` for writing, so one converter serves fields and list items. `Read`
+  fills `ref T` in place, so a converter for a class decides allocation (a list item starts null
+  and is added to the list before reading, so the list owns it on failure). Registration is
+  compile-time only: nothing is looked up at run time, and the generated code calls the converter's
+  static methods directly.
 - *Reading fills an existing object:* absent keys keep their values unless `[TomlRequired]`; null
   String, object and List fields get new instances the type then owns; reading a list deletes its
   old String or object items first. A `[TomlObject]` base class is read and written first through

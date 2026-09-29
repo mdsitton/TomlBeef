@@ -179,6 +179,21 @@ public static class TomlBind
 		return true;
 	}
 
+	/// @brief Read a value of any type (for a converter field).
+	/// @param table The table.
+	/// @param key The key.
+	/// @param required Whether a missing key is an error.
+	/// @param value Receives the value when the key is present.
+	/// @return True if the key was present, or the error.
+	public static Result<bool, TomlParseError> ReadValue(TomlTable table, StringView key, bool required, out TomlValue value)
+	{
+		if (table.TryGetValue(key, out value))
+			return true;
+		if (required)
+			return .Err(TomlParseError.Located(.MissingKey, scope $"{key}: missing required value", table.ProblemLocation()));
+		return false;
+	}
+
 	/// Item `index` of `array` if it has type `typeName`, or a WrongType error located at the item.
 	static Result<TomlValue, TomlParseError> Element(TomlArray array, int index, StringView typeName)
 	{

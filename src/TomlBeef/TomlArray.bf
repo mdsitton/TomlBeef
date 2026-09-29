@@ -68,6 +68,12 @@ public struct TomlInputValue
 		return TomlInputValue() { mKind = .String, mStringValue = value };
 	}
 
+	/// A String converts directly too (Beef does not chain String → StringView → TomlInputValue).
+	public static implicit operator TomlInputValue(String value)
+	{
+		return TomlInputValue() { mKind = .String, mStringValue = value };
+	}
+
 	public static implicit operator TomlInputValue(int64 value)
 	{
 		return TomlInputValue() { mKind = .Integer, mIntValue = value };

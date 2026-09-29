@@ -90,6 +90,137 @@ class SerCamel
 	public int HTTPPort;
 }
 
+// Types the serializer does not know, with converters
+
+struct SerVec3
+{
+	public float X, Y, Z;
+}
+
+/// [x, y, z], registered for every SerVec3
+[TomlConverter(typeof(SerVec3))]
+struct SerVec3Toml : ITomlConverter<SerVec3>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerVec3 target)
+	{
+		if (!value.TryGetArray(let array) || array.Count != 3)
+			return .Err(context.MakeError("expected [x, y, z]"));
+		float[3] parts = ?;
+		for (int i < 3)
+		{
+			if (array.TryGetFloat(i, let asFloat))
+				parts[i] = (float)asFloat;
+			else if (array.TryGetInteger(i, let asInteger))
+				parts[i] = asInteger;
+			else
+				return .Err(context.MakeError("expected [x, y, z]"));
+		}
+		target = .() { X = parts[0], Y = parts[1], Z = parts[2] };
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerVec3 value, TomlConvertContext context)
+	{
+		let array = context.AddArray();
+		array.Add((double)value.X);
+		array.Add((double)value.Y);
+		array.Add((double)value.Z);
+		return .Ok;
+	}
+}
+
+struct SerDuration
+{
+	public int64 mMilliseconds;
+}
+
+/// "1500ms", registered for every SerDuration
+[TomlConverter(typeof(SerDuration))]
+struct SerDurationToml : ITomlConverter<SerDuration>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerDuration target)
+	{
+		if (!value.TryGetString(let text) || !text.EndsWith("ms"))
+			return .Err(context.MakeError("expected a duration like \"1500ms\""));
+		switch (int64.Parse(text.Substring(0, text.Length - 2)))
+		{
+		case .Ok(let ms): target.mMilliseconds = ms;
+		case .Err: return .Err(context.MakeError("expected a duration like \"1500ms\""));
+		}
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerDuration value, TomlConvertContext context)
+	{
+		context.Set(scope $"{value.mMilliseconds}ms");
+		return .Ok;
+	}
+}
+
+/// Whole seconds as an integer, used for one field with [TomlUseConverter]
+struct SerSecondsToml : ITomlConverter<SerDuration>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerDuration target)
+	{
+		if (!value.TryGetInteger(let seconds))
+			return .Err(context.MakeError("expected whole seconds"));
+		target.mMilliseconds = seconds * 1000;
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerDuration value, TomlConvertContext context)
+	{
+		context.Set(value.mMilliseconds / 1000);
+		return .Ok;
+	}
+}
+
+class SerColor
+{
+	public uint8 R, G, B;
+}
+
+/// "#rrggbb"; a class, so reading allocates when the target is null
+[TomlConverter(typeof(SerColor))]
+struct SerColorToml : ITomlConverter<SerColor>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerColor target)
+	{
+		uint32 rgb = 0;
+		if (!value.TryGetString(let text) || text.Length != 7 || text[0] != '#')
+			return .Err(context.MakeError("expected a color like \"#ff8800\""));
+		switch (uint32.Parse(text.Substring(1), .HexNumber))
+		{
+		case .Ok(let parsed): rgb = parsed;
+		case .Err: return .Err(context.MakeError("expected a color like \"#ff8800\""));
+		}
+		if (target == null)
+			target = new SerColor();
+		target.R = (uint8)(rgb >> 16);
+		target.G = (uint8)(rgb >> 8);
+		target.B = (uint8)rgb;
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerColor value, TomlConvertContext context)
+	{
+		if (value != null)
+			context.Set(scope $"#{value.R:x2}{value.G:x2}{value.B:x2}");
+		return .Ok;
+	}
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerScene
+{
+	public SerVec3 Position;
+	public List<SerVec3> Path = new .() ~ delete _;
+	public SerDuration Timeout;
+	[TomlUseConverter(typeof(SerSecondsToml))] public SerDuration Interval;
+	public SerColor Tint ~ delete _;
+	public List<SerColor> Palette = new .() ~ DeleteContainerAndItems!(_);
+}
+
 static class TomlSerializerTests
 {
 	const String cConfig = """
@@ -199,6 +330,53 @@ static class TomlSerializerTests
 		let text = scope String();
 		Test.Assert(TomlSerializer.Write(settings, text) case .Ok);
 		Test.Assert(text == "Title = \"t\"\nExtra = 3\n", text);
+	}
+
+	[Test]
+	public static void Converters_RegisteredAndPerField()
+	{
+		const String toml = """
+			position = [1, 2.5, -3]
+			path = [[0, 0, 0], [1, 1, 1]]
+			timeout = "1500ms"
+			interval = 30
+			tint = "#ff8800"
+			palette = ["#000000", "#ffffff"]
+			""";
+		let scene = scope SerScene();
+		scene.Palette.Add(new SerColor());
+		ReadOk(toml, scene);
+		Test.Assert(scene.Position.X == 1 && scene.Position.Y == 2.5f && scene.Position.Z == -3);
+		Test.Assert(scene.Path.Count == 2 && scene.Path[1].Y == 1);
+		Test.Assert(scene.Timeout.mMilliseconds == 1500, "Registered converter");
+		Test.Assert(scene.Interval.mMilliseconds == 30000, "[TomlUseConverter] wins over the registered one");
+		Test.Assert(scene.Tint != null && scene.Tint.R == 0xff && scene.Tint.G == 0x88 && scene.Tint.B == 0);
+		Test.Assert(scene.Palette.Count == 2 && scene.Palette[1].G == 0xff, "Old items are deleted, converters fill new ones");
+
+		let text = scope String();
+		Test.Assert(TomlSerializer.Write(scene, text) case .Ok);
+		Test.Assert(text == """
+			position = [1.0, 2.5, -3.0]
+			path = [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]
+			timeout = "1500ms"
+			interval = 30
+			tint = "#ff8800"
+			palette = ["#000000", "#ffffff"]
+
+			""", text);
+
+		// Converter errors are located at the value, naming its key or index
+		let bad = scope SerScene();
+		switch (TomlSerializer.Read("position = [1, 2]", bad))
+		{
+		case .Ok: Test.Assert(false);
+		case .Err(let err): Test.Assert(err.mLine == 1 && err.mMessage == "position: expected [x, y, z]", scope String(err.mMessage));
+		}
+		switch (TomlSerializer.Read("palette = [\"#000000\", \"red\"]", bad))
+		{
+		case .Ok: Test.Assert(false);
+		case .Err(let err): Test.Assert(err.mMessage == "[1]: expected a color like \"#ff8800\"", scope String(err.mMessage));
+		}
 	}
 
 	[Test]

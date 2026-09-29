@@ -27,7 +27,9 @@ public static class TomlSerializerCodeGen
 		LocalDate,
 		LocalTime,
 		Object,
-		List
+		List,
+		/// An ITomlConverter<T>: from [TomlUseConverter] on the field, or registered with [TomlConverter]
+		Converter
 	}
 
 	/// @brief Emit ITomlSerializable, TomlRead and TomlWrite into `type`.
@@ -63,18 +65,25 @@ public static class TomlSerializerCodeGen
 			bool required = field.HasCustomAttribute<TomlRequiredAttribute>();
 
 			let fieldType = field.FieldType;
-			let kind = Classify(fieldType);
-			let elementKind = (kind == .List) ? Classify(ListElement(fieldType)) : Kind.Bool;
+			Type converter = null;
+			var kind = Kind.Converter;
+			if (field.GetCustomAttribute<TomlUseConverterAttribute>() case .Ok(let use))
+				converter = use.mConverter;
+			else
+				kind = Classify(fieldType, out converter);
+			var elementKind = Kind.Bool;
+			if (kind == .List)
+				elementKind = Classify(ListElement(fieldType), ?);
 			// Lists of lists are left for later
 			if (kind == .Unsupported || elementKind == .Unsupported || elementKind == .List)
 			{
 				let typeName = fieldType.GetFullName(.. scope .());
 				let ownerName = type.GetFullName(.. scope .());
-				Runtime.FatalError(scope $"[TomlObject] {ownerName}.{field.Name}: TOML serialization does not support fields of type {typeName}. Supported: bool, integers, float, double, String, enums, the TOML date/time types, [TomlObject] types, and List<T> of those. Mark the field [TomlIgnore] to leave it out.");
+				Runtime.FatalError(scope $"[TomlObject] {ownerName}.{field.Name}: TOML serialization does not support fields of type {typeName}. Supported: bool, integers, float, double, String, enums, the TOML date/time types, [TomlObject] types, List<T> of those, and types with a converter ([TomlConverter] registration or [TomlUseConverter] on the field). Mark the field [TomlIgnore] to leave it out.");
 			}
 
-			EmitRead(read, field.Name, key, required, fieldType, kind);
-			EmitWrite(write, field.Name, key, fieldType, kind);
+			EmitRead(read, field.Name, key, required, fieldType, kind, converter);
+			EmitWrite(write, field.Name, key, fieldType, kind, converter);
 		}
 
 		read.Append("\treturn .Ok;\n}\n");
@@ -85,9 +94,12 @@ public static class TomlSerializerCodeGen
 		Compiler.EmitTypeBody(type, write);
 	}
 
+	/// How a field or list item of `type` is handled. The TOML scalar types are fixed; any other type
+	/// takes a registered converter first, then the built-in enum, object and List handling.
 	[Comptime]
-	static Kind Classify(Type type)
+	static Kind Classify(Type type, out Type converter)
 	{
+		converter = null;
 		if (type == typeof(bool))
 			return .Bool;
 		if (type == typeof(char8) || type == typeof(char16) || type == typeof(char32))
@@ -106,6 +118,9 @@ public static class TomlSerializerCodeGen
 			return .LocalDate;
 		if (type == typeof(TomlLocalTime))
 			return .LocalTime;
+		converter = FindRegisteredConverter(type);
+		if (converter != null)
+			return .Converter;
 		// Simple enums only: cases with payloads have no single name to write
 		if (type.IsEnum && !type.IsUnion)
 			return .Enum;
@@ -114,6 +129,29 @@ public static class TomlSerializerCodeGen
 		if (ListElement(type) != null)
 			return .List;
 		return .Unsupported;
+	}
+
+	/// The converter registered with [TomlConverter(typeof(target))] that the type being compiled can see
+	/// (declared in its project or a dependency), or null. Two such registrations stop the build.
+	[Comptime]
+	static Type FindRegisteredConverter(Type target)
+	{
+		Type found = null;
+		for (let declaration in Type.TypeDeclarations)
+		{
+			if (!(declaration.DeclaredInCurrent || declaration.DeclaredInDependency || declaration.AlwaysVisible))
+				continue;
+			if (!(declaration.GetCustomAttribute<TomlConverterAttribute>() case .Ok(let registration)) || registration.mTarget != target)
+				continue;
+			let converter = declaration.ResolvedType;
+			if (found != null && found != converter)
+			{
+				let targetName = target.GetFullName(.. scope .());
+				Runtime.FatalError(scope $"[TomlConverter] Both {found.GetFullName(.. scope .())} and {converter.GetFullName(.. scope .())} are registered for {targetName}. Keep one, or pick one per field with [TomlUseConverter].");
+			}
+			found = converter;
+		}
+		return found;
 	}
 
 	/// The T of a List<T>, or null.
@@ -237,7 +275,7 @@ public static class TomlSerializerCodeGen
 	}
 
 	[Comptime]
-	static void EmitRead(String code, StringView name, StringView key, bool required, Type type, Kind kind)
+	static void EmitRead(String code, StringView name, StringView key, bool required, Type type, Kind kind, Type converter)
 	{
 		StringView req = required ? "true" : "false";
 		code.Append("\t{\n");
@@ -270,15 +308,18 @@ public static class TomlSerializerCodeGen
 			code.AppendF("\t\t\tTry!(this.{}.TomlRead(_t));\n\t\t}}\n", name);
 		case .List:
 			let element = ListElement(type);
-			let elementKind = Classify(element);
+			let elementKind = Classify(element, let elementConverter);
 			code.AppendF("\t\tTomlBeef.TomlArray _a;\n\t\tif (Try!(TomlBeef.TomlBind.ReadArray(_table, {}, {}, out _a)))\n\t\t{{\n", key, req);
 			code.AppendF("\t\t\tif (this.{} == null)\n\t\t\t\tthis.{} = new {}();\n", name, name, type.GetFullName(.. scope .()));
-			// The list owns String and object items: delete them before replacing
-			if (elementKind == .String || (elementKind == .Object && !element.IsValueType))
+			// The list owns its object items (Strings, objects, converted classes): delete them before replacing
+			if (!element.IsValueType)
 				code.AppendF("\t\t\tfor (let _old in this.{})\n\t\t\t\tdelete _old;\n", name);
 			code.AppendF("\t\t\tthis.{}.Clear();\n\t\t\tfor (int _i < _a.Count)\n\t\t\t{{\n", name);
-			EmitReadElement(code, name, element, elementKind);
+			EmitReadElement(code, name, element, elementKind, elementConverter);
 			code.Append("\t\t\t}\n\t\t}\n");
+		case .Converter:
+			code.AppendF("\t\tTomlBeef.TomlValue _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadValue(_table, {0}, {1}, out _v)))\n\t\t\tTry!({2}.Read(_v, .(_table, {0}), ref this.{3}));\n",
+				key, req, converter.GetFullName(.. scope .()), name);
 		default:
 		}
 		code.Append("\t}\n");
@@ -286,7 +327,7 @@ public static class TomlSerializerCodeGen
 
 	/// Appends item `_i` of `_a` to list `name`.
 	[Comptime]
-	static void EmitReadElement(String code, StringView name, Type type, Kind kind)
+	static void EmitReadElement(String code, StringView name, Type type, Kind kind, Type converter)
 	{
 		StringView indent = "\t\t\t\t";
 		switch (kind)
@@ -323,12 +364,16 @@ public static class TomlSerializerCodeGen
 				code.AppendF("{0}{1} _o = .();\n{0}Try!(_o.TomlRead(_t));\n{0}this.{2}.Add(_o);\n", indent, typeName, name);
 			else // added before reading, so the list owns it even if reading fails
 				code.AppendF("{0}let _o = new {1}();\n{0}this.{2}.Add(_o);\n{0}Try!(_o.TomlRead(_t));\n", indent, typeName, name);
+		case .Converter:
+			// Read in place into a new default item, which the list already owns if reading fails
+			code.AppendF("{0}this.{1}.Add(default);\n{0}Try!({2}.Read(_a.GetValueAt(_i), .(_a, _i), ref this.{1}[this.{1}.Count - 1]));\n",
+				indent, name, converter.GetFullName(.. scope .()));
 		default:
 		}
 	}
 
 	[Comptime]
-	static void EmitWrite(String code, StringView name, StringView key, Type type, Kind kind)
+	static void EmitWrite(String code, StringView name, StringView key, Type type, Kind kind, Type converter)
 	{
 		switch (kind)
 		{
@@ -360,19 +405,21 @@ public static class TomlSerializerCodeGen
 				code.AppendF("\tif (this.{} != null)\n\t\tTry!(this.{}.TomlWrite(_table.AddTable({})));\n", name, name, key);
 		case .List:
 			let element = ListElement(type);
-			let elementKind = Classify(element);
+			let elementKind = Classify(element, let elementConverter);
 			// A list of objects is an array of tables, written as [[key]] sections
 			StringView add = (elementKind == .Object) ? "AddArrayOfTables" : "AddArray";
 			code.AppendF("\tif (this.{} != null)\n\t{{\n\t\tlet _a = _table.{}({});\n\t\tfor (let _e in this.{})\n\t\t{{\n", name, add, key, name);
-			EmitWriteElement(code, element, elementKind);
+			EmitWriteElement(code, element, elementKind, elementConverter);
 			code.Append("\t\t}\n\t}\n");
+		case .Converter:
+			code.AppendF("\tTry!({}.Write(this.{}, .(_table, {})));\n", converter.GetFullName(.. scope .()), name, key);
 		default:
 		}
 	}
 
 	/// Appends list item `_e` to array `_a`.
 	[Comptime]
-	static void EmitWriteElement(String code, Type type, Kind kind)
+	static void EmitWriteElement(String code, Type type, Kind kind, Type converter)
 	{
 		StringView indent = "\t\t\t";
 		switch (kind)
@@ -403,6 +450,8 @@ public static class TomlSerializerCodeGen
 				code.AppendF("{}Try!(_e.TomlWrite(_a.AddTable()));\n", indent);
 			else
 				code.AppendF("{0}if (_e != null)\n{0}\tTry!(_e.TomlWrite(_a.AddTable()));\n", indent);
+		case .Converter:
+			code.AppendF("{}Try!({}.Write(_e, .(_a)));\n", indent, converter.GetFullName(.. scope .()));
 		default:
 		}
 	}
