@@ -338,6 +338,29 @@ static class TomlSerializerTests
 	}
 
 	[Test]
+	public static void Serializer_FileWrappersRoundTrip()
+	{
+		let path = scope String();
+		Test.Assert(System.IO.Path.GetTempFileName(path) case .Ok);
+		defer System.IO.File.Delete(path).IgnoreError();
+
+		let config = scope SerServerConfig();
+		ReadOk(cConfig, config);
+		Test.Assert(TomlSerializer.WriteFile(config, path) case .Ok);
+		let copy = scope SerServerConfig();
+		Test.Assert(TomlSerializer.ReadFile(path, copy) case .Ok);
+		Test.Assert(copy.Port == 9000 && copy.Plugins.Count == 2 && copy.Level == .Warn);
+
+		// Errors from a file name it
+		Test.Assert(System.IO.File.WriteAllText(path, "name = \"x\"\nport = true\n") case .Ok);
+		switch (TomlSerializer.ReadFile(path, copy))
+		{
+		case .Ok: Test.Assert(false);
+		case .Err(let err): Test.Assert(err.mSource == path && err.mLine == 2 && err.mKind == .WrongType);
+		}
+	}
+
+	[Test]
 	public static void Inheritance_ReadsAndWritesBaseFields()
 	{
 		let settings = scope SerDerivedSettings();

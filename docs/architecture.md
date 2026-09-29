@@ -691,8 +691,9 @@ text through `Compiler.EmitTypeBody`.
   `doc.Deserialize("server", server)` fills an object from the table at a path, and
   `doc.Serialize("server", server)` writes it back (creating the path if needed); `table.Deserialize`
   / `table.Serialize` do the same for any table. So typed sections and hand-written data mix in one
-  document, read and written through the same API. `TomlSerializer.Read`/`Write` are one-call
-  wrappers for whole documents.
+  document, read and written through the same API. `TomlSerializer.Read`/`ReadFile`/`Write`/
+  `WriteFile` are one-call wrappers for whole documents: a scoped document, its read or write, and
+  its `Deserialize` or `Serialize`, so there is one code path.
 - *Writing updates in place.* Scalars go through `Set`, which leaves an unchanged value (and its
   PreserveStyle token and comments) untouched; existing sub-tables and arrays are reused
   (`TomlTable.WriteTableAt`/`WriteArrayAt`), so keys the type does not know and their comments stay;
