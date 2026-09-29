@@ -22,8 +22,20 @@ LANGUAGE = {
     "glaze": "C++", "toml (Rust)": "Rust", "BurntSushi": "Go", "go-toml": "Go", "Tomlyn": "C#",
     "TomlBeef preserve": "Beef", "toml_edit": "Rust", "Tomlyn syntax": "C#",
 }
+# Names in the average panel, where the repository beside each one tells same-named libraries apart
 DISPLAY = {"TomlBeef preserve": "TomlBeef", "Tomlyn syntax": "Tomlyn (syntax tree)",
-           "BurntSushi": "BurntSushi/toml", "toml (Rust)": "toml"}
+           "BurntSushi": "toml", "toml (Rust)": "toml"}
+# Names in the per-input panel, which has no repository column
+SHORT = {"TomlBeef preserve": "TomlBeef", "Tomlyn syntax": "Tomlyn (syntax tree)",
+         "BurntSushi": "BurntSushi/toml", "toml (Rust)": "toml (Rust)"}
+REPO = {
+    "TomlBeef": "mdsitton/TomlBeef", "TomlBeef preserve": "mdsitton/TomlBeef",
+    "tomlc17": "cktan/tomlc17", "toml-c": "arp242/toml-c", "toml11": "ToruNiina/toml11",
+    "toml++": "marzer/tomlplusplus", "glaze": "stephenberry/glaze",
+    "toml (Rust)": "toml-rs/toml", "toml_edit": "toml-rs/toml",
+    "BurntSushi": "BurntSushi/toml", "go-toml": "pelletier/go-toml",
+    "Tomlyn": "xoofx/Tomlyn", "Tomlyn syntax": "xoofx/Tomlyn",
+}
 INPUT_LABELS = {
     "mixed": "config (mixed)", "commented": "commented config", "comments": "comments only",
     "strings": "strings", "ints": "integers", "floats": "floats", "dates": "dates",
@@ -69,7 +81,7 @@ def relative_speeds(parsers, table):
 def relative_panel(parsers, table, top):
     """Horizontal bars: average speed relative to TomlBeef, grouped into data model and preserving."""
     out = []
-    bar_x, bar_w = 200, 440
+    name_x, bar_x, bar_w = 80, 340, 360
     row_h, bar_h = 25, 16
     speeds = relative_speeds(parsers, table)
     footnotes = []
@@ -93,11 +105,12 @@ def relative_panel(parsers, table, top):
             failed = [INPUT_LABELS.get(i, i) for i, row in table.items() if row[p] is None]
             if failed:
                 name += "*"
-                footnotes.append(f"* {DISPLAY.get(p, p)} failed the {' and '.join(failed)} inputs "
+                footnotes.append(f"* {SHORT.get(p, p)} failed the {' and '.join(failed)} inputs "
                                  f"(no date/time support in its schema-less mode); its average covers "
                                  f"the other {parsed}.")
             out.append(text(40, cy + 5, LANGUAGE[p], "lang"))
-            out.append(text(bar_x - 10, cy + 5, name, "label ours" if ours else "label", "end"))
+            out.append(f'<text x="{name_x}" y="{cy + 5:.1f}"><tspan class="{"label ours" if ours else "label"}">{esc(name)}</tspan>'
+                       f'<tspan class="repo" dx="8">{esc(REPO[p])}</tspan></text>')
             w = max(2.0, bar_w * ratio)
             out.append(f'<rect x="{bar_x}" y="{cy - bar_h / 2:.1f}" width="{w:.1f}" height="{bar_h}" rx="3" class="{"bar-ours" if ours else "bar"}"/>')
             shown = f"{ratio:.2f}×" if ratio >= 0.1 else f"{ratio:.3f}×"
@@ -136,11 +149,10 @@ def head_to_head_panel(parsers, table, top):
         for x, _, ours, member in columns:
             rivals = {p: v for p, v in results.items() if member(p) and p != ours and v}
             rival = max(rivals, key=rivals.get)
-            pair = ((DISPLAY.get(ours, ours), results[ours], True),
-                    ("toml (Rust)" if rival == "toml (Rust)" else DISPLAY.get(rival, rival), rivals[rival], False))
+            pair = ((SHORT.get(ours, ours), results[ours], True), (SHORT.get(rival, rival), rivals[rival], False))
             peak = max(v for _, v, _ in pair)
             # Libraries in this group that failed this input (starred as in the panel above)
-            failed = [DISPLAY.get(p, p) for p, v in results.items() if member(p) and v is None]
+            failed = [SHORT.get(p, p) for p, v in results.items() if member(p) and v is None]
             by = mid - bar_h - gap / 2
             for lib, v, is_ours in pair:
                 w = max(2.0, bar_w * v / peak)
@@ -180,6 +192,7 @@ def main():
     .small {{ font-size: 12px; fill: #424a53; }}
     .note-plain {{ fill: #8c959f; }}
     .footnote {{ font-size: 12px; fill: #656d76; }}
+    .repo {{ font-size: 11.5px; fill: #8c959f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
     .bar {{ fill: #afb8c1; }}
     .bar-ours {{ fill: #ea580c; }}
     .rule {{ stroke: #d8dee4; stroke-width: 1; }}
@@ -191,6 +204,7 @@ def main():
       .subtitle, .footer, .axis, .group {{ fill: #8d96a0; }}
       .lang, .note-plain {{ fill: #6e7681; }}
       .footnote {{ fill: #8d96a0; }}
+      .repo {{ fill: #6e7681; }}
       .value, .small {{ fill: #c9d1d9; }}
       .value.ours {{ fill: #fb923c; }}
       .bar {{ fill: #3d444d; }}

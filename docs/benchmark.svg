@@ -14,6 +14,7 @@
     .small { font-size: 12px; fill: #424a53; }
     .note-plain { fill: #8c959f; }
     .footnote { font-size: 12px; fill: #656d76; }
+    .repo { font-size: 11.5px; fill: #8c959f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .bar { fill: #afb8c1; }
     .bar-ours { fill: #ea580c; }
     .rule { stroke: #d8dee4; stroke-width: 1; }
@@ -25,6 +26,7 @@
       .subtitle, .footer, .axis, .group { fill: #8d96a0; }
       .lang, .note-plain { fill: #6e7681; }
       .footnote { fill: #8d96a0; }
+      .repo { fill: #6e7681; }
       .value, .small { fill: #c9d1d9; }
       .value.ours { fill: #fb923c; }
       .bar { fill: #3d444d; }
@@ -39,58 +41,58 @@
 <text x="40.0" y="66.0" class="subtitle" text-anchor="start">geometric mean over 10 inputs of each library's MB/s ÷ TomlBeef's · higher is better · TomlBeef = 1×</text>
 <text x="40.0" y="106.0" class="group" text-anchor="start">DATA MODEL</text>
 <text x="40.0" y="131.5" class="lang" text-anchor="start">Beef</text>
-<text x="190.0" y="131.5" class="label ours" text-anchor="end">TomlBeef</text>
-<rect x="200" y="118.5" width="440.0" height="16" rx="3" class="bar-ours"/>
-<text x="648.0" y="131.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
+<text x="80" y="131.5"><tspan class="label ours">TomlBeef</tspan><tspan class="repo" dx="8">mdsitton/TomlBeef</tspan></text>
+<rect x="340" y="118.5" width="360.0" height="16" rx="3" class="bar-ours"/>
+<text x="708.0" y="131.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
 <text x="40.0" y="156.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="156.5" class="label" text-anchor="end">glaze*</text>
-<rect x="200" y="143.5" width="289.4" height="16" rx="3" class="bar"/>
-<text x="497.4" y="156.5" class="small"><tspan class="value">0.66×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.5× faster</tspan></text>
+<text x="80" y="156.5"><tspan class="label">glaze*</tspan><tspan class="repo" dx="8">stephenberry/glaze</tspan></text>
+<rect x="340" y="143.5" width="236.8" height="16" rx="3" class="bar"/>
+<text x="584.8" y="156.5" class="small"><tspan class="value">0.66×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.5× faster</tspan></text>
 <text x="40.0" y="181.5" class="lang" text-anchor="start">Rust</text>
-<text x="190.0" y="181.5" class="label" text-anchor="end">toml</text>
-<rect x="200" y="168.5" width="119.7" height="16" rx="3" class="bar"/>
-<text x="327.7" y="181.5" class="small"><tspan class="value">0.27×</tspan><tspan class="note-plain" dx="8">TomlBeef 3.7× faster</tspan></text>
+<text x="80" y="181.5"><tspan class="label">toml</tspan><tspan class="repo" dx="8">toml-rs/toml</tspan></text>
+<rect x="340" y="168.5" width="98.0" height="16" rx="3" class="bar"/>
+<text x="446.0" y="181.5" class="small"><tspan class="value">0.27×</tspan><tspan class="note-plain" dx="8">TomlBeef 3.7× faster</tspan></text>
 <text x="40.0" y="206.5" class="lang" text-anchor="start">C#</text>
-<text x="190.0" y="206.5" class="label" text-anchor="end">Tomlyn</text>
-<rect x="200" y="193.5" width="70.5" height="16" rx="3" class="bar"/>
-<text x="278.5" y="206.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.2× faster</tspan></text>
+<text x="80" y="206.5"><tspan class="label">Tomlyn</tspan><tspan class="repo" dx="8">xoofx/Tomlyn</tspan></text>
+<rect x="340" y="193.5" width="57.7" height="16" rx="3" class="bar"/>
+<text x="405.7" y="206.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.2× faster</tspan></text>
 <text x="40.0" y="231.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="231.5" class="label" text-anchor="end">toml++</text>
-<rect x="200" y="218.5" width="68.4" height="16" rx="3" class="bar"/>
-<text x="276.4" y="231.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.4× faster</tspan></text>
+<text x="80" y="231.5"><tspan class="label">toml++</tspan><tspan class="repo" dx="8">marzer/tomlplusplus</tspan></text>
+<rect x="340" y="218.5" width="56.0" height="16" rx="3" class="bar"/>
+<text x="404.0" y="231.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.4× faster</tspan></text>
 <text x="40.0" y="256.5" class="lang" text-anchor="start">C</text>
-<text x="190.0" y="256.5" class="label" text-anchor="end">toml-c</text>
-<rect x="200" y="243.5" width="44.5" height="16" rx="3" class="bar"/>
-<text x="252.5" y="256.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
+<text x="80" y="256.5"><tspan class="label">toml-c</tspan><tspan class="repo" dx="8">arp242/toml-c</tspan></text>
+<rect x="340" y="243.5" width="36.4" height="16" rx="3" class="bar"/>
+<text x="384.4" y="256.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
 <text x="40.0" y="281.5" class="lang" text-anchor="start">C</text>
-<text x="190.0" y="281.5" class="label" text-anchor="end">tomlc17</text>
-<rect x="200" y="268.5" width="44.3" height="16" rx="3" class="bar"/>
-<text x="252.3" y="281.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
+<text x="80" y="281.5"><tspan class="label">tomlc17</tspan><tspan class="repo" dx="8">cktan/tomlc17</tspan></text>
+<rect x="340" y="268.5" width="36.2" height="16" rx="3" class="bar"/>
+<text x="384.2" y="281.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
 <text x="40.0" y="306.5" class="lang" text-anchor="start">Go</text>
-<text x="190.0" y="306.5" class="label" text-anchor="end">BurntSushi/toml</text>
-<rect x="200" y="293.5" width="41.8" height="16" rx="3" class="bar"/>
-<text x="249.8" y="306.5" class="small"><tspan class="value">0.095×</tspan><tspan class="note-plain" dx="8">TomlBeef 10.5× faster</tspan></text>
+<text x="80" y="306.5"><tspan class="label">toml</tspan><tspan class="repo" dx="8">BurntSushi/toml</tspan></text>
+<rect x="340" y="293.5" width="34.2" height="16" rx="3" class="bar"/>
+<text x="382.2" y="306.5" class="small"><tspan class="value">0.095×</tspan><tspan class="note-plain" dx="8">TomlBeef 10.5× faster</tspan></text>
 <text x="40.0" y="331.5" class="lang" text-anchor="start">Go</text>
-<text x="190.0" y="331.5" class="label" text-anchor="end">go-toml</text>
-<rect x="200" y="318.5" width="21.4" height="16" rx="3" class="bar"/>
-<text x="229.4" y="331.5" class="small"><tspan class="value">0.049×</tspan><tspan class="note-plain" dx="8">TomlBeef 20.6× faster</tspan></text>
+<text x="80" y="331.5"><tspan class="label">go-toml</tspan><tspan class="repo" dx="8">pelletier/go-toml</tspan></text>
+<rect x="340" y="318.5" width="17.5" height="16" rx="3" class="bar"/>
+<text x="365.5" y="331.5" class="small"><tspan class="value">0.049×</tspan><tspan class="note-plain" dx="8">TomlBeef 20.6× faster</tspan></text>
 <text x="40.0" y="356.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="356.5" class="label" text-anchor="end">toml11</text>
-<rect x="200" y="343.5" width="6.4" height="16" rx="3" class="bar"/>
-<text x="214.4" y="356.5" class="small"><tspan class="value">0.015×</tspan><tspan class="note-plain" dx="8">TomlBeef 68.9× faster</tspan></text>
+<text x="80" y="356.5"><tspan class="label">toml11</tspan><tspan class="repo" dx="8">ToruNiina/toml11</tspan></text>
+<rect x="340" y="343.5" width="5.2" height="16" rx="3" class="bar"/>
+<text x="353.2" y="356.5" class="small"><tspan class="value">0.015×</tspan><tspan class="note-plain" dx="8">TomlBeef 68.9× faster</tspan></text>
 <text x="40.0" y="386.0" class="group" text-anchor="start">KEEPS COMMENTS AND FORMATTING</text>
 <text x="40.0" y="411.5" class="lang" text-anchor="start">Beef</text>
-<text x="190.0" y="411.5" class="label ours" text-anchor="end">TomlBeef</text>
-<rect x="200" y="398.5" width="440.0" height="16" rx="3" class="bar-ours"/>
-<text x="648.0" y="411.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
+<text x="80" y="411.5"><tspan class="label ours">TomlBeef</tspan><tspan class="repo" dx="8">mdsitton/TomlBeef</tspan></text>
+<rect x="340" y="398.5" width="360.0" height="16" rx="3" class="bar-ours"/>
+<text x="708.0" y="411.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
 <text x="40.0" y="436.5" class="lang" text-anchor="start">Rust</text>
-<text x="190.0" y="436.5" class="label" text-anchor="end">toml_edit</text>
-<rect x="200" y="423.5" width="223.3" height="16" rx="3" class="bar"/>
-<text x="431.3" y="436.5" class="small"><tspan class="value">0.51×</tspan><tspan class="note-plain" dx="8">TomlBeef 2.0× faster</tspan></text>
+<text x="80" y="436.5"><tspan class="label">toml_edit</tspan><tspan class="repo" dx="8">toml-rs/toml</tspan></text>
+<rect x="340" y="423.5" width="182.7" height="16" rx="3" class="bar"/>
+<text x="530.7" y="436.5" class="small"><tspan class="value">0.51×</tspan><tspan class="note-plain" dx="8">TomlBeef 2.0× faster</tspan></text>
 <text x="40.0" y="461.5" class="lang" text-anchor="start">C#</text>
-<text x="190.0" y="461.5" class="label" text-anchor="end">Tomlyn (syntax tree)</text>
-<rect x="200" y="448.5" width="32.6" height="16" rx="3" class="bar"/>
-<text x="240.6" y="461.5" class="small"><tspan class="value">0.074×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.5× faster</tspan></text>
+<text x="80" y="461.5"><tspan class="label">Tomlyn (syntax tree)</tspan><tspan class="repo" dx="8">xoofx/Tomlyn</tspan></text>
+<rect x="340" y="448.5" width="26.7" height="16" rx="3" class="bar"/>
+<text x="374.7" y="461.5" class="small"><tspan class="value">0.074×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.5× faster</tspan></text>
 <text x="40.0" y="491.0" class="footnote" text-anchor="start">* glaze failed the config (mixed) and dates inputs (no date/time support in its schema-less mode); its average covers the other 8.</text>
 <text x="40.0" y="547.0" class="title" text-anchor="start">TomlBeef against the fastest alternative, per input</text>
 <text x="40.0" y="569.0" class="subtitle" text-anchor="start">MB/s · for each input, the fastest other library that parsed it · bars scaled per input</text>
