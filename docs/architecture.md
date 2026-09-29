@@ -716,7 +716,10 @@ text through `Compiler.EmitTypeBody`.
   messages list the cases from compile time.
 - *Fields.* Public instance fields not marked `[TomlIgnore]`; keys from the field name through
   `TomlKeyNaming` (words split at case changes, acronyms kept whole: `HTTPPort` → `http_port`) or
-  `[TomlName]`. Supported: bool, integers (range-checked both ways; 64-bit unsigned up to
+  `[TomlName]`. The default is `.AsDeclared`, the field name as written, which is what every
+  library surveyed does (BJSON, Tomlyn/System.Text.Json, serde, toml-spanner, glaze, zig-toml, and
+  the Go libraries on write); renames are per field or opt-in per type. Keys match exactly: the
+  Go libraries' case-insensitive fallback on read was not adopted. Supported: bool, integers (range-checked both ways; 64-bit unsigned up to
   `int64.MaxValue`), float/double (integers accepted), String, simple enums, the four date/time
   types, `[TomlObject]` types (tables) and `List<T>` of those (a list of objects is an array of
   tables). Anything else stops the build with a message naming the field.
