@@ -113,7 +113,7 @@ extension Program
 				let doc = scope TomlDocument();
 				let root = scope TypedRoot();
 				if (doc.Read(text) case .Ok)
-					doc.Deserialize(root).IgnoreError();
+					doc.Deserialize(root, root: true).IgnoreError();
 			});
 		case "read-arena":
 			// TomlSerializer.Read with a scope BumpAllocator per read: nested objects, Strings and Lists

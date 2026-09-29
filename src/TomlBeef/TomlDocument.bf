@@ -1068,7 +1068,9 @@ public class TomlDocument
 	// [TomlObject] serialization, mixed freely with the rest of the API
 	// ================================================================
 
-	/// @brief Fill a [TomlObject] class from the root table (see TomlObjectAttribute).
+	/// @brief Fill a [TomlObject] class from its own table: the type's Key, or its name
+	/// (`doc.Deserialize(server)` reads `[server]` for `[TomlObject(Key = "server")]`), or from the whole
+	/// document with `root: true` (see TomlObjectAttribute).
 	///
 	/// A String, nested object or List field that is null when its key is read gets a new instance, as
 	/// does every String or object item of a list. Without `allocator` these come from the heap and the
@@ -1077,31 +1079,39 @@ public class TomlDocument
 	/// owns them: the type must not delete them (no `~ delete _` on those fields), and old list items
 	/// are dropped, not deleted, so read into objects that do not already own heap items.
 	/// @param target The object to fill.
+	/// @param root True to read the whole document (the root table) instead of the type's table.
 	/// @param allocator Where created objects come from, or null for the heap.
-	/// @return .Ok, or the first error (located when the document was read with positions).
-	public Result<void, TomlParseError> Deserialize<T>(T target, ITypedAllocator allocator = null) where T : class, ITomlSerializable
+	/// @return .Ok, or the first error (a missing table is MissingKey; errors are located when the
+	/// document was read with positions).
+	public Result<void, TomlParseError> Deserialize<T>(T target, bool root = false, ITypedAllocator allocator = null) where T : class, ITomlSerializable
 	{
-		return target.TomlRead(mRootTable, allocator);
+		if (root)
+			return target.TomlRead(mRootTable, allocator);
+		return target.TomlRead(Try!(RequireTable(T.TomlKey)), allocator);
 	}
 
 	/// @brief Fill a [TomlObject] class from the table at a dotted path: `doc.Deserialize("server", server)`.
 	/// The rest of the document stays available through the ordinary API.
 	/// @param dottedPath The path of the table.
 	/// @param target The object to fill.
-	/// @param allocator Where created objects come from, or null for the heap (see the root overload).
+	/// @param allocator Where created objects come from, or null for the heap (see the path-less overload).
 	/// @return .Ok, or the first error (a missing table is MissingKey).
 	public Result<void, TomlParseError> Deserialize<T>(StringView dottedPath, T target, ITypedAllocator allocator = null) where T : class, ITomlSerializable
 	{
 		return target.TomlRead(Try!(RequireTable(dottedPath)), allocator);
 	}
 
-	/// @brief Fill a [TomlObject] struct from the root table.
+	/// @brief Fill a [TomlObject] struct from its own table, or the whole document with `root: true`; see
+	/// the class overload.
 	/// @param target The struct to fill.
+	/// @param root True to read the whole document instead of the type's table.
 	/// @param allocator Where created objects come from, or null for the heap (see the class overload).
 	/// @return .Ok, or the first error.
-	public Result<void, TomlParseError> Deserialize<T>(ref T target, ITypedAllocator allocator = null) where T : struct, ITomlSerializable
+	public Result<void, TomlParseError> Deserialize<T>(ref T target, bool root = false, ITypedAllocator allocator = null) where T : struct, ITomlSerializable
 	{
-		return target.TomlRead(mRootTable, allocator);
+		if (root)
+			return target.TomlRead(mRootTable, allocator);
+		return target.TomlRead(Try!(RequireTable(T.TomlKey)), allocator);
 	}
 
 	/// @brief Fill a [TomlObject] struct from the table at a dotted path.
@@ -1114,13 +1124,17 @@ public class TomlDocument
 		return target.TomlRead(Try!(RequireTable(dottedPath)), allocator);
 	}
 
-	/// @brief Write a [TomlObject]'s fields into the root table, updating it in place (see
+	/// @brief Write a [TomlObject]'s fields into its own table (the type's Key, or its name; created if
+	/// needed), or into the whole document with `root: true`, updating it in place (see
 	/// TomlTable.Serialize): keys the type does not know stay, unchanged values keep their formatting.
 	/// @param source The object to write.
+	/// @param root True to write into the root table instead of the type's table.
 	/// @return .Ok, or an error for a value TOML cannot hold.
-	public Result<void, TomlParseError> Serialize<T>(T source) where T : ITomlSerializable
+	public Result<void, TomlParseError> Serialize<T>(T source, bool root = false) where T : ITomlSerializable
 	{
-		return source.TomlWrite(mRootTable);
+		if (root)
+			return source.TomlWrite(mRootTable);
+		return Serialize(T.TomlKey, source);
 	}
 
 	/// @brief Write a [TomlObject]'s fields into the table at a dotted path, creating it (and missing

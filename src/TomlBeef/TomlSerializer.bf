@@ -4,8 +4,9 @@ namespace TomlBeef;
 
 /// @brief One-call reading and writing of whole documents as [TomlObject] types (see TomlObjectAttribute).
 /// Each is a short wrapper: a scoped TomlDocument, its Read/ReadFile or Write/WriteFile, and its
-/// Deserialize or Serialize. Use those directly to bind one section by path, mix typed and hand-written
-/// data, or update a document read with PreserveStyle in place.
+/// Deserialize or Serialize with `root: true`, since these calls are about the whole file. Use the
+/// document API directly to bind a type to its own section (TomlObjectAttribute.Key) or any path, mix
+/// typed and hand-written data, or update a document read with PreserveStyle in place.
 public static class TomlSerializer
 {
 	/// @brief Parse `toml` and fill `target` from its root table. Errors (parse errors, and missing
@@ -20,7 +21,7 @@ public static class TomlSerializer
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.Read(toml, WithPositions(config)));
-		return doc.Deserialize(target, allocator);
+		return doc.Deserialize(target, root: true, allocator: allocator);
 	}
 
 	/// @brief Parse `toml` and fill the struct `target` from its root table; see the class overload.
@@ -33,7 +34,7 @@ public static class TomlSerializer
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.Read(toml, WithPositions(config)));
-		return doc.Deserialize(ref target, allocator);
+		return doc.Deserialize(ref target, root: true, allocator: allocator);
 	}
 
 	/// @brief Parse the file at `path` and fill `target` from its root table. Errors name the file:
@@ -47,7 +48,7 @@ public static class TomlSerializer
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.ReadFile(path, WithPositions(config)));
-		return doc.Deserialize(target, allocator);
+		return doc.Deserialize(target, root: true, allocator: allocator);
 	}
 
 	/// @brief Parse the file at `path` and fill the struct `target`; see the class overload.
@@ -60,7 +61,7 @@ public static class TomlSerializer
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.ReadFile(path, WithPositions(config)));
-		return doc.Deserialize(ref target, allocator);
+		return doc.Deserialize(ref target, root: true, allocator: allocator);
 	}
 
 	/// @brief Write `source` as a new TOML document, appending to `output`.
@@ -71,7 +72,7 @@ public static class TomlSerializer
 	public static Result<void, TomlParseError> Write<T>(T source, String output, TomlWriteConfig config = .()) where T : ITomlSerializable
 	{
 		let doc = scope TomlDocument();
-		Try!(doc.Serialize(source));
+		Try!(doc.Serialize(source, root: true));
 		doc.Write(output, config);
 		return .Ok;
 	}
@@ -85,7 +86,7 @@ public static class TomlSerializer
 	public static Result<void, TomlParseError> WriteFile<T>(T source, StringView path, TomlWriteConfig config = .()) where T : ITomlSerializable
 	{
 		let doc = scope TomlDocument();
-		Try!(doc.Serialize(source));
+		Try!(doc.Serialize(source, root: true));
 		return doc.WriteFile(path, config);
 	}
 

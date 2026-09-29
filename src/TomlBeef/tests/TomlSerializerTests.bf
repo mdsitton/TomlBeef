@@ -339,6 +339,26 @@ class SerShape
 	[TomlUseConverter(typeof(SerPointArrayToml))] public SerPoint Anchor;
 }
 
+// Where path-less document calls find a type: its Key, or its name through Naming
+
+[TomlObject(Key = "server")]
+class SerKeyed
+{
+	public int32 Port;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerHomeSection
+{
+	public int32 Port;
+}
+
+[TomlObject(Key = "tool.beef")]
+struct SerToolSection
+{
+	public int32 Level;
+}
+
 static class TomlSerializerTests
 {
 	const String cConfig = """
@@ -685,10 +705,43 @@ static class TomlSerializerTests
 		// Without a converter the same type is a table (its own [TomlObject] code)
 		var point = SerPoint() { X = 3, Y = 4 };
 		let doc = scope TomlDocument();
-		Test.Assert(doc.Serialize(point) case .Ok);
+		Test.Assert(doc.Serialize(point, root: true) case .Ok);
 		text.Clear();
 		doc.Write(text);
 		Test.Assert(text == "X = 3\nY = 4\n", text);
+	}
+
+	[Test]
+	public static void Document_TypesKnowTheirTable()
+	{
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read("Port = 99\n[server]\nPort = 1\n[ser_home_section]\nport = 2\n[tool.beef]\nLevel = 3") case .Ok);
+		Test.Assert(SerKeyed.TomlKey == "server" && SerHomeSection.TomlKey == "ser_home_section" && SerToolSection.TomlKey == "tool.beef");
+
+		let keyed = scope SerKeyed();
+		Test.Assert(doc.Deserialize(keyed) case .Ok && keyed.Port == 1, "Key");
+		let home = scope SerHomeSection();
+		Test.Assert(doc.Deserialize(home) case .Ok && home.Port == 2, "type name through Naming");
+		var tool = SerToolSection();
+		Test.Assert(doc.Deserialize(ref tool) case .Ok && tool.Level == 3, "dotted Key");
+		Test.Assert(doc.Deserialize(keyed, root: true) case .Ok && keyed.Port == 99, "root: true");
+		Test.Assert(doc.Deserialize("tool.beef", keyed) case .Ok && keyed.Port == 99, "an explicit path wins; Port is absent there");
+
+		// A missing table is an error, and writing creates it
+		let empty = scope TomlDocument();
+		Test.Assert(empty.Deserialize(keyed) case .Err(let err) && err.mKind == .MissingKey);
+		keyed.Port = 7;
+		Test.Assert(empty.Serialize(keyed) case .Ok && empty.Serialize(tool) case .Ok);
+		let text = scope String();
+		empty.Write(text);
+		let reread = scope TomlDocument();
+		Test.Assert(reread.Read(text) case .Ok, text);
+		Test.Assert(reread.GetInteger("server.Port", 0) == 7 && reread.GetInteger("tool.beef.Level", 0) == 3 && reread.RootTable.Count == 2, text);
+
+		// The whole-file wrappers use the root
+		let whole = scope SerKeyed();
+		ReadOk("Port = 5\n[server]\nPort = 6", whole);
+		Test.Assert(whole.Port == 5);
 	}
 
 	[Test]

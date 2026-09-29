@@ -434,19 +434,28 @@ Try!(TomlSerializer.WriteFile(config, "out.toml"));
 
 Supported fields: bool, integers, float/double, String, enums, the TOML date/time types, other `[TomlObject]` types and `List<T>` of those (a list of objects is an array of tables). Anything else stops the build with a message naming the field, unless it has a converter or `[TomlIgnore]`.
 
-**Typed sections in a live document.** `TomlSerializer` is a shortcut for the document API, which binds objects to any table and mixes them with ordinary reads and writes. Writing updates in place: unchanged values keep their formatting and comments, keys the type does not know stay, and list items are updated by position.
+**Typed sections in a live document.** `TomlSerializer` reads and writes whole files. The document API binds objects to sections and mixes them with ordinary reads and writes. Writing updates in place: unchanged values keep their formatting and comments, keys the type does not know stay, and list items are updated by position.
 
 ```bf
+[TomlObject(Key = "server")]                 // the table this type lives in
+class ServerSection
+{
+    public String Host = new .() ~ delete _;
+    public int32 Port;
+}
+
 let doc = scope TomlDocument();
 Try!(doc.ReadFile("app.toml", .() { MetadataMode = .PreserveStyle }));
 
 let server = scope ServerSection();
-Try!(doc.Deserialize("server", server));    // the [server] section, typed
+Try!(doc.Deserialize(server));              // reads [server]
 server.Port = 9090;
-Try!(doc.Serialize("server", server));      // written back in place
+Try!(doc.Serialize(server));                // written back in place
 doc.Set("version", doc.GetInteger("version", 1) + 1);   // the rest, by hand
 Try!(doc.WriteFile("app.toml"));            // comments and layout kept
 ```
+
+Without a path, the document API uses the type's `Key` (a dotted path such as `"tool.poetry"` works too), or the type's name through its `Naming` policy when `Key` is not set (`ServerSection` → `[ServerSection]`, or `[server_section]` in snake case). Pass a path to choose another table (`doc.Deserialize("mirror.server", server)`), or `root: true` for the whole document (`doc.Deserialize(appConfig, root: true)`). A field of such a type inside another `[TomlObject]` is still named by the field.
 
 **Converters** handle types the serializer does not know, typically ones you cannot annotate (a `Vector3` from another library). A field whose type is itself `[TomlObject]` needs no converter: it is read and written as a nested table through that type's own generated code. Register a converter once and every field or list item of that type uses it; `[TomlUseConverter(typeof(...))]` picks a different one for a single field.
 

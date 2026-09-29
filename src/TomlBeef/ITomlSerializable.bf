@@ -6,6 +6,10 @@ namespace TomlBeef;
 /// methods; a type can also implement them by hand.
 public interface ITomlSerializable
 {
+	/// @brief The dotted path of the table the type reads from and writes to when TomlDocument.Deserialize
+	/// or Serialize is given no path (see TomlObjectAttribute.Key).
+	static StringView TomlKey { get; }
+
 	/// @brief Fill this object's fields from `table`.
 	/// @param table The table to read.
 	/// @param allocator Where the objects the read creates (Strings, nested objects, Lists and their

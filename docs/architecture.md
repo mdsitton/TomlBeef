@@ -693,7 +693,16 @@ text through `Compiler.EmitTypeBody`.
   / `table.Serialize` do the same for any table. So typed sections and hand-written data mix in one
   document, read and written through the same API. `TomlSerializer.Read`/`ReadFile`/`Write`/
   `WriteFile` are one-call wrappers for whole documents: a scoped document, its read or write, and
-  its `Deserialize` or `Serialize`, so there is one code path.
+  its `Deserialize` or `Serialize` with `root: true`, so there is one code path.
+- *Where a type lives.* Without a path, the document calls use the type's home table: `Key` on
+  `[TomlObject]` (a dotted path), or the type's name through its `Naming` policy. The generator emits
+  it as `static StringView TomlKey`, a static member of `ITomlSerializable`, so `T.TomlKey` resolves at
+  compile time. The root is opt-in (`root: true`) in the document API, where binding sections is the
+  common case, and implied by the whole-file `TomlSerializer` calls. Serialization libraries map a
+  type to the whole document by default; configuration binders (Spring's
+  `@ConfigurationProperties(prefix)`, .NET `GetSection`, Viper `UnmarshalKey`) bind sections, and the
+  document API is closer to them. A type's key only places it at the top level: as a field of
+  another `[TomlObject]`, the field's name decides.
 - *Writing updates in place.* Scalars go through `Set`, which leaves an unchanged value (and its
   PreserveStyle token and comments) untouched; existing sub-tables and arrays are reused
   (`TomlTable.WriteTableAt`/`WriteArrayAt`), so keys the type does not know and their comments stay;

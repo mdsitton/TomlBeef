@@ -33,15 +33,23 @@ namespace TomlBeef;
 [AttributeUsage(.Class | .Struct)]
 public struct TomlObjectAttribute : Attribute, IComptimeTypeApply
 {
-	/// @brief How field names become TOML keys (a TomlName on a field overrides it).
+	/// @brief How field names become TOML keys (a TomlName on a field overrides it). Also applies to the
+	/// type name when it is the type's key (see Key).
 	public TomlKeyNaming Naming;
+
+	/// @brief Where the type lives in a document: the table TomlDocument.Deserialize(obj) and Serialize(obj)
+	/// use when given no path, as a dotted path (`"server"`, `"tool.poetry"`). Unset, it is the type's
+	/// name through Naming (`ServerSection` is `server_section` in snake case). It does not affect a field
+	/// of this type inside another [TomlObject], which the field's own name decides, nor the whole-file
+	/// TomlSerializer calls and `root: true`, which use the document root.
+	public String Key;
 
 	/// @brief Checks the type's fields and emits ITomlSerializable, TomlRead and TomlWrite into it.
 	/// @param type The type carrying the attribute.
 	[Comptime]
 	public void ApplyToType(Type type)
 	{
-		TomlSerializerCodeGen.Emit(type, Naming);
+		TomlSerializerCodeGen.Emit(type, Naming, (Key != null) ? Key : "");
 	}
 }
 

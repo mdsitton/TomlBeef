@@ -34,9 +34,10 @@ public static class TomlSerializerCodeGen
 
 	/// @brief Emit ITomlSerializable, TomlRead and TomlWrite into `type`.
 	/// @param type A class or struct carrying [TomlObject].
-	/// @param naming How field names become keys.
+	/// @param naming How field names (and the type name, for the key) become keys.
+	/// @param homeKey The type's table in a document (TomlObjectAttribute.Key), or empty for its name.
 	[Comptime]
-	public static void Emit(Type type, TomlKeyNaming naming)
+	public static void Emit(Type type, TomlKeyNaming naming, StringView homeKey)
 	{
 		let read = scope String();
 		let write = scope String();
@@ -44,6 +45,15 @@ public static class TomlSerializerCodeGen
 		// A [TomlObject] base already has both methods: hide them, and read and write its fields first
 		bool baseIsObject = type.BaseType != null && type.BaseType != typeof(Object) && type.BaseType.HasCustomAttribute<TomlObjectAttribute>();
 		StringView hide = baseIsObject ? "new " : "";
+
+		// Where path-less TomlDocument.Deserialize/Serialize find the type: its Key, or its own name
+		let home = scope String();
+		if (!homeKey.IsEmpty)
+			home.Append(homeKey);
+		else
+			ApplyNaming(type.GetName(.. scope .()), naming, home);
+		let homeLiteral = AppendLiteral(.. scope .(), home);
+		read.AppendF("public {}static StringView TomlKey => {};\n", hide, homeLiteral);
 		read.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table, System.ITypedAllocator _alloc = null){}\n{{\n", hide, type.IsValueType ? " mut" : "");
 		write.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlWrite(TomlBeef.TomlTable _table)\n{{\n", hide);
 		if (baseIsObject)
