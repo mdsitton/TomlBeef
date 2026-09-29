@@ -619,6 +619,10 @@ if (doc.ReadFile(path) case .Err(let err))
 
 ## Performance
 
+TomlBeef reads and writes in several modes, each adding something to the plain document. On one input, this is what each costs (`bench/compare/modes.sh`, results in `bench/compare/modes-results.md`); the charts after it compare each mode with other libraries:
+
+<p align="center"><img src="docs/benchmark-modes.svg" alt="TomlBeef's read and write modes on one input: document, positions, PreserveStyle and typed" width="820"></p>
+
 <p align="center"><img src="docs/benchmark.svg" alt="Parsing throughput of TomlBeef compared with other TOML libraries" width="820"></p>
 
 <p align="center"><img src="docs/benchmark-table.svg" alt="Full benchmark results: MB/s for every library on every input" width="880"></p>

@@ -80,6 +80,7 @@ extension Program
 	///   read-plain - doc.Read without metadata, then doc.Deserialize
 	///   read-arena - TomlSerializer.Read into ArenaRoot through a scope BumpAllocator
 	///   write      - TomlSerializer.Write of the model read once; MB/s of output
+	///   write-preserve - doc.Serialize of the model into a PreserveStyle document, then doc.Write
 	static int TypedBench(String[] args)
 	{
 		StringView mode = args[1];
@@ -124,6 +125,23 @@ extension Program
 				let root = scope ArenaRoot();
 				TomlSerializer.Read(text, root, .(), arena).IgnoreError();
 			});
+		case "write-preserve":
+			// The update workflow: a document read once with PreserveStyle; each op writes the model back
+			// into it in place (doc.Serialize, root) and writes the document out with its style
+			let preserved = scope TomlDocument();
+			if (preserved.Read(text, .() { MetadataMode = .PreserveStyle }) case .Err(let err))
+			{
+				Console.Error.WriteLine(scope $"read failed: {err}");
+				return 1;
+			}
+			m = Measure(minSamples, scope () =>
+			{
+				output.Clear();
+				preserved.Serialize(model, root: true).IgnoreError();
+				preserved.Write(output);
+			});
+			bytes = output.Length;
+			Console.WriteLine(scope $"unchanged: {output == text}");
 		case "write":
 			m = Measure(minSamples, scope () => { output.Clear(); TomlSerializer.Write(model, output).IgnoreError(); });
 			bytes = output.Length;

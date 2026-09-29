@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Draws docs/benchmark.svg (chart) and docs/benchmark-table.svg (full results table) from results.md
 (the Markdown table run.sh prints) and lookup-results.md, docs/benchmark-beef.svg (TomlBeef against
-Beef's StructuredData) from beef-results.md (beef.sh), and docs/benchmark-typed.svg (typed
-serialization) from typed-results.md (typed.sh).
+Beef's StructuredData) from beef-results.md (beef.sh), docs/benchmark-typed.svg (typed
+serialization) from typed-results.md (typed.sh), and docs/benchmark-modes.svg (TomlBeef's own read and
+write modes on one input) from modes-results.md (modes.sh).
 
     ./run.sh > results.md && ./plot.py
 
@@ -526,6 +527,78 @@ def typed_panel(top):
     return out, y
 
 
+MODES_RESULTS = os.path.join(HERE, "modes-results.md")
+MODES_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-modes.svg")
+# What each mode gives you, for modes-results.md rows (operation, mode)
+MODE_NOTES = {
+    ("read", "Document"): "values, tables and lookups",
+    ("read", "Document + positions"): "+ line and column of every value",
+    ("read", "Document + PreserveStyle"): "+ comments, formatting and original tokens",
+    ("read", "Typed"): "the document, bound to [TomlObject] types",
+    ("read", "Typed + positions"): "+ located errors (TomlSerializer.Read)",
+    ("read", "Typed + positions, arena"): "objects from a scope BumpAllocator",
+    ("write", "Document"): "canonical formatting",
+    ("write", "Document + PreserveStyle"): "comments and formatting kept",
+    ("write", "Typed"): "objects into a new document (TomlSerializer.Write)",
+    ("write", "Typed update + PreserveStyle"): "doc.Serialize into the edited file, in place",
+}
+
+
+def read_modes():
+    """modes-results.md as rows of (operation, mode, ms or text)."""
+    rows = [l for l in open(MODES_RESULTS) if l.startswith("|") and not l.startswith("|---")]
+    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    number = lambda v: float(v) if re.match(r"^[0-9.]+$", v) else v
+    return [(c[0], c[1], number(c[2])) for c in map(split, rows[1:])]
+
+
+def modes_panel(top):
+    """TomlBeef's own read and write paths on typed.toml (modes-results.md, written by modes.sh): one bar
+    per mode, grouped into reading and writing, each compared with the plain document in its group and
+    labeled with what the mode gives."""
+    rows = read_modes()
+    out = []
+    name_w, bar_w, row_h, bar_h = 320, 180, 38, 14
+    scale = bar_w / max(ms for _, _, ms in rows if isinstance(ms, float))
+    y = top
+    out.append(text(40, y, "TomlBeef's modes, side by side", "title"))
+    y += 22
+    out.append(text(40, y, "typed.toml, 3.8 MB · ms per operation, lower is better · what each mode adds, "
+                    "and what it costs over the plain document", "subtitle"))
+    y += 30
+    for operation, heading in (("read", "READING"), ("write", "WRITING")):
+        out.append(text(40, y, heading, "group"))
+        y += 14
+        group = [r for r in rows if r[0] == operation]
+        base = next(ms for _, mode, ms in group if mode == "Document")
+        for _, mode, ms in group:
+            ours = mode == "Document"
+            out.append(text(40, y + 11, mode, "label"))
+            out.append(text(40, y + 27, MODE_NOTES.get((operation, mode), ""), "lang"))
+            bar_x = 40 + name_w
+            if not isinstance(ms, float):
+                out.append(text(bar_x + 2, y + 11, ms, "cell-missing"))
+            else:
+                w = max(2.0, ms * scale)
+                out.append(f'<rect x="{bar_x}" y="{y:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" '
+                           f'class="{"bar" if ours else "bar-ours"}"/>')
+                compare = "the baseline" if ours else f"{ms / base:.2f}× the document {operation}"
+                out.append(f'<text x="{bar_x + w + 8:.1f}" y="{y + 11:.1f}" class="small">'
+                           f'<tspan class="value">{ms:.1f} ms</tspan>'
+                           f'<tspan class="note-plain" dx="8">{compare}</tspan></text>')
+            y += row_h
+        y += 10
+    out.append(text(40, y, "Each typed read includes the document read it binds from, and each typed write a "
+                    "document write. A typed update of an unchanged file", "footnote"))
+    y += 18
+    out.append(text(40, y, "rewrites it byte for byte. The charts below compare each mode with other libraries: "
+                    "Document with the parsers,", "footnote"))
+    y += 18
+    out.append(text(40, y, "PreserveStyle with toml_edit and Tomlyn's syntax tree, Typed with the typed mappers.",
+                    "footnote"))
+    return out, y + 8
+
+
 BEEF_RESULTS = os.path.join(HERE, "beef-results.md")
 BEEF_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-beef.svg")
 
@@ -692,6 +765,13 @@ def main():
         body.append(text(40, height - 16, "Same compiler and Release settings · 1 s warm-up, samples until 60% are "
                          "within ±10% of their median · median of 3 processes · beef.sh", "footer"))
         write_svg(BEEF_OUT, W, height, body, "TomlBeef compared with Beef's built-in TOML reader")
+
+    if os.path.exists(MODES_RESULTS):
+        body, y = modes_panel(44)
+        height = y + 36
+        body.append(text(40, height - 14, "Linux x86-64, single thread · 1 s warm-up, samples until 60% are within ±10% "
+                         "of their median · median of 3 processes · modes.sh", "footer"))
+        write_svg(MODES_OUT, W, height, body, "TomlBeef's read and write modes compared on one input")
 
     if os.path.exists(TYPED_RESULTS):
         body, y = typed_panel(44)

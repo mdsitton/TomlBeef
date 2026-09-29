@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="604" viewBox="0 0 920 604" role="img" aria-label="TomlBeef's read and write modes compared on one input">
+
+  <style>
+    svg { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .bg { fill: #ffffff; }
+    .title { font-size: 19px; font-weight: 650; fill: #1f2328; }
+    .subtitle, .footer, .axis { font-size: 12.5px; fill: #656d76; }
+    .group { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; fill: #656d76; }
+    .label { font-size: 13.5px; fill: #1f2328; }
+    .lang { font-size: 11px; fill: #8c959f; }
+    .ours { font-weight: 700; }
+    .value { font-size: 12.5px; fill: #424a53; font-variant-numeric: tabular-nums; }
+    .value.ours { fill: #c2410c; }
+    .small { font-size: 12px; fill: #424a53; }
+    .note-plain { fill: #8c959f; }
+    .footnote { font-size: 12px; fill: #656d76; }
+    .repo { font-size: 11.5px; fill: #8c959f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .bar { fill: #afb8c1; }
+    .bar-ours { fill: #ea580c; }
+    .rule { stroke: #d8dee4; stroke-width: 1; }
+    .libname { fill: #656d76; }
+    .libname.ours { fill: #c2410c; font-weight: 650; }
+    .colhead { font-size: 11px; font-weight: 600; fill: #424a53; }
+    .cell { font-size: 12px; fill: #424a53; font-variant-numeric: tabular-nums; }
+    .cell.best { font-weight: 700; fill: #1f2328; }
+    .cell.ours { fill: #c2410c; }
+    .cell-missing { font-size: 10px; fill: #8c959f; }
+    .heat { fill: #2da44e; }
+    .row-ours { fill: #ea580c; fill-opacity: 0.07; }
+    .seg-ok { fill: #2da44e; }
+    .seg-approx { fill: #d4a72c; }
+    .seg-bad { fill: #cf222e; }
+    .seg-err { fill: #afb8c1; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .title, .label { fill: #e6edf3; }
+      .subtitle, .footer, .axis, .group { fill: #8d96a0; }
+      .lang, .note-plain { fill: #6e7681; }
+      .footnote { fill: #8d96a0; }
+      .repo { fill: #6e7681; }
+      .value, .small { fill: #c9d1d9; }
+      .value.ours { fill: #fb923c; }
+      .bar { fill: #3d444d; }
+      .bar-ours { fill: #f97316; }
+      .rule { stroke: #262c36; }
+      .libname { fill: #8d96a0; }
+      .libname.ours { fill: #fb923c; }
+      .colhead { fill: #c9d1d9; }
+      .cell { fill: #c9d1d9; }
+      .cell.best { fill: #f0f6fc; }
+      .cell.ours { fill: #fb923c; }
+      .cell-missing { fill: #6e7681; }
+      .heat { fill: #3fb950; }
+      .row-ours { fill: #f97316; fill-opacity: 0.10; }
+      .seg-ok { fill: #3fb950; }
+      .seg-approx { fill: #d29922; }
+      .seg-bad { fill: #f85149; }
+      .seg-err { fill: #3d444d; }
+    }
+  </style>
+<rect class="bg" x="0" y="0" width="920" height="604" rx="10"/>
+<text x="40.0" y="44.0" class="title" text-anchor="start">TomlBeef's modes, side by side</text>
+<text x="40.0" y="66.0" class="subtitle" text-anchor="start">typed.toml, 3.8 MB · ms per operation, lower is better · what each mode adds, and what it costs over the plain document</text>
+<text x="40.0" y="96.0" class="group" text-anchor="start">READING</text>
+<text x="40.0" y="121.0" class="label" text-anchor="start">Document</text>
+<text x="40.0" y="137.0" class="lang" text-anchor="start">values, tables and lookups</text>
+<rect x="360" y="110.0" width="93.1" height="14" rx="2" class="bar"/>
+<text x="461.1" y="121.0" class="small"><tspan class="value">25.1 ms</tspan><tspan class="note-plain" dx="8">the baseline</tspan></text>
+<text x="40.0" y="159.0" class="label" text-anchor="start">Document + positions</text>
+<text x="40.0" y="175.0" class="lang" text-anchor="start">+ line and column of every value</text>
+<rect x="360" y="148.0" width="111.3" height="14" rx="2" class="bar-ours"/>
+<text x="479.3" y="159.0" class="small"><tspan class="value">30.0 ms</tspan><tspan class="note-plain" dx="8">1.20× the document read</tspan></text>
+<text x="40.0" y="197.0" class="label" text-anchor="start">Document + PreserveStyle</text>
+<text x="40.0" y="213.0" class="lang" text-anchor="start">+ comments, formatting and original tokens</text>
+<rect x="360" y="186.0" width="180.0" height="14" rx="2" class="bar-ours"/>
+<text x="548.0" y="197.0" class="small"><tspan class="value">48.6 ms</tspan><tspan class="note-plain" dx="8">1.93× the document read</tspan></text>
+<text x="40.0" y="235.0" class="label" text-anchor="start">Typed</text>
+<text x="40.0" y="251.0" class="lang" text-anchor="start">the document, bound to [TomlObject] types</text>
+<rect x="360" y="224.0" width="129.8" height="14" rx="2" class="bar-ours"/>
+<text x="497.8" y="235.0" class="small"><tspan class="value">35.0 ms</tspan><tspan class="note-plain" dx="8">1.39× the document read</tspan></text>
+<text x="40.0" y="273.0" class="label" text-anchor="start">Typed + positions</text>
+<text x="40.0" y="289.0" class="lang" text-anchor="start">+ located errors (TomlSerializer.Read)</text>
+<rect x="360" y="262.0" width="153.1" height="14" rx="2" class="bar-ours"/>
+<text x="521.1" y="273.0" class="small"><tspan class="value">41.3 ms</tspan><tspan class="note-plain" dx="8">1.64× the document read</tspan></text>
+<text x="40.0" y="311.0" class="label" text-anchor="start">Typed + positions, arena</text>
+<text x="40.0" y="327.0" class="lang" text-anchor="start">objects from a scope BumpAllocator</text>
+<rect x="360" y="300.0" width="145.9" height="14" rx="2" class="bar-ours"/>
+<text x="513.9" y="311.0" class="small"><tspan class="value">39.4 ms</tspan><tspan class="note-plain" dx="8">1.57× the document read</tspan></text>
+<text x="40.0" y="348.0" class="group" text-anchor="start">WRITING</text>
+<text x="40.0" y="373.0" class="label" text-anchor="start">Document</text>
+<text x="40.0" y="389.0" class="lang" text-anchor="start">canonical formatting</text>
+<rect x="360" y="362.0" width="43.7" height="14" rx="2" class="bar"/>
+<text x="411.7" y="373.0" class="small"><tspan class="value">11.8 ms</tspan><tspan class="note-plain" dx="8">the baseline</tspan></text>
+<text x="40.0" y="411.0" class="label" text-anchor="start">Document + PreserveStyle</text>
+<text x="40.0" y="427.0" class="lang" text-anchor="start">comments and formatting kept</text>
+<rect x="360" y="400.0" width="61.2" height="14" rx="2" class="bar-ours"/>
+<text x="429.2" y="411.0" class="small"><tspan class="value">16.5 ms</tspan><tspan class="note-plain" dx="8">1.40× the document write</tspan></text>
+<text x="40.0" y="449.0" class="label" text-anchor="start">Typed</text>
+<text x="40.0" y="465.0" class="lang" text-anchor="start">objects into a new document (TomlSerializer.Write)</text>
+<rect x="360" y="438.0" width="91.9" height="14" rx="2" class="bar-ours"/>
+<text x="459.9" y="449.0" class="small"><tspan class="value">24.8 ms</tspan><tspan class="note-plain" dx="8">2.10× the document write</tspan></text>
+<text x="40.0" y="487.0" class="label" text-anchor="start">Typed update + PreserveStyle</text>
+<text x="40.0" y="503.0" class="lang" text-anchor="start">doc.Serialize into the edited file, in place</text>
+<rect x="360" y="476.0" width="81.7" height="14" rx="2" class="bar-ours"/>
+<text x="449.7" y="487.0" class="small"><tspan class="value">22.0 ms</tspan><tspan class="note-plain" dx="8">1.87× the document write</tspan></text>
+<text x="40.0" y="524.0" class="footnote" text-anchor="start">Each typed read includes the document read it binds from, and each typed write a document write. A typed update of an unchanged file</text>
+<text x="40.0" y="542.0" class="footnote" text-anchor="start">rewrites it byte for byte. The charts below compare each mode with other libraries: Document with the parsers,</text>
+<text x="40.0" y="560.0" class="footnote" text-anchor="start">PreserveStyle with toml_edit and Tomlyn's syntax tree, Typed with the typed mappers.</text>
+<text x="40.0" y="590.0" class="footer" text-anchor="start">Linux x86-64, single thread · 1 s warm-up, samples until 60% are within ±10% of their median · median of 3 processes · modes.sh</text>
+</svg>

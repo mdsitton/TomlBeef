@@ -919,6 +919,13 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     610, strings 505 → 696, ints 147 → 179, floats 143 → 171, dates 156 → 190, arrays 78 → 80,
     headers 74 → 95, dotted 52 → 84; PreserveStyle dotted 40 → 47. Writing: ints 232 → 425, headers
     166 → 271, dotted 56 → 174. Lookups: 100 → 69 ns (ints), 84 → 71 ns (mixed).
+  - *TomlBeef's own modes* (`modes.sh`, results in `modes-results.md`, chart
+    `docs/benchmark-modes.svg`, first in the README's Performance section). Every read and write path
+    on `typed.toml`, relative to the plain document: reads 25 ms (document), 30 (+ positions), 49
+    (+ PreserveStyle), 35 (typed), 41 (typed + positions), 39 (typed + positions through an arena);
+    writes 12 ms (document), 16.5 (PreserveStyle), 25 (typed into a new document), 22 (typed update of
+    a PreserveStyle document in place, byte-for-byte identical output when nothing changed). It gives
+    the per-library charts context: each compares one of these modes.
   - *Typed serialization* (`typed.sh`, results in `typed-results.md`, 2026-09-29). Every library with
     a typed mapping reads `typed.toml` (3.8 MB: 20000 `[[servers]]`, each with strings, integers, a
     float, a bool, a string list and a nested table) into matching native types and writes them
