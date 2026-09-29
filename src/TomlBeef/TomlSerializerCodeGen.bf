@@ -386,7 +386,7 @@ public static class TomlSerializerCodeGen
 		case .Bool, .OffsetDateTime, .LocalDateTime, .LocalDate, .LocalTime:
 			code.AppendF("\t_table.Set({}, this.{});\n", key, name);
 		case .String:
-			code.AppendF("\tif (this.{} != null)\n\t\t_table.Set({}, (StringView)this.{});\n", name, key, name);
+			code.AppendF("\tif (this.{0} != null)\n\t\t_table.Set({1}, (StringView)this.{0});\n\telse\n\t\t_table.Remove({1});\n", name, key);
 		case .Enum:
 			code.AppendF("\tswitch (this.{})\n\t{{\n", name);
 			for (let field in type.GetFields())
@@ -399,25 +399,29 @@ public static class TomlSerializerCodeGen
 			}
 			code.Append("\t}\n");
 		case .Object:
+			// Into the existing table when there is one, so its other keys and comments stay
 			if (type.IsValueType)
-				code.AppendF("\tTry!(this.{}.TomlWrite(_table.AddTable({})));\n", name, key);
+				code.AppendF("\tTry!(this.{}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {})));\n", name, key);
 			else
-				code.AppendF("\tif (this.{} != null)\n\t\tTry!(this.{}.TomlWrite(_table.AddTable({})));\n", name, name, key);
+				code.AppendF("\tif (this.{0} != null)\n\t\tTry!(this.{0}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {1})));\n\telse\n\t\t_table.Remove({1});\n", name, key);
 		case .List:
 			let element = ListElement(type);
 			let elementKind = Classify(element, let elementConverter);
-			// A list of objects is an array of tables, written as [[key]] sections
-			StringView add = (elementKind == .Object) ? "AddArrayOfTables" : "AddArray";
-			code.AppendF("\tif (this.{} != null)\n\t{{\n\t\tlet _a = _table.{}({});\n\t\tfor (let _e in this.{})\n\t\t{{\n", name, add, key, name);
+			// Items are written by position into the existing array, then any extra items removed. A new
+			// list of objects is an array of tables, written as [[key]] sections.
+			StringView ofTables = (elementKind == .Object) ? "true" : "false";
+			code.AppendF("\tif (this.{0} != null)\n\t{{\n\t\tlet _a = TomlBeef.TomlBind.WriteArray(_table, {1}, {2});\n\t\tint _i = 0;\n\t\tfor (let _e in this.{0})\n\t\t{{\n",
+				name, key, ofTables);
 			EmitWriteElement(code, element, elementKind, elementConverter);
-			code.Append("\t\t}\n\t}\n");
+			code.AppendF("\t\t\t_i++;\n\t\t}}\n\t\tTomlBeef.TomlBind.TrimArray(_a, _i);\n\t}}\n\telse\n\t\t_table.Remove({});\n", key);
 		case .Converter:
 			code.AppendF("\tTry!({}.Write(this.{}, .(_table, {})));\n", converter.GetFullName(.. scope .()), name, key);
 		default:
 		}
 	}
 
-	/// Appends list item `_e` to array `_a`.
+	/// Writes list item `_e` as item `_i` of array `_a`. A null String or object item is skipped (the
+	/// `continue` also skips the caller's `_i++`, so later items close the gap).
 	[Comptime]
 	static void EmitWriteElement(String code, Type type, Kind kind, Type converter)
 	{
@@ -427,31 +431,30 @@ public static class TomlSerializerCodeGen
 		case .Integer:
 			if (type.Size == 8 && !type.IsSigned)
 				code.AppendF("{}Try!(TomlBeef.TomlBind.CheckWritable(\"[]\", (uint64)_e));\n", indent);
-			code.AppendF("{}_a.Add((int64)_e);\n", indent);
+			code.AppendF("{}TomlBeef.TomlBind.WriteItem(_a, _i, (int64)_e);\n", indent);
 		case .Float:
-			code.AppendF("{}_a.Add((double)_e);\n", indent);
+			code.AppendF("{}TomlBeef.TomlBind.WriteItem(_a, _i, (double)_e);\n", indent);
 		case .Bool, .OffsetDateTime, .LocalDateTime, .LocalDate, .LocalTime:
-			code.AppendF("{}_a.Add(_e);\n", indent);
+			code.AppendF("{}TomlBeef.TomlBind.WriteItem(_a, _i, _e);\n", indent);
 		case .String:
-			code.AppendF("{}if (_e != null)\n{}\t_a.Add((StringView)_e);\n", indent, indent);
+			code.AppendF("{0}if (_e == null)\n{0}\tcontinue;\n{0}TomlBeef.TomlBind.WriteItem(_a, _i, (StringView)_e);\n", indent);
 		case .Enum:
 			code.AppendF("{}switch (_e)\n{}{{\n", indent, indent);
 			for (let field in type.GetFields())
 			{
 				if (!field.IsEnumCase)
 					continue;
-				code.AppendF("{}case .{}: _a.Add(", indent, field.Name);
+				code.AppendF("{}case .{}: TomlBeef.TomlBind.WriteItem(_a, _i, ", indent, field.Name);
 				AppendLiteral(code, field.Name);
 				code.Append(");\n");
 			}
 			code.AppendF("{}}}\n", indent);
 		case .Object:
-			if (type.IsValueType)
-				code.AppendF("{}Try!(_e.TomlWrite(_a.AddTable()));\n", indent);
-			else
-				code.AppendF("{0}if (_e != null)\n{0}\tTry!(_e.TomlWrite(_a.AddTable()));\n", indent);
+			if (!type.IsValueType)
+				code.AppendF("{0}if (_e == null)\n{0}\tcontinue;\n", indent);
+			code.AppendF("{}Try!(_e.TomlWrite(TomlBeef.TomlBind.ItemTable(_a, _i)));\n", indent);
 		case .Converter:
-			code.AppendF("{}Try!({}.Write(_e, .(_a)));\n", indent, converter.GetFullName(.. scope .()));
+			code.AppendF("{}Try!({}.Write(_e, .(_a, _i)));\n", indent, converter.GetFullName(.. scope .()));
 		default:
 		}
 	}

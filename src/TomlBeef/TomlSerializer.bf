@@ -2,7 +2,9 @@ using System;
 
 namespace TomlBeef;
 
-/// @brief Reads TOML into [TomlObject] types and writes them back out (see TomlObjectAttribute).
+/// @brief One-call reading and writing of whole documents as [TomlObject] types (see TomlObjectAttribute).
+/// To mix typed and hand-written data, or to update a document read with PreserveStyle, use
+/// TomlDocument.Deserialize and Serialize (with a dotted path for one section) instead.
 public static class TomlSerializer
 {
 	/// @brief Parse `toml` and fill `target` from its root table. Errors (parse errors, and missing

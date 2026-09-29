@@ -685,8 +685,22 @@ whitespace around `=`, exact blank-line layout and byte-for-byte identity are **
 `[TomlObject]` on a class or struct is an `IComptimeTypeApply` attribute (the pattern BJSON's
 `[JsonObject]` uses). While the type compiles, `TomlSerializerCodeGen.Emit` walks its fields,
 adds `ITomlSerializable`, and emits `TomlRead(TomlTable)` and `TomlWrite(TomlTable)` as source
-text through `Compiler.EmitTypeBody`. `TomlSerializer.Read`/`Write` parse or write a document
-around them.
+text through `Compiler.EmitTypeBody`.
+
+- *Document first.* The entry points are on the document and on tables:
+  `doc.Deserialize("server", server)` fills an object from the table at a path, and
+  `doc.Serialize("server", server)` writes it back (creating the path if needed); `table.Deserialize`
+  / `table.Serialize` do the same for any table. So typed sections and hand-written data mix in one
+  document, read and written through the same API. `TomlSerializer.Read`/`Write` are one-call
+  wrappers for whole documents.
+- *Writing updates in place.* Scalars go through `Set`, which leaves an unchanged value (and its
+  PreserveStyle token and comments) untouched; existing sub-tables and arrays are reused
+  (`TomlTable.WriteTableAt`/`WriteArrayAt`), so keys the type does not know and their comments stay;
+  list items are written by position (`TomlBind.WriteItem`/`ItemTable`) and the array trimmed to
+  the list's length; a null String, object or List field removes its key. Reading a PreserveStyle
+  document, binding a section, and writing it back unchanged reproduces the input byte for byte
+  (`Document_MixesTypedAndHandWrittenData`); changed values keep their format (a hex port stays hex).
+  Writing states every field, so a key that was absent when read is added with the field's value.
 
 - *Through the table API, not text.* Generated code reads with `TomlTable` lookups and writes with
   `Set`/`AddTable`/`AddArray`/`AddArrayOfTables`, so quoting, escaping, key syntax and table layout
@@ -713,7 +727,7 @@ around them.
   dependency), before the built-in enum, object and List handling; two visible registrations for
   one type stop the build. `[TomlUseConverter(typeof(C))]` on a field overrides everything for
   that field. `TomlConvertContext` is "key in a table" or "item of an array": located errors, and
-  `Set`/`AddTable`/`AddArray` for writing, so one converter serves fields and list items. `Read`
+  `Set`/`SetTable`/`SetArray` for writing in place, so one converter serves fields and list items. `Read`
   fills `ref T` in place, so a converter for a class decides allocation (a list item starts null
   and is added to the list before reading, so the list owns it on failure). Registration is
   compile-time only: nothing is looked up at run time, and the generated code calls the converter's

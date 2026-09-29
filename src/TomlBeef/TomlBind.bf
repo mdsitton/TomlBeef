@@ -294,6 +294,61 @@ public static class TomlBind
 		return Try!(Element(array, index, "table")).AsTable;
 	}
 
+	/// @brief The table to write a [TomlObject] field into: the existing one under `key`, or a new one.
+	/// @param table The table.
+	/// @param key The key.
+	/// @return The table.
+	public static TomlTable WriteTable(TomlTable table, StringView key)
+	{
+		return table.WriteTableAt(key, true);
+	}
+
+	/// @brief The array to write a List field into: the existing one under `key`, or a new one.
+	/// @param table The table.
+	/// @param key The key.
+	/// @param arrayOfTables Whether a new array is written as `[[key]]` sections.
+	/// @return The array.
+	public static TomlArray WriteArray(TomlTable table, StringView key, bool arrayOfTables)
+	{
+		return table.WriteArrayAt(key, arrayOfTables, true);
+	}
+
+	/// @brief Write list item `index`: replaces the array's item there (unchanged values stay clean), or
+	/// appends when the array is shorter.
+	/// @param array The array.
+	/// @param index The item.
+	/// @param value The value.
+	public static void WriteItem(TomlArray array, int index, TomlInputValue value)
+	{
+		if (index < array.Count)
+			array[index] = value;
+		else
+			array.Add(value);
+	}
+
+	/// @brief The table to write list item `index` (a [TomlObject]) into: the existing table there, a new
+	/// table replacing another value there, or a new table appended.
+	/// @param array The array.
+	/// @param index The item.
+	/// @return The table.
+	public static TomlTable ItemTable(TomlArray array, int index)
+	{
+		if (index >= array.Count)
+			return array.AddTable();
+		if (array.GetValueAt(index) case .Table(let existing))
+			return existing;
+		return array.SetTable(index);
+	}
+
+	/// @brief Remove the items past the first `count`, after a list was written.
+	/// @param array The array.
+	/// @param count The list's length.
+	public static void TrimArray(TomlArray array, int count)
+	{
+		while (array.Count > count)
+			array.RemoveAt(array.Count - 1);
+	}
+
 	/// @brief Check that an unsigned field's value fits a TOML integer before it is written.
 	/// @param key The key being written, for the message.
 	/// @param value The value.

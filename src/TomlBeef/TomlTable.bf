@@ -293,6 +293,72 @@ public class TomlTable
 		return arr;
 	}
 
+	/// For [TomlObject] writing: the table under `key`. With `reuse`, an existing table is returned as it is
+	/// (its other keys, comments and layout stay); otherwise, or when `key` holds another kind of value,
+	/// a new table replaces the value in place (same position). A missing key is added.
+	internal TomlTable WriteTableAt(StringView key, bool reuse)
+	{
+		let index = mEntries.IndexOf(key);
+		if (index < 0)
+			return AddTable(key);
+		if (reuse && mEntries[index].mValue case .Table(let existing))
+			return existing;
+		TomlTable tbl = mStore.NewTable(.ExplicitHeader);
+		ReplaceAt(index, .Table(tbl));
+		return tbl;
+	}
+
+	/// For [TomlObject] writing: the array under `key`, like WriteTableAt. An existing array is reused
+	/// whatever its form (inline or `[[key]]`); a new one is an array of tables if `arrayOfTables`.
+	internal TomlArray WriteArrayAt(StringView key, bool arrayOfTables, bool reuse)
+	{
+		let index = mEntries.IndexOf(key);
+		if (index < 0)
+			return arrayOfTables ? AddArrayOfTables(key) : AddArray(key);
+		if (reuse && mEntries[index].mValue case .Array(let existing))
+			return existing;
+		TomlArray arr = mStore.NewArray();
+		arr.IsStatic = !arrayOfTables;
+		ReplaceAt(index, .Array(arr));
+		return arr;
+	}
+
+	/// Puts a new container in the entry at `index`, keeping its key and position.
+	private void ReplaceAt(int index, TomlValue value)
+	{
+		mEntries[index].mValue = value;
+		MarkEntryDirtyAt(index);
+		BindContainerMetadata(value);
+	}
+
+	/// @brief Fill a [TomlObject] class from this table (see TomlObjectAttribute). Keys the type does not
+	/// know are ignored; fields whose keys are absent keep their values.
+	/// @param target The object to fill.
+	/// @return .Ok, or the first error (located when the document has positions).
+	public Result<void, TomlParseError> Deserialize<T>(T target) where T : class, ITomlSerializable
+	{
+		return target.TomlRead(this);
+	}
+
+	/// @brief Fill a [TomlObject] struct from this table; see the class overload.
+	/// @param target The struct to fill.
+	/// @return .Ok, or the first error.
+	public Result<void, TomlParseError> Deserialize<T>(ref T target) where T : struct, ITomlSerializable
+	{
+		return target.TomlRead(this);
+	}
+
+	/// @brief Write a [TomlObject]'s fields into this table, updating it in place: unchanged values keep
+	/// their formatting and comments (in PreserveStyle documents), existing sub-tables and arrays are
+	/// reused, list items are updated by position, and keys the type does not know stay as they are.
+	/// A null String, object or List field removes its key.
+	/// @param source The object to write.
+	/// @return .Ok, or an error for a value TOML cannot hold.
+	public Result<void, TomlParseError> Serialize<T>(T source) where T : ITomlSerializable
+	{
+		return source.TomlWrite(this);
+	}
+
 	/// @brief Create an array of tables for the given key, written as `[[key]]` sections, and return it.
 	/// Add its elements with TomlArray.AddTable.
 	/// @param key The key.

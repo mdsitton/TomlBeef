@@ -121,7 +121,7 @@ struct SerVec3Toml : ITomlConverter<SerVec3>
 
 	public static Result<void, TomlParseError> Write(SerVec3 value, TomlConvertContext context)
 	{
-		let array = context.AddArray();
+		let array = context.SetArray();
 		array.Add((double)value.X);
 		array.Add((double)value.Y);
 		array.Add((double)value.Z);
@@ -219,6 +219,22 @@ class SerScene
 	[TomlUseConverter(typeof(SerSecondsToml))] public SerDuration Interval;
 	public SerColor Tint ~ delete _;
 	public List<SerColor> Palette = new .() ~ DeleteContainerAndItems!(_);
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerRoute
+{
+	public String Path ~ delete _;
+	public int32 Weight = 1;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerServerSection
+{
+	public String Host = new .() ~ delete _;
+	public int32 Port;
+	public List<String> Aliases = new .() ~ DeleteContainerAndItems!(_);
+	public List<SerRoute> Routes = new .() ~ DeleteContainerAndItems!(_);
 }
 
 static class TomlSerializerTests
@@ -377,6 +393,111 @@ static class TomlSerializerTests
 		case .Ok: Test.Assert(false);
 		case .Err(let err): Test.Assert(err.mMessage == "[1]: expected a color like \"#ff8800\"", scope String(err.mMessage));
 		}
+	}
+
+	[Test]
+	public static void Document_MixesTypedAndHandWrittenData()
+	{
+		// One section is bound to a type; the rest is read and written by hand. Writing the object back
+		// changes only what changed: comments, formatting and keys the type does not know stay.
+		const String input = """
+			# App configuration
+			version = 3 # bumped by hand
+
+			[server] # the public listener
+			host = 'localhost' # bind address
+			port = 0x1F90
+			aliases = [
+			  "a", # first
+			  "b",
+			]
+			tls = true # not in SerServerSection
+
+			# The routes
+			[[server.routes]]
+			path = "/"
+			weight = 1
+
+			[[server.routes]]
+			path = "/api" # versioned
+			weight = 5
+			""";
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read(input, .() { MetadataMode = .PreserveStyle }) case .Ok);
+
+		let server = scope SerServerSection();
+		Test.Assert(doc.Deserialize("server", server) case .Ok);
+		Test.Assert(server.Host == "localhost" && server.Port == 8080 && server.Aliases.Count == 2 && server.Routes.Count == 2);
+		Test.Assert(doc.GetInteger("version", 0) == 3);
+
+		// Unchanged: the document is written exactly as read
+		Test.Assert(doc.Serialize("server", server) case .Ok);
+		let unchanged = scope String();
+		doc.Write(unchanged);
+		Test.Assert(unchanged == scope $"{input}\n", unchanged);
+
+		// Typed and hand-written changes side by side
+		server.Port = 9090;
+		server.Aliases[1].Set("c");
+		server.Routes[1].Weight = 7;
+		let added = new SerRoute();
+		added.Path = new String("/health");
+		server.Routes.Add(added);
+		Test.Assert(doc.Serialize("server", server) case .Ok);
+		doc.Set("version", 4);
+		doc.Set("server.tls", false);
+
+		let output = scope String();
+		doc.Write(output);
+		Test.Assert(output == """
+			# App configuration
+			version = 4 # bumped by hand
+
+			[server] # the public listener
+			host = 'localhost' # bind address
+			port = 0x2382
+			aliases = [
+			  "a", # first
+			  "c",
+			]
+			tls = false # not in SerServerSection
+
+			# The routes
+			[[server.routes]]
+			path = "/"
+			weight = 1
+
+			[[server.routes]]
+			path = "/api" # versioned
+			weight = 7
+
+			[[server.routes]]
+			path = "/health"
+			weight = 1
+
+			""", output);
+
+		// Shrinking the list removes the extra [[server.routes]]; a new section is created by path
+		server.Routes.PopBack();
+		delete server.Routes.PopBack();
+		delete added;
+		Test.Assert(doc.Serialize("server", server) case .Ok);
+		Test.Assert(doc.Serialize("mirror.server", server) case .Ok);
+		let reread = scope TomlDocument();
+		let text = scope String();
+		doc.Write(text);
+		Test.Assert(reread.Read(text) case .Ok, text);
+		Test.Assert(reread.TryGetArray("server.routes", let routes) && routes.Count == 1, text);
+		Test.Assert(reread.GetInteger("mirror.server.port", 0) == 9090 && reread.GetBool("server.tls", true) == false, text);
+
+		// Writing states every field: a key that was absent when read is written with the field's value
+		let sparse = scope TomlDocument();
+		Test.Assert(sparse.Read("[[routes]]\npath = \"/\"") case .Ok);
+		let route = scope SerRoute();
+		TomlTable first = null;
+		Test.Assert(sparse.TryGetArray("routes", let sparseRoutes) && sparseRoutes.TryGetTable(0, out first));
+		Test.Assert(first.Deserialize(route) case .Ok && first.Serialize(route) case .Ok);
+		Test.Assert(first.GetInteger("weight", 0) == 1);
 	}
 
 	[Test]

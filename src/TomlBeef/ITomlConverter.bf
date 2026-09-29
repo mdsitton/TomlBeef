@@ -1,4 +1,5 @@
 using System;
+using internal TomlBeef;
 
 namespace TomlBeef;
 
@@ -20,7 +21,7 @@ namespace TomlBeef;
 ///
 /// 	public static Result<void, TomlParseError> Write(Vector3 value, TomlConvertContext context)
 /// 	{
-/// 		let array = context.AddArray();
+/// 		let array = context.SetArray();
 /// 		...
 /// 	}
 /// }
@@ -35,7 +36,7 @@ public interface ITomlConverter<T>
 	/// @return .Ok, or an error (usually from context.MakeError).
 	static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref T target);
 
-	/// @brief Write `value` through `context`: exactly one Set, AddTable, AddArray or AddArrayOfTables.
+	/// @brief Write `value` through `context`: exactly one Set, SetTable or SetArray.
 	/// @param value The value to write.
 	/// @param context Where to write it (a key in a table, or the next item of an array).
 	/// @return .Ok, or an error for a value that cannot be written.
@@ -62,10 +63,10 @@ public struct TomlConvertContext
 		mIndex = -1;
 	}
 
-	/// @brief Item `index` of `array` (reading), or the next item appended to it (writing: index -1).
+	/// @brief Item `index` of `array`. Writing replaces the item there, or appends when the array is shorter.
 	/// @param array The array.
-	/// @param index The item, or -1 to append.
-	public this(TomlArray array, int index = -1)
+	/// @param index The item.
+	public this(TomlArray array, int index)
 	{
 		mTable = null;
 		mKey = default;
@@ -83,28 +84,32 @@ public struct TomlConvertContext
 		return mArray.MakeError(mIndex, message);
 	}
 
-	/// @brief Write a scalar.
+	/// @brief Write a scalar, replacing what is there. An unchanged value keeps its formatting.
 	/// @param value The value (a string, number, bool or date/time).
 	public void Set(TomlInputValue value)
 	{
 		if (mTable != null)
 			mTable.Set(mKey, value);
 		else
-			mArray.Add(value);
+			TomlBind.WriteItem(mArray, mIndex, value);
 	}
 
-	/// @brief Write a table and return it to fill.
+	/// @brief Write a new, empty table in place of what is there and return it to fill.
 	/// @return The new table.
-	public TomlTable AddTable()
+	public TomlTable SetTable()
 	{
-		return (mTable != null) ? mTable.AddTable(mKey) : mArray.AddTable();
+		if (mTable != null)
+			return mTable.WriteTableAt(mKey, false);
+		return (mIndex < mArray.Count) ? mArray.SetTable(mIndex) : mArray.AddTable();
 	}
 
-	/// @brief Write an inline array and return it to fill.
+	/// @brief Write a new, empty inline array in place of what is there and return it to fill.
 	/// @return The new array.
-	public TomlArray AddArray()
+	public TomlArray SetArray()
 	{
-		return (mTable != null) ? mTable.AddArray(mKey) : mArray.AddArray();
+		if (mTable != null)
+			return mTable.WriteArrayAt(mKey, false, false);
+		return (mIndex < mArray.Count) ? mArray.SetArray(mIndex) : mArray.AddArray();
 	}
 }
 

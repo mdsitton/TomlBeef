@@ -1064,6 +1064,67 @@ public class TomlDocument
 		return Try!(RequireValue(dottedPath, "array")).AsArray;
 	}
 
+	// ================================================================
+	// [TomlObject] serialization, mixed freely with the rest of the API
+	// ================================================================
+
+	/// @brief Fill a [TomlObject] class from the root table (see TomlObjectAttribute and
+	/// TomlTable.Deserialize).
+	/// @param target The object to fill.
+	/// @return .Ok, or the first error (located when the document was read with positions).
+	public Result<void, TomlParseError> Deserialize<T>(T target) where T : class, ITomlSerializable
+	{
+		return target.TomlRead(mRootTable);
+	}
+
+	/// @brief Fill a [TomlObject] class from the table at a dotted path: `doc.Deserialize("server", server)`.
+	/// The rest of the document stays available through the ordinary API.
+	/// @param dottedPath The path of the table.
+	/// @param target The object to fill.
+	/// @return .Ok, or the first error (a missing table is MissingKey).
+	public Result<void, TomlParseError> Deserialize<T>(StringView dottedPath, T target) where T : class, ITomlSerializable
+	{
+		return target.TomlRead(Try!(RequireTable(dottedPath)));
+	}
+
+	/// @brief Fill a [TomlObject] struct from the root table.
+	/// @param target The struct to fill.
+	/// @return .Ok, or the first error.
+	public Result<void, TomlParseError> Deserialize<T>(ref T target) where T : struct, ITomlSerializable
+	{
+		return target.TomlRead(mRootTable);
+	}
+
+	/// @brief Fill a [TomlObject] struct from the table at a dotted path.
+	/// @param dottedPath The path of the table.
+	/// @param target The struct to fill.
+	/// @return .Ok, or the first error.
+	public Result<void, TomlParseError> Deserialize<T>(StringView dottedPath, ref T target) where T : struct, ITomlSerializable
+	{
+		return target.TomlRead(Try!(RequireTable(dottedPath)));
+	}
+
+	/// @brief Write a [TomlObject]'s fields into the root table, updating it in place (see
+	/// TomlTable.Serialize): keys the type does not know stay, unchanged values keep their formatting.
+	/// @param source The object to write.
+	/// @return .Ok, or an error for a value TOML cannot hold.
+	public Result<void, TomlParseError> Serialize<T>(T source) where T : ITomlSerializable
+	{
+		return source.TomlWrite(mRootTable);
+	}
+
+	/// @brief Write a [TomlObject]'s fields into the table at a dotted path, creating it (and missing
+	/// parents) if needed and otherwise updating it in place: `doc.Serialize("server", server)`.
+	/// @param dottedPath The path of the table. A value there that is not a table is replaced.
+	/// @param source The object to write.
+	/// @return .Ok, or an error (a malformed path, a parent that is not a table, or a value TOML cannot hold).
+	public Result<void, TomlParseError> Serialize<T>(StringView dottedPath, T source) where T : ITomlSerializable
+	{
+		if (!ResolvePath(dottedPath, true, let parent, let key))
+			return .Err(TomlParseError(.InvalidKey, scope $"Cannot write a table at '{dottedPath}': the path is malformed or a parent is not a table", 0, 0, 0));
+		return source.TomlWrite(parent.WriteTableAt(key, true));
+	}
+
 	private Result<TomlValue, TomlParseError> RequireValue(StringView dottedPath, StringView typeName)
 	{
 		if (WalkToParent(dottedPath, let parent, let key))
