@@ -906,10 +906,11 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     a typed mapping reads `typed.toml` (3.8 MB: 20000 `[[servers]]`, each with strings, integers, a
     float, a bool, a string list and a nested table) into matching native types and writes them
     back; each prints the same checksum after the read and after re-reading its own output. Read /
-    write in ms: glaze 16 / 3.8, toml-spanner (derive) 21 / 12, TomlBeef 36 / 24 without positions
-    (41 through `TomlSerializer.Read`, which records them), zig-toml 39 / n/a (its serializer does
-    not compile for an array of tables), go-toml 58 / 31, Rust `toml` (serde) 79 / 29, Tomlyn 126 /
-    46 with its source generator and 145 / 50 with reflection, BurntSushi 295 / 194. TomlBeef's read
+    write in ms (second run, with the arena row): glaze 16 / 3.7, toml-spanner (derive) 21 / 12,
+    TomlBeef 34 / 23.5 without positions (37 through an arena, 40 through `TomlSerializer.Read`, which
+    records positions), zig-toml 39 / n/a (its serializer does not compile for an array of tables),
+    go-toml 55 / 30, Rust `toml` (serde) 78 / 28, Tomlyn 124 / 48 with its source generator and 136 /
+    50–76 with reflection (its write varies between runs), BurntSushi 294 / 200. TomlBeef's read
     is 25 ms of parsing into a document plus ~11 ms of binding (7 objects allocated per server, one
     key lookup and one `Result`-returning `TomlBind` call per field); glaze and toml-spanner bind
     while parsing, with no document in between, which is also why they cannot offer the

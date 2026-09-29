@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Draws docs/benchmark.svg (chart) and docs/benchmark-table.svg (full results table) from results.md
-(the Markdown table run.sh prints) and lookup-results.md, and docs/benchmark-beef.svg (TomlBeef against
-Beef's StructuredData) from beef-results.md (beef.sh).
+(the Markdown table run.sh prints) and lookup-results.md, docs/benchmark-beef.svg (TomlBeef against
+Beef's StructuredData) from beef-results.md (beef.sh), and docs/benchmark-typed.svg (typed
+serialization) from typed-results.md (typed.sh).
 
     ./run.sh > results.md && ./plot.py
 
@@ -447,6 +448,84 @@ def lookup_panel(top):
     return out, y + 8
 
 
+TYPED_RESULTS = os.path.join(HERE, "typed-results.md")
+TYPED_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-typed.svg")
+
+
+def read_typed():
+    """typed-results.md as rows of (library, language, read ms, write ms); a time that is not a number
+    ("n/a", "FAIL", "DNF") stays text."""
+    rows = [l for l in open(TYPED_RESULTS) if l.startswith("|") and not l.startswith("|---")]
+    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    number = lambda v: float(v) if re.match(r"^[0-9.]+$", v) else v
+    return [(c[0], c[1], number(c[3]), number(c[5])) for c in map(split, rows[1:])]
+
+
+def typed_panel(top):
+    """Typed serialization (typed-results.md, written by typed.sh): ms to read typed.toml into native
+    types and to write them back, one column each, fastest first, compared with TomlBeef. TomlBeef's
+    read variants (with and without source positions, heap or arena) all appear; its write once."""
+    rows = read_typed()
+    out = []
+    col_w, name_w, bar_w, row_h, bar_h = (W - 80) // 2, 210, 100, 20, 12
+    y = top
+    out.append(text(40, y, "Typed serialization: TOML to native types and back", "title"))
+    y += 22
+    out.append(text(40, y, "typed.toml, 3.8 MB: 20,000 [[servers]], each with a nested table · ms per operation, "
+                    "lower is better · every library binds the same values", "subtitle"))
+    y += 30
+    bottom = y
+    columns = (("READ · text → objects", 2, lambda lib: True),
+               ("WRITE · objects → text", 3, lambda lib: not lib.startswith("TomlBeef (")))
+    base_read = next(r[2] for r in rows if r[0] == "TomlBeef")
+    base_write = next(r[3] for r in rows if r[0] == "TomlBeef")
+    for c, (heading, index, show) in enumerate(columns):
+        x0 = 40 + c * (col_w + 20)
+        out.append(text(x0, y, heading, "group"))
+        shown = [r for r in rows if show(r[0])]
+        numbers = [r[index] for r in shown if isinstance(r[index], float)]
+        scale = bar_w / max(numbers)
+        base = base_read if index == 2 else base_write
+        by = y + 14
+        rank = lambda r: (0, r[index]) if isinstance(r[index], float) else (1, 0)
+        for lib, language, *times in sorted(shown, key=rank):
+            ms = times[index - 2]
+            ours = lib.startswith("TomlBeef")
+            name = lib if index == 2 or not ours else "TomlBeef"
+            out.append(f'<text x="{x0 + name_w - 8}" y="{by + 10:.1f}" class="small" text-anchor="end">'
+                       f'<tspan class="{"libname ours" if ours else "libname"}">{esc(name)}</tspan>'
+                       f'<tspan class="lang" dx="5">{esc(language)}</tspan></text>')
+            bar_x = x0 + name_w
+            if not isinstance(ms, float):
+                out.append(text(bar_x + 2, by + 10, "cannot write an array of tables" if ms == "n/a" else ms, "cell-missing"))
+            else:
+                w = max(2.0, ms * scale)
+                out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" '
+                           f'class="{"bar-ours" if ours else "bar"}"/>')
+                compare = "" if lib == "TomlBeef" else (f"{ms / base:.1f}× slower" if ms > base * 1.05
+                                                        else f"{base / ms:.1f}× faster" if ms < base / 1.05 else "≈")
+                out.append(f'<text x="{bar_x + w + 6:.1f}" y="{by + 10:.1f}" class="small">'
+                           f'<tspan class="{"value ours" if ours else "value"}">{ms:.1f}</tspan>'
+                           f'<tspan class="note-plain" dx="6">{compare}</tspan></text>')
+            by += row_h
+        bottom = max(bottom, by)
+    y = bottom + 12
+    notes = (
+        "TomlBeef: TomlSerializer.Read records source positions for located errors; \"no positions\" is doc.Read "
+        "+ doc.Deserialize,",
+        "and \"arena\" reads through a scope BumpAllocator. glaze and toml-spanner bind while parsing; TomlBeef "
+        "parses into a document",
+        "first, so typed sections and hand-written data can share one document.",
+        "Mappings: glaze compile-time reflection, toml-spanner and serde derive, zig-toml comptime reflection, Go "
+        "struct tags, Tomlyn",
+        "a source generator or reflection. Validation differs: glaze skips UTF-8 checks, zig-toml accepts invalid TOML.",
+    )
+    for note in notes:
+        out.append(text(40, y, note, "footnote"))
+        y += 18
+    return out, y
+
+
 BEEF_RESULTS = os.path.join(HERE, "beef-results.md")
 BEEF_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-beef.svg")
 
@@ -613,6 +692,13 @@ def main():
         body.append(text(40, height - 16, "Same compiler and Release settings · 1 s warm-up, samples until 60% are "
                          "within ±10% of their median · median of 3 processes · beef.sh", "footer"))
         write_svg(BEEF_OUT, W, height, body, "TomlBeef compared with Beef's built-in TOML reader")
+
+    if os.path.exists(TYPED_RESULTS):
+        body, y = typed_panel(44)
+        height = y + 26
+        body.append(text(40, height - 16, "Linux x86-64, single thread · 1 s warm-up, samples until 60% are within ±10% "
+                         "of their median · median of 3 processes · typed.sh", "footer"))
+        write_svg(TYPED_OUT, W, height, body, "TomlBeef typed serialization compared with other TOML libraries")
 
 
 if __name__ == "__main__":

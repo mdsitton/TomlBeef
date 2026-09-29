@@ -4,7 +4,11 @@ A TOML v1.1.0 parser and writer for the [Beef programming language](https://www.
 
 Compliant with the full [TOML v1.1.0 specification](https://toml.io/en/v1.1.0). Validated against the official [toml-test](https://github.com/toml-lang/toml-test) suite.
 
-Fast: in [our comparison](#performance) of 20 TOML libraries across C, C++, Rust, Zig, Go, Java, C# and JavaScript, only Rust's toml-spanner parses faster, and TomlBeef is the fastest parser that keeps comments and formatting. Coming from Beef's built-in reader (`Beefy.utils.StructuredData`)? See [how the two compare](#compared-with-beefs-built-in-reader).
+Fast: in [our comparison](#performance) of 20 TOML libraries across C, C++, Rust, Zig, Go, Java, C# and JavaScript, only Rust's toml-spanner parses faster, and TomlBeef is the fastest parser that keeps comments and formatting.
+
+Typed: [`[TomlObject]`](#serializing-types) generates reading and writing for your types at compile time, and binds them to sections of a live document, so typed data, hand-written data and the file's comments live side by side.
+
+Coming from Beef's built-in reader (`Beefy.utils.StructuredData`)? See [how the two compare](#compared-with-beefs-built-in-reader).
 
 ## Quick Start
 
@@ -398,6 +402,92 @@ var replicas = doc.AddArray("database.replicas");
 >
 > `TomlArray.IsArrayOfTables` tells a `[[...]]` array of tables apart from a `[...]` array.
 
+### Serializing Types
+
+`[TomlObject]` generates reading and writing for a class or struct at compile time: no reflection data, no runtime registration.
+
+```bf
+enum LogLevel { Debug, Info, Warn }
+
+[TomlObject(Naming = .SnakeCase)]          // PoolSize <-> pool_size (default: field names as written)
+class Database
+{
+    public String Url = new .() ~ delete _;
+    public int32 PoolSize = 4;              // kept when the key is missing
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class Config
+{
+    [TomlRequired] public String Name = new .() ~ delete _;
+    public uint16 Port = 8080;                              // range-checked
+    [TomlName("log-level")] public LogLevel Level = .Info;  // written as its case name
+    public Database Db = new .() ~ delete _;                // a [db] table
+    public List<String> Tags = new .() ~ DeleteContainerAndItems!(_);
+    [TomlIgnore] public int CacheHits;
+}
+
+let config = scope Config();
+Try!(TomlSerializer.ReadFile("app.toml", config));   // errors are located: app.toml:3:8: port: expected integer, found string
+Try!(TomlSerializer.WriteFile(config, "out.toml"));
+```
+
+Supported fields: bool, integers, float/double, String, enums, the TOML date/time types, other `[TomlObject]` types and `List<T>` of those (a list of objects is an array of tables). Anything else stops the build with a message naming the field, unless it has a converter or `[TomlIgnore]`.
+
+**Typed sections in a live document.** `TomlSerializer` is a shortcut for the document API, which binds objects to any table and mixes them with ordinary reads and writes. Writing updates in place: unchanged values keep their formatting and comments, keys the type does not know stay, and list items are updated by position.
+
+```bf
+let doc = scope TomlDocument();
+Try!(doc.ReadFile("app.toml", .() { MetadataMode = .PreserveStyle }));
+
+let server = scope ServerSection();
+Try!(doc.Deserialize("server", server));    // the [server] section, typed
+server.Port = 9090;
+Try!(doc.Serialize("server", server));      // written back in place
+doc.Set("version", doc.GetInteger("version", 1) + 1);   // the rest, by hand
+Try!(doc.WriteFile("app.toml"));            // comments and layout kept
+```
+
+**Converters** handle other types. Register one once and every field or list item of that type uses it; `[TomlUseConverter(typeof(...))]` picks a different one for a single field.
+
+```bf
+[TomlConverter(typeof(Vector3))]
+struct Vector3Toml : ITomlConverter<Vector3>
+{
+    public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref Vector3 target)
+    {
+        if (!value.TryGetArray(let a) || a.Count != 3)
+            return .Err(context.MakeError("expected [x, y, z]"));
+        float[3] v = ?;
+        for (int i < 3)
+        {
+            if (!a.TryGetFloat(i, var f))
+                return .Err(context.MakeError("expected [x, y, z]"));
+            v[i] = (.)f;
+        }
+        target = .(v[0], v[1], v[2]);
+        return .Ok;
+    }
+
+    public static Result<void, TomlParseError> Write(Vector3 value, TomlConvertContext context)
+    {
+        let a = context.SetArray();
+        a.Add((double)value.X);
+        a.Add((double)value.Y);
+        a.Add((double)value.Z);
+        return .Ok;
+    }
+}
+```
+
+**Stack lifetimes.** Every read takes an optional allocator. With a `scope BumpAllocator`, everything the read creates (Strings, nested objects, Lists) comes from it and is freed with it; such types declare their fields without `~ delete _`:
+
+```bf
+let arena = scope BumpAllocator();
+let config = scope ArenaConfig();              // fields like `public String Name;`
+Try!(doc.Deserialize("server", config, arena));
+```
+
 ### Copying Between Documents
 
 `TomlTable.MergeFrom` deep-copies into the destination document, so the source can be deleted afterwards:
@@ -522,6 +612,14 @@ Every library parses the same generated inputs (2–9 MB) from memory into its o
 The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 
 Parsing speed is only half of it. The last panel of the chart, and the last two columns of the table, time 100,000 random `table.key` lookups after parsing (`bench/compare/lookup.sh`, results in `bench/compare/lookup-results.md`). TomlBeef scans small tables and hash-indexes larger ones, so its lookups (~70 ns) match the fastest JavaScript libraries; zig-toml and the Go libraries are faster still (~45–65 ns). toml-spanner, tomlc17 and toml-c store a table as a list and scan it on every lookup (roughly 23× to 540× slower than TomlBeef), so on the 15,000-section document toml-spanner's faster parse is used up after about 650 lookups.
+
+### Typed serialization
+
+Every library with a typed mapping reads the same 3.8 MB document into matching native types and writes them back (`bench/compare/typed.sh`, results in `bench/compare/typed-results.md`); each checks the same values after reading and after re-reading its own output:
+
+<p align="center"><img src="docs/benchmark-typed.svg" alt="Typed serialization: ms to read TOML into native types and write them back, TomlBeef against other libraries" width="820"></p>
+
+TomlBeef reads 3.1–3.4× faster than Tomlyn (its source generator and reflection) and writes 2–3× faster. glaze and toml-spanner are faster because they bind values while parsing, with no document in between; TomlBeef parses into a document first, which is what lets typed sections and hand-written data share one document.
 
 ### Compared with Beef's built-in reader
 
