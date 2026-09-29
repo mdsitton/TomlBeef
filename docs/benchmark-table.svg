@@ -27,6 +27,10 @@
     .cell-missing { font-size: 10px; fill: #8c959f; }
     .heat { fill: #2da44e; }
     .row-ours { fill: #ea580c; fill-opacity: 0.07; }
+    .seg-ok { fill: #2da44e; }
+    .seg-approx { fill: #d4a72c; }
+    .seg-bad { fill: #cf222e; }
+    .seg-err { fill: #afb8c1; }
     @media (prefers-color-scheme: dark) {
       .bg { fill: #0d1117; }
       .title, .label { fill: #e6edf3; }
@@ -48,6 +52,10 @@
       .cell-missing { fill: #6e7681; }
       .heat { fill: #3fb950; }
       .row-ours { fill: #f97316; fill-opacity: 0.10; }
+      .seg-ok { fill: #3fb950; }
+      .seg-approx { fill: #d29922; }
+      .seg-bad { fill: #f85149; }
+      .seg-err { fill: #3d444d; }
     }
   </style>
 <rect class="bg" x="0" y="0" width="1124" height="854" rx="10"/>

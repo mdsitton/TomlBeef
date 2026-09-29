@@ -1,0 +1,202 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1268" viewBox="0 0 920 1268" role="img" aria-label="TomlBeef compared with Beef's built-in TOML reader">
+
+  <style>
+    svg { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .bg { fill: #ffffff; }
+    .title { font-size: 19px; font-weight: 650; fill: #1f2328; }
+    .subtitle, .footer, .axis { font-size: 12.5px; fill: #656d76; }
+    .group { font-size: 11px; font-weight: 650; letter-spacing: 0.08em; fill: #656d76; }
+    .label { font-size: 13.5px; fill: #1f2328; }
+    .lang { font-size: 11px; fill: #8c959f; }
+    .ours { font-weight: 700; }
+    .value { font-size: 12.5px; fill: #424a53; font-variant-numeric: tabular-nums; }
+    .value.ours { fill: #c2410c; }
+    .small { font-size: 12px; fill: #424a53; }
+    .note-plain { fill: #8c959f; }
+    .footnote { font-size: 12px; fill: #656d76; }
+    .repo { font-size: 11.5px; fill: #8c959f; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .bar { fill: #afb8c1; }
+    .bar-ours { fill: #ea580c; }
+    .rule { stroke: #d8dee4; stroke-width: 1; }
+    .libname { fill: #656d76; }
+    .libname.ours { fill: #c2410c; font-weight: 650; }
+    .colhead { font-size: 11px; font-weight: 600; fill: #424a53; }
+    .cell { font-size: 12px; fill: #424a53; font-variant-numeric: tabular-nums; }
+    .cell.best { font-weight: 700; fill: #1f2328; }
+    .cell.ours { fill: #c2410c; }
+    .cell-missing { font-size: 10px; fill: #8c959f; }
+    .heat { fill: #2da44e; }
+    .row-ours { fill: #ea580c; fill-opacity: 0.07; }
+    .seg-ok { fill: #2da44e; }
+    .seg-approx { fill: #d4a72c; }
+    .seg-bad { fill: #cf222e; }
+    .seg-err { fill: #afb8c1; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .title, .label { fill: #e6edf3; }
+      .subtitle, .footer, .axis, .group { fill: #8d96a0; }
+      .lang, .note-plain { fill: #6e7681; }
+      .footnote { fill: #8d96a0; }
+      .repo { fill: #6e7681; }
+      .value, .small { fill: #c9d1d9; }
+      .value.ours { fill: #fb923c; }
+      .bar { fill: #3d444d; }
+      .bar-ours { fill: #f97316; }
+      .rule { stroke: #262c36; }
+      .libname { fill: #8d96a0; }
+      .libname.ours { fill: #fb923c; }
+      .colhead { fill: #c9d1d9; }
+      .cell { fill: #c9d1d9; }
+      .cell.best { fill: #f0f6fc; }
+      .cell.ours { fill: #fb923c; }
+      .cell-missing { fill: #6e7681; }
+      .heat { fill: #3fb950; }
+      .row-ours { fill: #f97316; fill-opacity: 0.10; }
+      .seg-ok { fill: #3fb950; }
+      .seg-approx { fill: #d29922; }
+      .seg-bad { fill: #f85149; }
+      .seg-err { fill: #3d444d; }
+    }
+  </style>
+<rect class="bg" x="0" y="0" width="920" height="1268" rx="10"/>
+<text x="40.0" y="44.0" class="title" text-anchor="start">TomlBeef and Beef's built-in TOML reader</text>
+<text x="40.0" y="66.0" class="subtitle" text-anchor="start">Beefy.utils.StructuredData, which the Beef IDE and BeefBuild use for project files, built into one program with TomlBeef</text>
+<text x="40.0" y="106.0" class="group" text-anchor="start">READS TOML CORRECTLY</text>
+<line x1="40" y1="120.0" x2="880" y2="120.0" class="rule"/>
+<text x="180.0" y="142.0" class="label" text-anchor="end">toml-test valid files</text>
+<text x="180.0" y="157.0" class="note-plain small" text-anchor="end">266 files</text>
+<rect x="200.0" y="129.0" width="420.0" height="14" class="seg-ok"/>
+<text x="628" y="140.0" class="small"><tspan class="libname ours">TomlBeef</tspan></text>
+<text x="200.0" y="155.0" class="note-plain small" text-anchor="start">266 read correctly</text>
+<rect x="200.0" y="160.0" width="172.1" height="14" class="seg-ok"/>
+<rect x="372.1" y="160.0" width="50.5" height="14" class="seg-approx"/>
+<rect x="422.6" y="160.0" width="6.3" height="14" class="seg-bad"/>
+<rect x="428.9" y="160.0" width="191.1" height="14" class="seg-err"/>
+<text x="628" y="171.0" class="small"><tspan class="libname">StructuredData</tspan></text>
+<text x="200.0" y="186.0" class="note-plain small" text-anchor="start">109 read correctly · 32 dates as text or float32 · 4 wrong values · 121 error</text>
+<line x1="40" y1="196.0" x2="880" y2="196.0" class="rule"/>
+<text x="180.0" y="218.0" class="label" text-anchor="end">toml-test invalid files</text>
+<text x="180.0" y="233.0" class="note-plain small" text-anchor="end">492 files</text>
+<rect x="200.0" y="205.0" width="420.0" height="14" class="seg-ok"/>
+<text x="628" y="216.0" class="small"><tspan class="libname ours">TomlBeef</tspan></text>
+<text x="200.0" y="231.0" class="note-plain small" text-anchor="start">492 rejected</text>
+<rect x="200.0" y="236.0" width="267.2" height="14" class="seg-ok"/>
+<rect x="467.2" y="236.0" width="152.8" height="14" class="seg-bad"/>
+<text x="628" y="247.0" class="small"><tspan class="libname">StructuredData</tspan></text>
+<text x="200.0" y="262.0" class="note-plain small" text-anchor="start">313 rejected · 179 accepted</text>
+<line x1="40" y1="272.0" x2="880" y2="272.0" class="rule"/>
+<text x="180.0" y="294.0" class="label" text-anchor="end">real Beef project files</text>
+<text x="180.0" y="309.0" class="note-plain small" text-anchor="end">134 files</text>
+<rect x="200.0" y="281.0" width="416.9" height="14" class="seg-ok"/>
+<rect x="616.9" y="281.0" width="3.1" height="14" class="seg-ok"/>
+<text x="628" y="292.0" class="small"><tspan class="libname ours">TomlBeef</tspan></text>
+<text x="200.0" y="307.0" class="note-plain small" text-anchor="start">133 read identically · 1 invalid file rejected</text>
+<rect x="200.0" y="312.0" width="416.9" height="14" class="seg-ok"/>
+<rect x="616.9" y="312.0" width="3.1" height="14" class="seg-bad"/>
+<text x="628" y="323.0" class="small"><tspan class="libname">StructuredData</tspan></text>
+<text x="200.0" y="338.0" class="note-plain small" text-anchor="start">133 read identically · 1 invalid file accepted</text>
+<line x1="40" y1="348.0" x2="880" y2="348.0" class="rule"/>
+<text x="40.0" y="366.0" class="footnote" text-anchor="start">StructuredData has no dotted keys, literal or multi-line strings; keeps dates as text, floats as 32-bit; does not check duplicate keys or UTF-8.</text>
+<text x="40.0" y="384.0" class="footnote" text-anchor="start">Parsing rows marked "not like-for-like": StructuredData parses floats as float32 and leaves dates unparsed, so it does less work there.</text>
+<text x="40.0" y="424.0" class="group" text-anchor="start">PARSING · MB/s, higher is better · bars scaled per row</text>
+<line x1="40" y1="436.0" x2="880" y2="436.0" class="rule"/>
+<text x="180.0" y="460.0" class="label" text-anchor="end">Beef project files</text>
+<text x="180.0" y="474.0" class="note-plain small" text-anchor="end">133 BeefProj/BeefSpace files</text>
+<rect x="200" y="444.0" width="158.7" height="13" rx="2" class="bar-ours"/>
+<text x="365.7" y="455.0" class="small"><tspan class="value ours">109 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="461.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="472.0" class="small"><tspan class="value">206 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.9× faster</tspan></text>
+<line x1="40" y1="482.0" x2="880" y2="482.0" class="rule"/>
+<text x="180.0" y="510.0" class="label" text-anchor="end">commented</text>
+<rect x="200" y="490.0" width="300.0" height="13" rx="2" class="bar-ours"/>
+<text x="507.0" y="501.0" class="small"><tspan class="value ours">549 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8">1.1× faster</tspan></text>
+<rect x="200" y="507.0" width="276.9" height="13" rx="2" class="bar"/>
+<text x="483.9" y="518.0" class="small"><tspan class="value">507 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<line x1="40" y1="528.0" x2="880" y2="528.0" class="rule"/>
+<text x="180.0" y="556.0" class="label" text-anchor="end">comments</text>
+<rect x="200" y="536.0" width="300.0" height="13" rx="2" class="bar-ours"/>
+<text x="507.0" y="547.0" class="small"><tspan class="value ours">2923 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8">3.7× faster</tspan></text>
+<rect x="200" y="553.0" width="81.8" height="13" rx="2" class="bar"/>
+<text x="288.8" y="564.0" class="small"><tspan class="value">797 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<line x1="40" y1="574.0" x2="880" y2="574.0" class="rule"/>
+<text x="180.0" y="602.0" class="label" text-anchor="end">strings</text>
+<rect x="200" y="582.0" width="292.1" height="13" rx="2" class="bar-ours"/>
+<text x="499.1" y="593.0" class="small"><tspan class="value ours">660 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="599.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="610.0" class="small"><tspan class="value">678 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<line x1="40" y1="620.0" x2="880" y2="620.0" class="rule"/>
+<text x="180.0" y="648.0" class="label" text-anchor="end">ints</text>
+<rect x="200" y="628.0" width="218.7" height="13" rx="2" class="bar-ours"/>
+<text x="425.7" y="639.0" class="small"><tspan class="value ours">156 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="645.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="656.0" class="small"><tspan class="value">213 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.4× faster</tspan></text>
+<line x1="40" y1="666.0" x2="880" y2="666.0" class="rule"/>
+<text x="180.0" y="694.0" class="label" text-anchor="end">arrays</text>
+<rect x="200" y="674.0" width="149.2" height="13" rx="2" class="bar-ours"/>
+<text x="356.2" y="685.0" class="small"><tspan class="value ours">65.4 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="691.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="702.0" class="small"><tspan class="value">132 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">2.0× faster</tspan></text>
+<line x1="40" y1="712.0" x2="880" y2="712.0" class="rule"/>
+<text x="180.0" y="740.0" class="label" text-anchor="end">headers</text>
+<rect x="200" y="720.0" width="163.0" height="13" rx="2" class="bar-ours"/>
+<text x="370.0" y="731.0" class="small"><tspan class="value ours">62.8 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="737.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="748.0" class="small"><tspan class="value">116 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.8× faster</tspan></text>
+<line x1="40" y1="758.0" x2="880" y2="758.0" class="rule"/>
+<text x="180.0" y="782.0" class="label" text-anchor="end">floats</text>
+<text x="180.0" y="796.0" class="note-plain small" text-anchor="end">not like-for-like</text>
+<rect x="200" y="766.0" width="138.3" height="13" rx="2" class="bar-ours"/>
+<text x="345.3" y="777.0" class="small"><tspan class="value ours">94.9 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="783.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="794.0" class="small"><tspan class="value">206 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">2.2× faster</tspan></text>
+<line x1="40" y1="804.0" x2="880" y2="804.0" class="rule"/>
+<text x="180.0" y="828.0" class="label" text-anchor="end">dates</text>
+<text x="180.0" y="842.0" class="note-plain small" text-anchor="end">not like-for-like</text>
+<rect x="200" y="812.0" width="131.8" height="13" rx="2" class="bar-ours"/>
+<text x="338.8" y="823.0" class="small"><tspan class="value ours">146 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="829.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="840.0" class="small"><tspan class="value">333 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">2.3× faster</tspan></text>
+<line x1="40" y1="850.0" x2="880" y2="850.0" class="rule"/>
+<text x="40.0" y="884.0" class="group" text-anchor="start">KEY LOOKUP · ns per lookup, lower is better · StructuredData Open + TryGet (a linear scan), TomlBeef a hash map</text>
+<line x1="40" y1="896.0" x2="880" y2="896.0" class="rule"/>
+<text x="180.0" y="920.0" class="label" text-anchor="end">200 tables</text>
+<text x="180.0" y="934.0" class="note-plain small" text-anchor="end">× 1000 keys</text>
+<rect x="200" y="904.0" width="15.4" height="13" rx="2" class="bar-ours"/>
+<text x="222.4" y="915.0" class="small"><tspan class="value ours">105 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8">19.4× faster</tspan></text>
+<rect x="200" y="921.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="932.0" class="small"><tspan class="value">2045 ns</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<line x1="40" y1="942.0" x2="880" y2="942.0" class="rule"/>
+<text x="40.0" y="976.0" class="group" text-anchor="start">WRITING · MB/s of output, higher is better</text>
+<line x1="40" y1="988.0" x2="880" y2="988.0" class="rule"/>
+<text x="180.0" y="1016.0" class="label" text-anchor="end">commented</text>
+<rect x="200" y="996.0" width="218.7" height="13" rx="2" class="bar-ours"/>
+<text x="425.7" y="1007.0" class="small"><tspan class="value ours">244 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1013.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="1024.0" class="small"><tspan class="value">334 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.4× faster</tspan></text>
+<line x1="40" y1="1034.0" x2="880" y2="1034.0" class="rule"/>
+<text x="180.0" y="1062.0" class="label" text-anchor="end">strings</text>
+<rect x="200" y="1042.0" width="195.4" height="13" rx="2" class="bar-ours"/>
+<text x="402.4" y="1053.0" class="small"><tspan class="value ours">240 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1059.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="1070.0" class="small"><tspan class="value">369 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.5× faster</tspan></text>
+<line x1="40" y1="1080.0" x2="880" y2="1080.0" class="rule"/>
+<text x="180.0" y="1108.0" class="label" text-anchor="end">ints</text>
+<rect x="200" y="1088.0" width="154.5" height="13" rx="2" class="bar-ours"/>
+<text x="361.5" y="1099.0" class="small"><tspan class="value ours">236 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1105.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="1116.0" class="small"><tspan class="value">458 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.9× faster</tspan></text>
+<line x1="40" y1="1126.0" x2="880" y2="1126.0" class="rule"/>
+<text x="180.0" y="1154.0" class="label" text-anchor="end">arrays</text>
+<rect x="200" y="1134.0" width="300.0" height="13" rx="2" class="bar-ours"/>
+<text x="507.0" y="1145.0" class="small"><tspan class="value ours">181 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8">1.1× faster</tspan></text>
+<rect x="200" y="1151.0" width="270.1" height="13" rx="2" class="bar"/>
+<text x="477.1" y="1162.0" class="small"><tspan class="value">163 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<line x1="40" y1="1172.0" x2="880" y2="1172.0" class="rule"/>
+<text x="180.0" y="1200.0" class="label" text-anchor="end">headers</text>
+<rect x="200" y="1180.0" width="203.7" height="13" rx="2" class="bar-ours"/>
+<text x="410.7" y="1191.0" class="small"><tspan class="value ours">173 MB/s</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1197.0" width="300.0" height="13" rx="2" class="bar"/>
+<text x="507.0" y="1208.0" class="small"><tspan class="value">255 MB/s</tspan><tspan class="libname" dx="6">StructuredData</tspan><tspan class="note-plain" dx="8">1.5× faster</tspan></text>
+<line x1="40" y1="1218.0" x2="880" y2="1218.0" class="rule"/>
+<text x="40.0" y="1252.0" class="footer" text-anchor="start">Same compiler and Release settings · 1 s warm-up, samples until 60% are within ±10% of their median · median of 3 processes · beef.sh</text>
+</svg>

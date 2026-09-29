@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Draws docs/benchmark.svg (chart) and docs/benchmark-table.svg (full results table) from results.md
-(the Markdown table run.sh prints).
+(the Markdown table run.sh prints) and lookup-results.md, and docs/benchmark-beef.svg (TomlBeef against
+Beef's StructuredData) from beef-results.md (beef.sh).
 
     ./run.sh > results.md && ./plot.py
 
@@ -343,6 +344,10 @@ def style():
     .cell-missing {{ font-size: 10px; fill: #8c959f; }}
     .heat {{ fill: #2da44e; }}
     .row-ours {{ fill: #ea580c; fill-opacity: 0.07; }}
+    .seg-ok {{ fill: #2da44e; }}
+    .seg-approx {{ fill: #d4a72c; }}
+    .seg-bad {{ fill: #cf222e; }}
+    .seg-err {{ fill: #afb8c1; }}
     @media (prefers-color-scheme: dark) {{
       .bg {{ fill: #0d1117; }}
       .title, .label {{ fill: #e6edf3; }}
@@ -364,6 +369,10 @@ def style():
       .cell-missing {{ fill: #6e7681; }}
       .heat {{ fill: #3fb950; }}
       .row-ours {{ fill: #f97316; fill-opacity: 0.10; }}
+      .seg-ok {{ fill: #3fb950; }}
+      .seg-approx {{ fill: #d29922; }}
+      .seg-bad {{ fill: #f85149; }}
+      .seg-err {{ fill: #3d444d; }}
     }}
   </style>"""
 
@@ -438,6 +447,148 @@ def lookup_panel(top):
     return out, y + 8
 
 
+BEEF_RESULTS = os.path.join(HERE, "beef-results.md")
+BEEF_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-beef.svg")
+
+
+def read_beef_results():
+    """beef-results.md (written by beef.sh) as (checks, parse rows, lookup rows, write rows).
+    checks[name] = dict of the counts in its check summary line."""
+    text = open(BEEF_RESULTS).read()
+    checks = {}
+    pattern = (r"^(beef-projects|toml-test valid|toml-test invalid): (\d+) files: (\d+) exact match, (\d+) match except.*?, "
+               r"(\d+) values differ, (\d+) StructuredData error only, (\d+) TomlBeef error only, (\d+) both reject")
+    for m in re.finditer(pattern, text, re.M):
+        keys = ("files", "exact", "approx", "differ", "sd_error", "tb_error", "both_reject")
+        checks[m.group(1)] = dict(zip(keys, map(int, m.groups()[1:])))
+    sections = {}
+    current = None
+    for line in text.splitlines():
+        if line.startswith("### "):
+            current = line[4:]
+            sections[current] = []
+        elif current and line.startswith("|") and not line.startswith("|---"):
+            sections[current].append([c.strip() for c in line.strip().strip("|").split("|")])
+    get = lambda prefix: next(rows[1:] for title, rows in sections.items() if title.startswith(prefix))
+    return checks, get("Parsing"), get("Key lookups"), get("Writing")
+
+
+def pair_rows(out, rows, y, label_x, bar_x, bar_w, lower_is_better):
+    """Draws (label, note, StructuredData value, TomlBeef value, unit) rows as a pair of bars each,
+    scaled per row, and returns the new y."""
+    bar_h, gap, row_h = 13, 4, 46
+    for label, note, sd, tb, unit in rows:
+        out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+        mid = y + row_h / 2
+        if note:
+            out.append(text(label_x, mid + 1, label, "label", "end"))
+            out.append(text(label_x, mid + 15, note, "note-plain small", "end"))
+        else:
+            out.append(text(label_x, mid + 5, label, "label", "end"))
+        peak = max(sd, tb)
+        by = mid - bar_h - gap / 2
+        for lib, v, ours in (("TomlBeef", tb, True), ("StructuredData", sd, False)):
+            w = max(2.0, bar_w * v / peak)
+            out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" class="{"bar-ours" if ours else "bar"}"/>')
+            better = (v < min(sd, tb) * 1.0001) if lower_is_better else (v > max(sd, tb) * 0.9999)
+            ratio = max(sd, tb) / min(sd, tb)
+            win = f"{ratio:.1f}× {'faster' if ratio >= 1.05 else ''}".strip() if better and ratio >= 1.05 else ""
+            value = f"{v:.0f}" if v >= 100 else f"{v:.1f}"
+            out.append(f'<text x="{bar_x + w + 7:.1f}" y="{by + 11:.1f}" class="small">'
+                       f'<tspan class="{"value ours" if ours else "value"}">{value} {unit}</tspan>'
+                       f'<tspan class="{"libname ours" if ours else "libname"}" dx="6">{lib}</tspan>'
+                       f'<tspan class="note-plain" dx="8">{win}</tspan></text>')
+            by += bar_h + gap
+        y += row_h
+    out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+    return y
+
+
+def beef_panels(top):
+    """TomlBeef against Beef's built-in reader: correctness, parsing, lookups and writing."""
+    checks, parse_rows, lookup_rows, write_rows = read_beef_results()
+    out = []
+    y = top
+    out.append(text(40, y, "TomlBeef and Beef's built-in TOML reader", "title"))
+    y += 22
+    out.append(text(40, y, "Beefy.utils.StructuredData, which the Beef IDE and BeefBuild use for project files, "
+                    "built into one program with TomlBeef", "subtitle"))
+
+    # Correctness: stacked bars of file counts
+    y += 40
+    out.append(text(40, y, "READS TOML CORRECTLY", "group"))
+    y += 14
+    valid, invalid, projects = checks["toml-test valid"], checks["toml-test invalid"], checks["beef-projects"]
+    invalid_total = invalid["tb_error"] + invalid["both_reject"]  # invalid under TOML 1.1 (TomlBeef rejects)
+    rows = [
+        ("toml-test valid files", f"{valid['files']} files",
+         [("ok", valid["exact"], "read correctly"), ("approx", valid["approx"], "dates as text or float32"),
+          ("bad", valid["differ"], "wrong values"), ("err", valid["sd_error"], "error")],
+         [("ok", valid["files"] - valid["tb_error"] - valid["both_reject"], "read correctly")]),
+        ("toml-test invalid files", f"{invalid_total} files",
+         [("ok", invalid["both_reject"], "rejected"), ("bad", invalid["tb_error"], "accepted")],
+         [("ok", invalid_total, "rejected")]),
+        ("real Beef project files", f"{projects['files']} files",
+         [("ok", projects["exact"], "read identically"), ("bad", projects["tb_error"], "invalid file accepted")],
+         [("ok", projects["exact"], "read identically"), ("ok", projects["tb_error"], "invalid file rejected")]),
+    ]
+    bar_x, bar_w, bar_h = 200, 420, 14
+    for label, sub, sd_parts, tb_parts in rows:
+        out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+        out.append(text(180, y + 22, label, "label", "end"))
+        out.append(text(180, y + 37, sub, "note-plain small", "end"))
+        total = sum(n for _, n, _ in tb_parts)
+        by = y + 9
+        for lib, parts, ours in (("TomlBeef", tb_parts, True), ("StructuredData", sd_parts, False)):
+            x = bar_x
+            for cls, n, _ in parts:
+                w = bar_w * n / total
+                if w > 0:
+                    out.append(f'<rect x="{x:.1f}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" class="seg-{cls}"/>')
+                x += w
+            summary = " · ".join(f"{n} {what}" for _, n, what in parts if n)
+            out.append(f'<text x="{bar_x + bar_w + 8}" y="{by + 11:.1f}" class="small">'
+                       f'<tspan class="{"libname ours" if ours else "libname"}">{lib}</tspan></text>')
+            out.append(text(bar_x, by + bar_h + 12, summary, "note-plain small"))
+            by += bar_h + 17
+        y += 76
+    out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+    y += 18
+    out.append(text(40, y, "StructuredData has no dotted keys, literal or multi-line strings; keeps dates as text, "
+                    "floats as 32-bit; does not check duplicate keys or UTF-8.", "footnote"))
+    y += 18
+    out.append(text(40, y, "Parsing rows marked \"not like-for-like\": StructuredData parses floats as float32 and "
+                    "leaves dates unparsed, so it does less work there.", "footnote"))
+
+    # Parsing, lookups, writing: pairs of bars
+    y += 40
+    out.append(text(40, y, "PARSING · MB/s, higher is better · bars scaled per row", "group"))
+    y += 12
+    parse = []
+    for cells in parse_rows:
+        name, sd, tb, like = cells[0], float(cells[1]), float(cells[2]), cells[4]
+        note = "" if like.startswith("yes") else "not like-for-like"
+        if name == "Beef project files":
+            note = "133 BeefProj/BeefSpace files"
+        parse.append((name, note, sd, tb, "MB/s"))
+    y = pair_rows(out, parse, y, 180, 200, 300, False)
+
+    y += 34
+    out.append(text(40, y, "KEY LOOKUP · ns per lookup, lower is better · StructuredData Open + TryGet (a linear "
+                    "scan), TomlBeef a hash map", "group"))
+    y += 12
+    lookups = [(cells[0].split(" × ")[0], "× " + cells[0].split(" × ")[1], float(cells[1]), float(cells[2]), "ns")
+               for cells in lookup_rows]
+    y = pair_rows(out, lookups, y, 180, 200, 300, True)
+
+    y += 34
+    out.append(text(40, y, "WRITING · MB/s of output, higher is better", "group"))
+    y += 12
+    writes = [(cells[0], "", float(cells[1]), float(cells[2]), "MB/s") for cells in write_rows]
+    y = pair_rows(out, writes, y, 180, 200, 300, False)
+    return out, y
+
+
 def main():
     header, table, timeouts = read_results()
     panel1, y = relative_panel(header, table, timeouts, 44)
@@ -455,6 +606,13 @@ def main():
 
     body, y = table_panel(header, table, timeouts, 44)
     write_svg(TABLE_OUT, TABLE_W, y + 24, body, "Full TOML parsing benchmark results: MB/s per library and input")
+
+    if os.path.exists(BEEF_RESULTS):
+        body, y = beef_panels(44)
+        height = y + 50
+        body.append(text(40, height - 16, "Same compiler and Release settings · 1 s warm-up, samples until 60% are "
+                         "within ±10% of their median · median of 3 processes · beef.sh", "footer"))
+        write_svg(BEEF_OUT, W, height, body, "TomlBeef compared with Beef's built-in TOML reader")
 
 
 if __name__ == "__main__":

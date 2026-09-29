@@ -527,15 +527,7 @@ Parsing speed is only half of it. The last panel of the chart, and the last two 
 
 The Beef IDE and BeefBuild read project files with `Beefy.utils.StructuredData`, which handles a subset of TOML: no dotted keys, literal or multi-line strings, or trailing commas; dates are kept as text, floats are 32-bit, and duplicate keys, bad UTF-8 and control characters are not checked. `bench/compare/beef.sh` builds it and TomlBeef into one program with the same compiler and compares them only where both read the same values, which it verifies first (full output in `bench/compare/beef-results.md`):
 
-| | StructuredData | TomlBeef |
-|---|---:|---:|
-| Values: toml-test valid files read correctly | 109 of 266 (+32 with dates as text or float32 rounding) | 266 of 266 |
-| Values: toml-test invalid files rejected | 313 of 492 | 492 of 492 |
-| Parse 133 real BeefProj/BeefSpace files, MB/s | **206** | 109 |
-| Parse ints / arrays / [table] headers, MB/s | **213 / 132 / 116** | 156 / 65 / 63 |
-| Parse strings / commented config / comments, MB/s | 678 / 507 / 797 | 660 / **549** / **2923** |
-| Look up a key in 200 tables × 1000 keys, ns | 2045 | **105** |
-| Write ints, MB/s of output | **458** | 236 |
+<p align="center"><img src="docs/benchmark-beef.svg" alt="TomlBeef compared with Beef's built-in TOML reader: correctness, parsing, lookups and writing" width="820"></p>
 
 StructuredData is faster at parsing table-heavy files because it does less: its tables are linked lists with no duplicate-key check, so it never hashes a key, and it skips UTF-8 validation. The same design makes every lookup a linear scan. One Beef project file in the corpus (in `BeefManaged`) is invalid TOML, a key repeated in an inline table, which StructuredData accepts and TomlBeef rejects.
 
