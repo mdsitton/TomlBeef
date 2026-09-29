@@ -72,6 +72,17 @@ def main():
     write("headers", "".join(f"[g{i // 500}.s{i}]\nx = {i}\n" for i in range(150000)))
     write("dotted", "".join(f"a{i % 100}.b{i}.c = {i}\n" for i in range(100000)))
 
+    # Key lookups after parsing (lookup.sh): random `table key` pairs whose value is an integer
+    lookups(rng, "ints", ((f"t{rng.randrange(200)}", f"key_{rng.randrange(1000)}") for _ in range(100000)))
+    lookups(rng, "mixed", ((f"section_{rng.randrange(15000)}", "count") for _ in range(100000)))
+
+
+def lookups(rng, name, pairs):
+    """Writes inputs/<name>.lookups: one `table key` pair per line, looked up in <name>.toml."""
+    with open(os.path.join(OUT, name + ".lookups"), "w", newline="\n") as f:
+        f.writelines(f"{t} {k}\n" for t, k in pairs)
+    print(f"{name + '.lookups':16} 100000 lookups")
+
 
 if __name__ == "__main__":
     main()

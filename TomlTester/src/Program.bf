@@ -26,6 +26,7 @@ class Program
 		bool encode = false;
 		bool fromJson = false;
 		int benchIterations = 0;
+		StringView lookupsPath = default;
 		var config = TomlReadConfig();
 		for (int i = 0; i < args.Count; i++)
 		{
@@ -46,6 +47,8 @@ class Program
 				default: return UsageError("-bench needs a positive iteration count");
 				}
 			}
+			else if (arg == "-lookup" && i + 1 < args.Count)
+				lookupsPath = args[++i];
 			else if (arg == "-toml" && i + 1 < args.Count)
 			{
 				let value = args[++i];
@@ -80,6 +83,8 @@ class Program
 				return UsageError(scope $"Unknown option '{arg}'");
 		}
 
+		if (!lookupsPath.IsEmpty)
+			return LookupBench(lookupsPath, Math.Max(benchIterations, 1), config);
 		if (benchIterations > 0)
 			return Bench(benchIterations, config);
 
@@ -152,6 +157,59 @@ class Program
 		});
 		String output = scope String();
 		BenchCase("Write", iterations, input.Length, scope () => { output.Clear(); doc.Write(output); });
+		return 0;
+	}
+
+	/// Key lookups after parsing (bench/compare/lookup.sh): parses stdin once, then times up to
+	/// `passes` passes (3 s budget) over the `table key` pairs in `lookupsPath`, each reading the
+	/// integer at root[table][key]. Prints ns per lookup and the sum of the values found, which must
+	/// match across libraries.
+	static int LookupBench(StringView lookupsPath, int passes, TomlReadConfig config)
+	{
+		String input = scope String();
+		Console.In.ReadToEnd(input);
+		var doc = scope TomlDocument();
+		if (doc.Read(input, config) case .Err(let err))
+		{
+			Console.Error.WriteLine(scope $"Parse error at line {err.mLine}:{err.mColumn}: {err.mMessage}");
+			return 1;
+		}
+		String lookups = scope String();
+		if (File.ReadAllText(lookupsPath, lookups) case .Err)
+		{
+			Console.Error.WriteLine(scope $"Cannot read {lookupsPath}");
+			return 2;
+		}
+		var tables = scope System.Collections.List<StringView>();
+		var keys = scope System.Collections.List<StringView>();
+		for (let line in lookups.Split('\n', .RemoveEmptyEntries))
+		{
+			int space = line.IndexOf(' ');
+			tables.Add(line.Substring(0, space));
+			keys.Add(line.Substring(space + 1));
+		}
+
+		let root = doc.RootTable;
+		int64 sum = 0;
+		int missing = 0;
+		let watch = scope System.Diagnostics.Stopwatch(true);
+		int done = 0;
+		while (done < passes && (done == 0 || watch.Elapsed.TotalSeconds < 3))
+		{
+			sum = 0;
+			missing = 0;
+			for (int i < tables.Count)
+			{
+				if (root.TryGetTable(tables[i], var table) && table.TryGetInteger(keys[i], var value))
+					sum += value;
+				else
+					missing++;
+			}
+			done++;
+		}
+		watch.Stop();
+		double ns = watch.Elapsed.TotalMilliseconds * 1e6 / ((double)done * tables.Count);
+		Console.WriteLine(scope $"{ns:F1} ns/lookup, {tables.Count} lookups, sum {sum}, missing {missing}");
 		return 0;
 	}
 

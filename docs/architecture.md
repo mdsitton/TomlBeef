@@ -771,6 +771,15 @@ per document take page faults that malloc's reused memory avoids.
     store and builds a hash map per table. Next come zig-toml 0.83×, glaze 0.67× and Rust `toml`
     0.27×; the rest are 0.26× or slower. Among parsers that keep comments and formatting TomlBeef
     is fastest: `toml_edit` 0.52×, Tomlyn's syntax tree 0.077×.
+  - *Lookups after parsing* (`bench/compare/lookup.sh`, results in `lookup-results.md`): 100,000
+    random `root[table][key]` integer reads through each library's table API, checked to find the
+    same values. ns per lookup, TomlBeef / toml-spanner / Rust `toml` / `toml_edit`: 124 / 1892 /
+    356 / 249 in 200 tables of 1000 keys, 104 / 15968 / 239 / 178 with 15000 sections at the root.
+    toml-spanner's table is a list scanned on every `get` (its hash index exists only during the
+    parse, for duplicate detection), so its parse-speed lead on the mixed config (~22 ms) is used up
+    after ~1,500 lookups. Rust `toml` uses a B-tree map, `toml_edit` an index map; TomlBeef a
+    `Dictionary` per table. Any move toward toml-spanner's table layout must keep indexed lookups
+    for large tables.
   - An earlier run of 13 libraries (before toml-spanner and the others were added) lost on
     comment-heavy input (glaze 2657, go-toml 1912, toml-c 1230 vs 1114 MB/s; `toml_edit` 636 vs 535
     preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41).

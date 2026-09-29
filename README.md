@@ -519,6 +519,15 @@ Every library parses the same generated inputs (2–9 MB) from memory into its o
 
 The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 
+Parsing speed is only half of it: TomlBeef tables are hash maps, so reading keys stays fast in large tables. Looking up 100,000 random `table.key` integers after parsing (`bench/compare/lookup.sh`, nanoseconds per lookup, lower is better):
+
+| document | TomlBeef | toml-spanner | toml (Rust) | toml_edit |
+|---|---:|---:|---:|---:|
+| 200 tables × 1000 keys | **124** | 1892 | 356 | 249 |
+| 15000 root sections × ~10 keys | **104** | 15968 | 239 | 178 |
+
+toml-spanner stores a table as a plain list and scans it on every lookup, so on the config above its faster parse is used up after about 1,500 lookups.
+
 ## Running Tests
 
 Local tests use the fixtures checked into `tests/`; a separate `toml-test/` checkout is not required.
