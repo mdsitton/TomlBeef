@@ -19,6 +19,8 @@ internal interface ITomlCursor
 	char32 Advance() mut;
 
 	void SkipWhitespace() mut;
+	/// Skips one line break: "\n", or "\r\n" as a unit. (A lone '\r' is consumed as one too; the
+	/// parser rejects it first, see CountAndSkipNewline.)
 	void SkipNewline() mut;
 
 	/// Advances over a run of bytes whose TomlChar.ScanClass has none of `stopMask`'s bits, appending them
@@ -285,8 +287,8 @@ internal struct TomlByteCursor : ITomlCursor
 
 	public void SkipNewline() mut
 	{
-		if (mOffset < mData.Length && mData[mOffset] == '\r') AdvanceByte();
-		if (mOffset < mData.Length && mData[mOffset] == '\n') AdvanceByte();
+		// One line break: AdvanceByte consumes "\r\n" as a unit
+		if (mOffset < mData.Length && (mData[mOffset] == '\r' || mData[mOffset] == '\n')) AdvanceByte();
 	}
 
 

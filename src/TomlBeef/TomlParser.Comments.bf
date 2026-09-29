@@ -18,7 +18,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() != '#') return .Ok;
 		mCursor.AdvanceByte(); // skip #
 		Try!(ScanCommentBody(null));
-		CountAndSkipNewline();
+		Try!(CountAndSkipNewline());
 		return .Ok;
 	}
 
@@ -53,7 +53,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mCursor.AdvanceByte(); // skip #
 		mCommentScratch.Clear();
 		Try!(ScanCommentBody(mCommentScratch));
-		CountAndSkipNewline();
+		Try!(CountAndSkipNewline());
 		StringView text = mCommentScratch;
 		if (text.Length > 0 && text[0] == ' ')
 			text = text.Substring(1);
@@ -161,18 +161,22 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mPendingComments.PopBack();
 	}
 
-	/// Count and skip a newline for document-level style inference.
+	/// Skips one line break (LF or CRLF), counting it for document-level style inference.
 	/// Use for document-structure newlines; string parsing should use plain SkipNewline().
-	private void CountAndSkipNewline()
+	/// @return An error for a CR not followed by LF: TOML has no bare-CR line break.
+	private Result<void, TomlParseError> CountAndSkipNewline()
 	{
+		char8 b = mCursor.PeekByte();
+		if (b == '\r' && mCursor.PeekByteAt(1) != '\n')
+			return .Err(Error(.ControlCharInDocument, "Bare CR not allowed"));
 		if (mStyle != null)
 		{
-			char8 b = mCursor.PeekByte();
-			if (b == '\r' && mCursor.PeekByteAt(1) == '\n')
+			if (b == '\r')
 				mCrlfCount++;
 			else if (b == '\n')
 				mLfOnlyCount++;
 		}
 		mCursor.SkipNewline();
+		return .Ok;
 	}
 }

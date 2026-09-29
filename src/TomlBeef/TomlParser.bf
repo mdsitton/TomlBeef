@@ -170,7 +170,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					else
 						mBlankLineCount++;
 				}
-				CountAndSkipNewline();
+				Try!(CountAndSkipNewline());
 				continue;
 			}
 
@@ -244,7 +244,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(Error(.MissingNewlineAfterKeyVal, "Expected newline after key/value pair"));
 				else
 				{
-					CountAndSkipNewline();
+					Try!(CountAndSkipNewline());
 				}
 			}
 		}
@@ -311,7 +311,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(commentErr);
 			}
 			else if (b == '\r' || b == '\n')
-				CountAndSkipNewline();
+				Try!(CountAndSkipNewline());
 			else
 				return .Err(Error(.UnexpectedToken, "Expected newline or comment after header"));
 		}
@@ -561,7 +561,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(e);
 				continue;
 			}
-			if (allowNewlines && (b == '\r' || b == '\n')) { CountAndSkipNewline(); continue; }
+			if (allowNewlines && (b == '\r' || b == '\n')) { Try!(CountAndSkipNewline()); continue; }
 			break;
 		}
 		return .Ok;
@@ -594,7 +594,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (b == '\r' || b == '\n')
 			{
 				// Track blank lines
-				CountAndSkipNewline();
+				Try!(CountAndSkipNewline());
 				if (outComments != null && mStyle != null)
 				{
 					// Check for additional newlines = blank line
@@ -605,7 +605,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						if (nb == '\r' || nb == '\n')
 						{
 							outBlankLine = true;
-							CountAndSkipNewline();
+							Try!(CountAndSkipNewline());
 							mCursor.SkipWhitespace();
 						}
 						else

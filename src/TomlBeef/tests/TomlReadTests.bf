@@ -575,6 +575,35 @@ static class TomlReadTests
 	}
 
 	[Test]
+	public static void LineBreaks_BareCrIsRejectedEverywhere()
+	{
+		// TOML line breaks are LF or CRLF. A lone CR used to end a line after a value, a header or an
+		// array element.
+		StringView[?] invalid = .("a = 1\rb = 2\n", "a = 1\r", "[t]\rb = 1\n", "a = \"x\"\rb = 2\n",
+			"a = [1,\r2]\n", "a = [1\r]\n", "a = { b = 1,\r c = 2 }\n", "a = 1 # c\rb = 2\n", "\ra = 1\n");
+		for (let input in invalid)
+		{
+			var doc = scope TomlDocument();
+			Test.Assert(doc.Read(input, .() { Version = .V1_1 }) case .Err(let err) && err.mKind == .ControlCharInDocument,
+				scope $"string read accepted {input.Length}-byte input with a bare CR");
+			let ms = scope System.IO.MemoryStream();
+			ms.TryWrite(Span<uint8>((uint8*)input.Ptr, input.Length));
+			ms.Position = 0;
+			var streamed = scope TomlDocument();
+			Test.Assert(streamed.Read(ms) case .Err, "stream read accepted a bare CR");
+		}
+
+		// CRLF, and mixed CRLF/LF files, are fine; a blank line after a CRLF line is one blank line
+		// (the newline skip used to swallow the "\n" of "\r\n\n" as well)
+		var mixed = scope TomlDocument();
+		Test.Assert(mixed.Read("a = 1\r\n\nb = [\r\n  1,\r\n\r\n  2,\r\n]\n", .() { MetadataMode = .PreserveStyle }) case .Ok);
+		Test.Assert(mixed.TryGetArray("b", var b) && b.Count == 2);
+		let output = scope String();
+		mixed.Write(output);
+		Test.Assert(output.Contains("a = 1\r\n\r\nb"), scope $"blank line after a CRLF line was lost:\n{output}");
+	}
+
+	[Test]
 	public static void ScanRun_WordAtATimeMatchesByteLoop()
 	{
 		// TomlByteCursor scans comment and string text eight bytes at a time. Put every byte value at

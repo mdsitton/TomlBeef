@@ -269,8 +269,8 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 	{
 		EnsureAvailable(1);
 		if (mPos >= mEnd) return;
-		if (mBuffer[mPos] == '\r') AdvanceByte();
-		if (mPos < mEnd && mBuffer[mPos] == '\n') AdvanceByte();
+		// One line break: AdvanceByte consumes "\r\n" as a unit
+		if (mBuffer[mPos] == '\r' || mBuffer[mPos] == '\n') AdvanceByte();
 	}
 
 
