@@ -497,7 +497,7 @@ static class TomlStyleApiTests
 	}
 
 	[Test]
-	public static void NearbyStyle_NumbersFollowTheirNeighbours()
+	public static void NearbyStyle_NumbersFollowTheirNeighbors()
 	{
 		let doc = ReadPreserving(scope .(), "mode = 0o755\nmask = 0xFF\nratio = 1.5e3\nflags = [0b01, 0b10]\n[t]\nn = 7\n");
 		doc.RootTable.Set("owner", 10);
@@ -513,7 +513,7 @@ static class TomlStyleApiTests
 		AssertContains(output, "owner = 0x0A");
 		AssertContains(output, "scale = 2.5e0");
 		AssertContains(output, "flags = [0b01, 0b10, 0b100]");
-		// Neighbours are looked for in the same table only
+		// Neighbors are looked for in the same table only
 		AssertContains(output, "m = 8");
 	}
 

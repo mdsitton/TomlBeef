@@ -170,7 +170,7 @@ public class TomlArray
 			if (!mStore.mSuppressAutoDirty)
 			{
 				MarkChildrenDirty();
-				AdoptNeighbourFormat(nodeId, value);
+				AdoptNeighborFormat(nodeId, value);
 			}
 			BindContainerMetadata(value);
 		}
@@ -178,8 +178,8 @@ public class TomlArray
 
 	/// Nearby style: an element added in code takes the value format of the nearest earlier element of
 	/// the same kind that has one (a new 0x2A among hex elements is written in hex). See
-	/// TomlTable.AdoptNeighbourFormat. Only with PreserveStyle metadata.
-	private void AdoptNeighbourFormat(TomlNodeId nodeId, TomlValue value)
+	/// TomlTable.AdoptNeighborFormat. Only with PreserveStyle metadata.
+	private void AdoptNeighborFormat(TomlNodeId nodeId, TomlValue value)
 	{
 		let metadata = mMetadataContext.mMetadata;
 		if (!metadata.CapturesStyle)

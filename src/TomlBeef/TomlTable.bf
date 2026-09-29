@@ -175,7 +175,7 @@ public class TomlTable
 			if (!presetNodeId.IsValid && !mStore.mSuppressAutoDirty)
 			{
 				MarkChildrenDirty();
-				AdoptNeighbourFormat(nodeId, value);
+				AdoptNeighborFormat(nodeId, value);
 			}
 			BindContainerMetadata(value);
 		}
@@ -185,9 +185,9 @@ public class TomlTable
 	/// Nearby style: an entry added in code takes the value format of the nearest earlier entry of the
 	/// same kind that has one (a new integer among hex integers is written in hex; see
 	/// TomlValue.HasSameStyleKind for which kinds take part). Formats are never
-	/// edited in place (style setters add new ones), so sharing the neighbour's is safe. Only with
+	/// edited in place (style setters add new ones), so sharing the neighbor's is safe. Only with
 	/// PreserveStyle metadata; a later merge still copies the source's own style over it.
-	private void AdoptNeighbourFormat(TomlNodeId nodeId, TomlValue value)
+	private void AdoptNeighborFormat(TomlNodeId nodeId, TomlValue value)
 	{
 		let metadata = SidecarFor(nodeId);
 		if (metadata == null)

@@ -286,7 +286,7 @@ doc.Set("server.port", 8080);   // only this value is regenerated
 doc.WriteFile("config.toml");
 ```
 
-Comments, blank lines between sections, string quoting and escapes, number formats (`0xFF`, `1_000`, `1e3`), date/time formats, key quoting, array and inline-table layout are kept. A changed value is regenerated in the style it had. A new number or date/time follows its nearest neighbour of the same type (a new key among hex values is written in hex); new strings and arrays follow the document's dominant style. Merging another file (also read with `PreserveStyle`) brings its comments and formats along. The goal is a faithful, valid file, not byte-for-byte identity: key order within a table is canonical, and whitespace details may be normalized.
+Comments, blank lines between sections, string quoting and escapes, number formats (`0xFF`, `1_000`, `1e3`), date/time formats, key quoting, array and inline-table layout are kept. A changed value is regenerated in the style it had. A new number or date/time follows its nearest neighbor of the same type (a new key among hex values is written in hex); new strings and arrays follow the document's dominant style. Merging another file (also read with `PreserveStyle`) brings its comments and formats along. The goal is a faithful, valid file, not byte-for-byte identity: key order within a table is canonical, and whitespace details may be normalized.
 
 Comments and styles can also be edited (these return `false` unless `doc.PreservesStyle` is true):
 

@@ -6,7 +6,7 @@ Beef's StructuredData) from beef-results.md (beef.sh).
     ./run.sh > results.md && ./plot.py
 
 Two panels: every library's average speed relative to TomlBeef (geometric mean over all inputs),
-and TomlBeef against the fastest other library on each input (a labelled pair of MB/s bars). Plain SVG with its own light/dark colours
+and TomlBeef against the fastest other library on each input (a labeled pair of MB/s bars). Plain SVG with its own light/dark colors
 (prefers-color-scheme), so it renders crisply on GitHub in either theme. No dependencies.
 """
 import math
@@ -91,7 +91,7 @@ def relative_speeds(parsers, table, timeouts):
     """Each library's speed relative to TomlBeef (plain parsers against plain TomlBeef, preserving
     ones against TomlBeef preserve): the geometric mean over the inputs it parsed of its MB/s divided
     by TomlBeef's. The geometric mean is the right average for ratios; an arithmetic one would let
-    the fastest input dominate. A timed-out input counts at its speed bound, which favours that
+    the fastest input dominate. A timed-out input counts at its speed bound, which favors that
     library; failed inputs are left out. Returns {parser: (ratio, inputs counted)}."""
     speeds = {}
     for p in parsers:
@@ -172,7 +172,7 @@ def relative_panel(parsers, table, timeouts, top):
 
 
 def head_to_head_panel(parsers, table, timeouts, top):
-    """Per input: TomlBeef against the fastest other library, as a pair of labelled MB/s bars, once
+    """Per input: TomlBeef against the fastest other library, as a pair of labeled MB/s bars, once
     for data-model parsers and once for style-preserving ones. Inputs differ by 50× in speed, so
     each input's bars are scaled to its own fastest bar."""
     out = []
@@ -398,7 +398,7 @@ def read_lookups():
 
 def lookup_panel(top):
     """Key lookups after parsing (lookup-results.md, written by lookup.sh): ns per lookup for each
-    library on each document, as log-scale bars (the results span 100 to 16000 ns), each labelled with
+    library on each document, as log-scale bars (the results span 100 to 16000 ns), each labeled with
     its time and how it compares with TomlBeef."""
     libs, docs = read_lookups()
     out = []

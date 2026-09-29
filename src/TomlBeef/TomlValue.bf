@@ -303,7 +303,7 @@ public enum TomlValue
 
 	/// Whether a new value can take `other`'s format as nearby style: both integers, both floats, or the
 	/// same date/time type. Strings, arrays, and inline tables follow document-wide habits instead
-	/// (quoting and layout are habits of the whole file, and copying one neighbour's multi-line layout
+	/// (quoting and layout are habits of the whole file, and copying one neighbor's multi-line layout
 	/// surprises), and bools have no format.
 	internal bool HasSameStyleKind(TomlValue other)
 	{

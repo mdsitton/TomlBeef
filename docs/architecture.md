@@ -554,7 +554,7 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   A 1.0 write puts the table on one line, where comments cannot be kept.
 - `TomlDocumentStyle`, inferred during the parse: newline style (CRLF if CRLF lines are at least
   as common as LF-only lines), the dominant string style, the dominant array layout and whether
-  multi-line arrays end with a trailing comma (ties favour the comma), dotted-key use, and indentation. Indentation (character and size, counted in characters so one tab is size
+  multi-line arrays end with a trailing comma (ties favor the comma), dotted-key use, and indentation. Indentation (character and size, counted in characters so one tab is size
   1) comes from an indented top-level line if there is one, otherwise from the first indented array
   element or inline-table entry. It drives values that have no captured format of their own: new
   strings use the dominant string style, new non-empty arrays the dominant layout (multi-line with
@@ -562,12 +562,12 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   indentation uses tabs when the source did.
 - **Nearby style**: an integer, float or date/time added in code (`Set`, `Add`) takes the value
   format of the nearest earlier entry of the same type in the same table, or element in the same
-  array, so a new key among hex values is written in hex. Sharing the neighbour's format ref is
+  array, so a new key among hex values is written in hex. Sharing the neighbor's format ref is
   safe because formats are never edited in place (style setters add new ones). Strings, arrays and
   inline tables deliberately keep the document-wide habits above: quoting and layout are habits of
-  the whole file, and copying one neighbour's `'''` string or inline array surprises. Values
+  the whole file, and copying one neighbor's `'''` string or inline array surprises. Values
   inserted by a merge keep their source's format (or none, if the source had no metadata), never
-  a neighbour's. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
+  a neighbor's. `mPreferDottedKeys` is recorded but deliberately not used to turn `AddTable`
   headers into dotted keys: one dotted key anywhere would otherwise restyle every new table.
 
 Node identity is stored **beside the values, not in `TomlValue`**. A table's entries are

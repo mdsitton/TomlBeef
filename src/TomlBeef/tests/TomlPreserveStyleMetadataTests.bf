@@ -1137,7 +1137,7 @@ static class TomlPreserveStyleMetadataTests
 
 		String output = scope String();
 		doc.Write(output);
-		// The new integer follows its hex neighbour (nearby style)
+		// The new integer follows its hex neighbor (nearby style)
 		Test.Assert(output == "a.b.c = 0x10\n# added\na.b.d = 0x05\n", scope $"Unexpected output:\n{output}");
 	}
 
