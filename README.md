@@ -510,6 +510,8 @@ if (doc.ReadFile(path) case .Err(let err))
 
 <p align="center"><img src="docs/benchmark.svg" alt="Parsing throughput of TomlBeef compared with other TOML libraries" width="820"></p>
 
+<p align="center"><img src="docs/benchmark-table.svg" alt="Full benchmark results: MB/s for every library on every input" width="880"></p>
+
 Every library parses the same generated inputs (2–9 MB) from memory into its own schema-less document, single-threaded, on Linux x86-64; Java, C# and JavaScript get a 1 s warm-up first. The libraries build different kinds of document (toml-spanner, for example, keeps strings as views into the input), so the work is not identical. TomlBeef validates fully (UTF-8 and control characters included); zig-toml accepts invalid TOML, and glaze and toml-c skip UTF-8 validation. Library versions are pinned. To reproduce, from `bench/compare/`:
 
 ```bash

@@ -14,6 +14,7 @@ import re
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results.md")
 OUT = os.path.join(HERE, "..", "..", "docs", "benchmark.svg")
+TABLE_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-table.svg")
 
 # Style-preserving parsers (keep comments and formatting) are compared with each other
 PRESERVING = {"TomlBeef preserve", "toml_edit", "Tomlyn syntax"}
@@ -54,6 +55,7 @@ INPUT_LABELS = {
 }
 
 W = 920
+TABLE_W = 980  # the results table needs a little more room for its ten columns
 FONT = "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 
 
@@ -213,18 +215,77 @@ def head_to_head_panel(parsers, table, timeouts, top):
     return out, y + 8
 
 
-def main():
-    header, table, timeouts = read_results()
-    panel1, y = relative_panel(header, table, timeouts, 44)
-    panel2, y = head_to_head_panel(header, table, timeouts, y + 56)
-    height = y + 56
-    footer = [
-        text(40, height - 34, "Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control "
-             "characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.", "footer"),
-        text(40, height - 16, "Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · "
-             "Java, C# and JavaScript warm up for 1 s first", "footer"),
-    ]
-    style = f"""
+# Two-line column headings for the results table
+INPUT_HEAD = {
+    "mixed": ("config", "(mixed)"), "commented": ("commented", "config"), "comments": ("comments", "only"),
+    "strings": ("strings", ""), "ints": ("integers", ""), "floats": ("floats", ""), "dates": ("dates", ""),
+    "arrays": ("small", "arrays"), "headers": ("[table]", "headers"), "dotted": ("dotted", "keys"),
+}
+
+
+def table_panel(parsers, table, timeouts, top):
+    """The full results: one row per library (grouped and ordered as in the average panel), one
+    column per input, MB/s per cell. The fastest cell of each column within its group is bold, and
+    every cell is shaded by its speed relative to that best (log scale)."""
+    out = []
+    name_x, first_col, col_w, row_h = 40, 335, 60, 30
+    width = TABLE_W
+    inputs = list(table.keys())
+    speeds = relative_speeds(parsers, table, timeouts)
+    y = top
+    out.append(text(40, y, "Full results", "title"))
+    y += 22
+    out.append(text(40, y, "MB/s per input · bold = fastest in its group · shading = speed relative to that "
+                    "(log scale) · rows ordered by average", "subtitle"))
+    y += 32
+    for c, name in enumerate(inputs):
+        top_line, bottom_line = INPUT_HEAD.get(name, (name, ""))
+        cx = first_col + c * col_w + col_w / 2
+        if bottom_line:
+            out.append(text(cx, y, top_line, "colhead", "middle"))
+            out.append(text(cx, y + 14, bottom_line, "colhead", "middle"))
+        else:
+            out.append(text(cx, y + 14, top_line, "colhead", "middle"))
+    y += 20
+    for group, members in (("DATA MODEL", [p for p in parsers if p not in PRESERVING]),
+                           ("KEEPS COMMENTS AND FORMATTING", [p for p in parsers if p in PRESERVING])):
+        y += 20
+        out.append(text(name_x, y, group, "group"))
+        y += 6
+        best = {i: max((table[i][p] for p in members if table[i][p]), default=0) for i in inputs}
+        for p in sorted(members, key=lambda p: -speeds[p][0]):
+            ours = p.startswith("TomlBeef")
+            out.append(f'<line x1="40" y1="{y:.1f}" x2="{width - 40}" y2="{y:.1f}" class="rule"/>')
+            if ours:
+                out.append(f'<rect x="40" y="{y:.1f}" width="{width - 80}" height="{row_h}" class="row-ours"/>')
+            mid = y + row_h / 2
+            star = "*" if caveat(p, table, timeouts) else ""
+            out.append(f'<text x="{name_x}" y="{mid + 4.5:.1f}"><tspan class="lang">{esc(LANGUAGE[p])}</tspan>'
+                       f'<tspan x="{name_x + 40}" class="{"label ours" if ours else "label"}">{esc(DISPLAY.get(p, p) + star)}</tspan>'
+                       f'<tspan class="repo" dx="7">{esc(REPO[p])}</tspan></text>')
+            for c, name in enumerate(inputs):
+                x = first_col + c * col_w
+                v = table[name][p]
+                if v is None:
+                    label = "TIMEOUT" if (name, p) in timeouts else "FAIL"
+                    out.append(text(x + col_w - 6, mid + 4, label, "cell-missing", "end"))
+                    continue
+                # Shade: 1.0 at the column's best, fading over a 100× range
+                level = max(0.0, 1.0 + math.log10(v / best[name]) / 2.0)
+                out.append(f'<rect x="{x + 2}" y="{y + 3:.1f}" width="{col_w - 4}" height="{row_h - 6}" rx="3" '
+                           f'class="heat" fill-opacity="{0.06 + 0.34 * level:.2f}"/>')
+                cls = "cell" + (" best" if v == best[name] else "") + (" ours" if ours else "")
+                out.append(text(x + col_w - 7, mid + 4.5, f"{v:.1f}" if v < 100 else f"{v:.0f}", cls, "end"))
+            y += row_h
+        out.append(f'<line x1="40" y1="{y:.1f}" x2="{width - 40}" y2="{y:.1f}" class="rule"/>')
+    y += 22
+    out.append(text(40, y, f"FAIL = rejected a valid input · TIMEOUT = one parse took over {LIMIT:.0f} s · "
+                    "* see the notes under the chart above", "footnote"))
+    return out, y + 8
+
+
+def style():
+    return f"""
   <style>
     svg {{ font-family: {FONT}; }}
     .bg {{ fill: #ffffff; }}
@@ -245,6 +306,13 @@ def main():
     .rule {{ stroke: #d8dee4; stroke-width: 1; }}
     .libname {{ fill: #656d76; }}
     .libname.ours {{ fill: #c2410c; font-weight: 650; }}
+    .colhead {{ font-size: 11px; font-weight: 600; fill: #424a53; }}
+    .cell {{ font-size: 12px; fill: #424a53; font-variant-numeric: tabular-nums; }}
+    .cell.best {{ font-weight: 700; fill: #1f2328; }}
+    .cell.ours {{ fill: #c2410c; }}
+    .cell-missing {{ font-size: 10px; fill: #8c959f; }}
+    .heat {{ fill: #2da44e; }}
+    .row-ours {{ fill: #ea580c; fill-opacity: 0.07; }}
     @media (prefers-color-scheme: dark) {{
       .bg {{ fill: #0d1117; }}
       .title, .label {{ fill: #e6edf3; }}
@@ -259,15 +327,42 @@ def main():
       .rule {{ stroke: #262c36; }}
       .libname {{ fill: #8d96a0; }}
       .libname.ours {{ fill: #fb923c; }}
+      .colhead {{ fill: #c9d1d9; }}
+      .cell {{ fill: #c9d1d9; }}
+      .cell.best {{ fill: #f0f6fc; }}
+      .cell.ours {{ fill: #fb923c; }}
+      .cell-missing {{ fill: #6e7681; }}
+      .heat {{ fill: #3fb950; }}
+      .row-ours {{ fill: #f97316; fill-opacity: 0.10; }}
     }}
   </style>"""
-    svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}" viewBox="0 0 {W} {height}" role="img" '
-           f'aria-label="TomlBeef parsing throughput compared with other TOML libraries">', style,
-           f'<rect class="bg" x="0" y="0" width="{W}" height="{height}" rx="10"/>']
-    svg += panel1 + panel2 + footer + ["</svg>"]
-    with open(OUT, "w") as f:
+
+
+def write_svg(path, width, height, body, label):
+    svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" '
+           f'aria-label="{esc(label)}">', style(),
+           f'<rect class="bg" x="0" y="0" width="{width}" height="{height}" rx="10"/>']
+    svg += body + ["</svg>"]
+    with open(path, "w") as f:
         f.write("\n".join(svg) + "\n")
-    print(f"wrote {os.path.relpath(OUT)}")
+    print(f"wrote {os.path.relpath(path)}")
+
+
+def main():
+    header, table, timeouts = read_results()
+    panel1, y = relative_panel(header, table, timeouts, 44)
+    panel2, y = head_to_head_panel(header, table, timeouts, y + 56)
+    height = y + 56
+    footer = [
+        text(40, height - 34, "Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control "
+             "characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.", "footer"),
+        text(40, height - 16, "Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · "
+             "Java, C# and JavaScript warm up for 1 s first", "footer"),
+    ]
+    write_svg(OUT, W, height, panel1 + panel2 + footer, "TomlBeef parsing throughput compared with other TOML libraries")
+
+    body, y = table_panel(header, table, timeouts, 44)
+    write_svg(TABLE_OUT, TABLE_W, y + 24, body, "Full TOML parsing benchmark results: MB/s per library and input")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,13 @@
     .rule { stroke: #d8dee4; stroke-width: 1; }
     .libname { fill: #656d76; }
     .libname.ours { fill: #c2410c; font-weight: 650; }
+    .colhead { font-size: 11px; font-weight: 600; fill: #424a53; }
+    .cell { font-size: 12px; fill: #424a53; font-variant-numeric: tabular-nums; }
+    .cell.best { font-weight: 700; fill: #1f2328; }
+    .cell.ours { fill: #c2410c; }
+    .cell-missing { font-size: 10px; fill: #8c959f; }
+    .heat { fill: #2da44e; }
+    .row-ours { fill: #ea580c; fill-opacity: 0.07; }
     @media (prefers-color-scheme: dark) {
       .bg { fill: #0d1117; }
       .title, .label { fill: #e6edf3; }
@@ -34,6 +41,13 @@
       .rule { stroke: #262c36; }
       .libname { fill: #8d96a0; }
       .libname.ours { fill: #fb923c; }
+      .colhead { fill: #c9d1d9; }
+      .cell { fill: #c9d1d9; }
+      .cell.best { fill: #f0f6fc; }
+      .cell.ours { fill: #fb923c; }
+      .cell-missing { fill: #6e7681; }
+      .heat { fill: #3fb950; }
+      .row-ours { fill: #f97316; fill-opacity: 0.10; }
     }
   </style>
 <rect class="bg" x="0" y="0" width="920" height="1405" rx="10"/>
