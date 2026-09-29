@@ -57,7 +57,7 @@ INPUT_LABELS = {
 }
 
 W = 920
-TABLE_W = 980  # the results table needs a little more room for its ten columns
+TABLE_W = 1124  # the results table needs more room: ten parse columns and two lookup columns
 FONT = "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 
 
@@ -234,12 +234,23 @@ def table_panel(parsers, table, timeouts, top):
     width = TABLE_W
     inputs = list(table.keys())
     speeds = relative_speeds(parsers, table, timeouts)
+    # Key-lookup columns (lookup-results.md) after the parse columns; lower is better, and libraries
+    # without a lookup harness show a dash
+    lookup_libs, lookup_docs = read_lookups()
+    lookup_x, lookup_w = first_col + len(inputs) * col_w + 16, 66
+    lookup_heads = [("1000-key", "tables"), ("15000 root", "sections")]
     y = top
     out.append(text(40, y, "Full results", "title"))
     y += 22
-    out.append(text(40, y, "MB/s per input · bold = fastest in its group · shading = speed relative to that "
-                    "(log scale) · rows ordered by average", "subtitle"))
+    out.append(text(40, y, "Parsing: MB/s (higher is better) · key lookups: ns (lower is better) · bold = best in its "
+                    "group · shading = relative to that best (log scale)", "subtitle"))
     y += 32
+    out.append(text(first_col + len(inputs) * col_w / 2, y - 16, "PARSING (MB/s)", "group", "middle"))
+    out.append(text(lookup_x + lookup_w, y - 16, "KEY LOOKUP (ns)", "group", "middle"))
+    for c, (top_line, bottom_line) in enumerate(lookup_heads):
+        cx = lookup_x + c * lookup_w + lookup_w / 2
+        out.append(text(cx, y, top_line, "colhead", "middle"))
+        out.append(text(cx, y + 14, bottom_line, "colhead", "middle"))
     for c, name in enumerate(inputs):
         top_line, bottom_line = INPUT_HEAD.get(name, (name, ""))
         cx = first_col + c * col_w + col_w / 2
@@ -255,6 +266,8 @@ def table_panel(parsers, table, timeouts, top):
         out.append(text(name_x, y, group, "group"))
         y += 6
         best = {i: max((table[i][p] for p in members if table[i][p]), default=0) for i in inputs}
+        lookup_best = [min((values[lookup_libs.index(p)] for p in members if p in lookup_libs), default=0)
+                       for _, values in lookup_docs]
         for p in sorted(members, key=lambda p: -speeds[p][0]):
             ours = p.startswith("TomlBeef")
             out.append(f'<line x1="40" y1="{y:.1f}" x2="{width - 40}" y2="{y:.1f}" class="rule"/>')
@@ -278,11 +291,26 @@ def table_panel(parsers, table, timeouts, top):
                            f'class="heat" fill-opacity="{0.06 + 0.34 * level:.2f}"/>')
                 cls = "cell" + (" best" if v == best[name] else "") + (" ours" if ours else "")
                 out.append(text(x + col_w - 7, mid + 4.5, f"{v:.1f}" if v < 100 else f"{v:.0f}", cls, "end"))
+            for c, (_, values) in enumerate(lookup_docs):
+                x = lookup_x + c * lookup_w
+                if p not in lookup_libs:
+                    out.append(text(x + lookup_w - 8, mid + 4, "—", "cell-missing", "end"))
+                    continue
+                ns = values[lookup_libs.index(p)]
+                level = max(0.0, 1.0 + math.log10(lookup_best[c] / ns) / 2.0)
+                out.append(f'<rect x="{x + 2}" y="{y + 3:.1f}" width="{lookup_w - 4}" height="{row_h - 6}" rx="3" '
+                           f'class="heat" fill-opacity="{0.06 + 0.34 * level:.2f}"/>')
+                cls = "cell" + (" best" if ns == lookup_best[c] else "") + (" ours" if ours else "")
+                out.append(text(x + lookup_w - 8, mid + 4.5, f"{ns:.0f}", cls, "end"))
             y += row_h
         out.append(f'<line x1="40" y1="{y:.1f}" x2="{width - 40}" y2="{y:.1f}" class="rule"/>')
+    # Divider between the parsing and lookup columns
+    divider_x = lookup_x - 8
+    out.insert(0, f'<line x1="{divider_x}" y1="{top + 46}" x2="{divider_x}" y2="{y}" class="rule"/>')
     y += 22
     out.append(text(40, y, f"FAIL = rejected a valid input · TIMEOUT = one parse took over {LIMIT:.0f} s · "
-                    "* see the notes under the chart above", "footnote"))
+                    "— = no lookup harness (lookup.sh covers TomlBeef and the Rust libraries) · "
+                    "* see the notes under the chart", "footnote"))
     return out, y + 8
 
 
@@ -350,14 +378,23 @@ def write_svg(path, width, height, body, label):
     print(f"wrote {os.path.relpath(path)}")
 
 
+def read_lookups():
+    """lookup-results.md as (libraries, [(document, [ns per library])])."""
+    rows = [l for l in open(LOOKUP_RESULTS) if l.startswith("|") and not l.startswith("|---")]
+    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    libs = split(rows[0])[1:]
+    return libs, [(cells[0], [float(v) for v in cells[1:]]) for cells in map(split, rows[1:])]
+
+
 def lookup_panel(top):
     """Key lookups after parsing (lookup-results.md, written by lookup.sh): ns per lookup for each
     library on each document, as log-scale bars (the results span 100 to 16000 ns), each labelled with
     its time and how it compares with TomlBeef."""
-    rows = [l for l in open(LOOKUP_RESULTS) if l.startswith("|") and not l.startswith("|---")]
-    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
-    libs = split(rows[0])[1:]
-    docs = [(cells[0], [float(v) for v in cells[1:]]) for cells in map(split, rows[1:])]
+    all_libs, all_docs = read_lookups()
+    # The chart compares the data-model libraries; TomlBeef preserve appears only in the table
+    keep = [i for i, lib in enumerate(all_libs) if lib not in PRESERVING or lib == "toml_edit"]
+    libs = [all_libs[i] for i in keep]
+    docs = [(doc, [values[i] for i in keep]) for doc, values in all_docs]
     out = []
     label_x, bar_x, bar_w, bar_h, gap = 180, 200, 440, 13, 4
     lo, hi = math.log10(50), math.log10(max(max(v) for _, v in docs) * 1.2)

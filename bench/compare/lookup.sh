@@ -9,7 +9,7 @@ C="$(cd "$(dirname "$0")" && pwd)"
 TB="$C/../../build/Release_Linux64/TomlTester/TomlTester"
 N="${1:-5}"
 
-libs=("TomlBeef" "toml-spanner" "toml (Rust)" "toml_edit")
+libs=("TomlBeef" "toml-spanner" "toml (Rust)" "toml_edit" "TomlBeef preserve")
 declare -A mode=(["toml-spanner"]=spanner ["toml (Rust)"]=toml ["toml_edit"]=edit)
 declare -A shape=(["ints"]="200 tables × 1000 keys" ["mixed"]="15000 root sections × ~10 keys")
 
@@ -22,6 +22,8 @@ for name in ints mixed; do
 	for l in "${libs[@]}"; do
 		if [ "$l" = TomlBeef ]; then
 			out=$("$TB" -lookup "$C/inputs/$name.lookups" -bench "$N" < "$C/inputs/$name.toml")
+		elif [ "$l" = "TomlBeef preserve" ]; then
+			out=$("$TB" -lookup "$C/inputs/$name.lookups" -bench "$N" -preserve < "$C/inputs/$name.toml")
 		else
 			out=$("$C/bin/rust-tomlbench" lookup "${mode[$l]}" "$C/inputs/$name.toml" "$C/inputs/$name.lookups" "$N")
 		fi

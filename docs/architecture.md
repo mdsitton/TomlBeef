@@ -773,8 +773,11 @@ per document take page faults that malloc's reused memory avoids.
     is fastest: `toml_edit` 0.52×, Tomlyn's syntax tree 0.077×.
   - *Lookups after parsing* (`bench/compare/lookup.sh`, results in `lookup-results.md`): 100,000
     random `root[table][key]` integer reads through each library's table API, checked to find the
-    same values. ns per lookup, TomlBeef / toml-spanner / Rust `toml` / `toml_edit`: 124 / 1892 /
-    356 / 249 in 200 tables of 1000 keys, 104 / 15968 / 239 / 178 with 15000 sections at the root.
+    same values. ns per lookup, TomlBeef / toml-spanner / Rust `toml` / `toml_edit`: 149 / 1806 /
+    352 / 225 in 200 tables of 1000 keys, 96 / 15492 / 247 / 217 with 15000 sections at the root
+    (TomlBeef PreserveStyle: 183 / 95). Run-to-run variation is ~±15% (an earlier run gave TomlBeef
+    124 / 104); the ordering and the size of toml-spanner's gap hold. Shown in the chart's last
+    panel and the table's last two columns.
     toml-spanner's table is a list scanned on every `get` (its hash index exists only during the
     parse, for duplicate detection), so its parse-speed lead on the mixed config (~22 ms) is used up
     after ~1,500 lookups. Rust `toml` uses a B-tree map, `toml_edit` an index map; TomlBeef a

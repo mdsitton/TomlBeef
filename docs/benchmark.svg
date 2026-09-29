@@ -255,25 +255,25 @@
 <line x1="40" y1="1453.0" x2="880" y2="1453.0" class="rule"/>
 <text x="180.0" y="1494.0" class="label" text-anchor="end">200 tables</text>
 <text x="180.0" y="1509.0" class="note-plain small" text-anchor="end">× 1000 keys</text>
-<rect x="200" y="1462.0" width="67.4" height="13" rx="2" class="bar-ours"/>
-<text x="274.4" y="1473.0" class="small"><tspan class="value ours">124 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
-<rect x="200" y="1479.0" width="268.7" height="13" rx="2" class="bar"/>
-<text x="475.7" y="1490.0" class="small"><tspan class="value">1892 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">15.2× slower</tspan></text>
-<rect x="200" y="1496.0" width="145.2" height="13" rx="2" class="bar"/>
-<text x="352.2" y="1507.0" class="small"><tspan class="value">356 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.9× slower</tspan></text>
-<rect x="200" y="1513.0" width="118.8" height="13" rx="2" class="bar"/>
-<text x="325.8" y="1524.0" class="small"><tspan class="value">249 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">2.0× slower</tspan></text>
+<rect x="200" y="1462.0" width="81.4" height="13" rx="2" class="bar-ours"/>
+<text x="288.4" y="1473.0" class="small"><tspan class="value ours">149 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1479.0" width="266.7" height="13" rx="2" class="bar"/>
+<text x="473.7" y="1490.0" class="small"><tspan class="value">1806 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">12.1× slower</tspan></text>
+<rect x="200" y="1496.0" width="145.0" height="13" rx="2" class="bar"/>
+<text x="352.0" y="1507.0" class="small"><tspan class="value">352 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.4× slower</tspan></text>
+<rect x="200" y="1513.0" width="111.9" height="13" rx="2" class="bar"/>
+<text x="318.9" y="1524.0" class="small"><tspan class="value">225 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">1.5× slower</tspan></text>
 <line x1="40" y1="1535.0" x2="880" y2="1535.0" class="rule"/>
 <text x="180.0" y="1576.0" class="label" text-anchor="end">15000 root sections</text>
 <text x="180.0" y="1591.0" class="note-plain small" text-anchor="end">× ~10 keys</text>
-<rect x="200" y="1544.0" width="54.4" height="13" rx="2" class="bar-ours"/>
-<text x="261.4" y="1555.0" class="small"><tspan class="value ours">104 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
-<rect x="200" y="1561.0" width="426.5" height="13" rx="2" class="bar"/>
-<text x="633.5" y="1572.0" class="small"><tspan class="value">15968 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">153.1× slower</tspan></text>
-<rect x="200" y="1578.0" width="115.8" height="13" rx="2" class="bar"/>
-<text x="322.8" y="1589.0" class="small"><tspan class="value">239 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.3× slower</tspan></text>
-<rect x="200" y="1595.0" width="93.9" height="13" rx="2" class="bar"/>
-<text x="300.9" y="1606.0" class="small"><tspan class="value">178 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">1.7× slower</tspan></text>
+<rect x="200" y="1544.0" width="48.8" height="13" rx="2" class="bar-ours"/>
+<text x="255.8" y="1555.0" class="small"><tspan class="value ours">96 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1561.0" width="426.4" height="13" rx="2" class="bar"/>
+<text x="633.4" y="1572.0" class="small"><tspan class="value">15492 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">160.7× slower</tspan></text>
+<rect x="200" y="1578.0" width="118.7" height="13" rx="2" class="bar"/>
+<text x="325.7" y="1589.0" class="small"><tspan class="value">247 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.6× slower</tspan></text>
+<rect x="200" y="1595.0" width="109.0" height="13" rx="2" class="bar"/>
+<text x="316.0" y="1606.0" class="small"><tspan class="value">216 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">2.2× slower</tspan></text>
 <line x1="40" y1="1617.0" x2="880" y2="1617.0" class="rule"/>
 <text x="40.0" y="1637.0" class="footnote" text-anchor="start">toml-spanner scans a table's entries on every lookup; the others use a hash map (TomlBeef, toml_edit) or a B-tree (toml).</text>
 <text x="40.0" y="1667.0" class="footer" text-anchor="start">Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.</text>
