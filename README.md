@@ -4,6 +4,8 @@ A TOML v1.1.0 parser and writer for the [Beef programming language](https://www.
 
 Compliant with the full [TOML v1.1.0 specification](https://toml.io/en/v1.1.0). Validated against the official [toml-test](https://github.com/toml-lang/toml-test) suite.
 
+The fastest TOML parser in [our comparison](#performance) across C, C++, Rust, Go and C#, both as a plain data model and while keeping comments and formatting.
+
 ## Quick Start
 
 ```bf
@@ -503,6 +505,19 @@ if (doc.ReadFile(path) case .Err(let err))
 | Array of tables `[[header]]` | ✅ | ✅ |
 | Comments | ✅ | ✅ (discarded) |
 | UTF-8 BOM | ✅ | — |
+
+## Performance
+
+<p align="center"><img src="docs/benchmark.svg" alt="Parsing throughput of TomlBeef compared with other TOML libraries" width="820"></p>
+
+Every library parses the same generated inputs (2–9 MB) from memory into its own schema-less document, single-threaded, on Linux x86-64. TomlBeef validates fully (UTF-8 and control characters included); glaze and toml-c skip UTF-8 validation. Library versions are pinned. To reproduce, from `bench/compare/`:
+
+```bash
+./fetch.sh && ./build.sh && ./gen-inputs.py
+./run.sh > results.md && ./plot.py   # table of MB/s, then docs/benchmark.svg
+```
+
+The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 
 ## Running Tests
 

@@ -4,6 +4,7 @@
 # N parses through `TomlTester -bench`, its Read(string) figure). FAIL means the parser rejected the
 # input. Setup: ./fetch.sh && ./build.sh && ./gen-inputs.py
 # Usage: run.sh [iterations] [input names...]
+# Save the table as results.md and run plot.py to redraw docs/benchmark.svg.
 set -uo pipefail
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$C/bin"
