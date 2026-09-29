@@ -136,7 +136,7 @@ if (doc.TryGetTable("server", var server))
     if (server.TryGetString("host", var host))
         Console.WriteLine(host);
     if (server.TryGetInteger("port", var port))
-        Console.WriteLine($"{}", port);
+        Console.WriteLine($"{port}");
     if (server.TryGetBool("tls", var tls))
         Console.WriteLine(tls ? "TLS enabled" : "TLS disabled");
 }
@@ -169,10 +169,10 @@ for (int i = 0; i < table.Count; i++)
 
     Console.WriteLine(entry.Key);
 
-    if (entry.TryGetString(out var s))
+    if (entry.TryGetString(var s))
         Console.WriteLine(s);
-    else if (entry.TryGetInteger(out var n))
-        Console.WriteLine($"{}", n);
+    else if (entry.TryGetInteger(var n))
+        Console.WriteLine($"{n}");
 }
 
 // Safe assignment through entry proxy — no new String / new TomlValue:
@@ -194,8 +194,8 @@ table[1].Remove();
 switch (value)
 {
 case .String(let s):  Console.WriteLine(s);
-case .Integer(let i): Console.WriteLine($"{}", i);
-case .Float(let f):   Console.WriteLine($"{}", f);
+case .Integer(let i): Console.WriteLine($"{i}");
+case .Float(let f):   Console.WriteLine($"{f}");
 case .Bool(let b):    Console.WriteLine(b ? "yes" : "no");
 case .Table(let t):   // navigate into t
 case .Array(let a):   // iterate a
