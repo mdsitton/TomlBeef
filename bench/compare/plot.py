@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Draws docs/benchmark.svg from results.md (the Markdown table run.sh prints).
+"""Draws docs/benchmark.svg (chart) and docs/benchmark-table.svg (full results table) from results.md
+(the Markdown table run.sh prints).
 
     ./run.sh > results.md && ./plot.py
 
