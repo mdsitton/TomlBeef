@@ -4,7 +4,7 @@ A TOML v1.1.0 parser and writer for the [Beef programming language](https://www.
 
 Compliant with the full [TOML v1.1.0 specification](https://toml.io/en/v1.1.0). Validated against the official [toml-test](https://github.com/toml-lang/toml-test) suite.
 
-Fast: in [our comparison](#performance) of 20 TOML libraries across C, C++, Rust, Zig, Go, Java, C# and JavaScript, only Rust's toml-spanner parses faster, and TomlBeef is the fastest parser that keeps comments and formatting.
+Fast: in [our comparison](#performance) of 20 TOML libraries across C, C++, Rust, Zig, Go, Java, C# and JavaScript, only Rust's toml-spanner parses faster, and TomlBeef is the fastest parser that keeps comments and formatting. Coming from Beef's built-in reader (`Beefy.utils.StructuredData`)? See [how the two compare](#compared-with-beefs-built-in-reader).
 
 ## Quick Start
 
