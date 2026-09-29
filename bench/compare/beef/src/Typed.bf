@@ -50,11 +50,35 @@ class TypedRoot
 	}
 }
 
+// The same model for reads through an allocator, which owns what the read creates: no field deletes
+
+[TomlObject(Naming = .SnakeCase)]
+class ArenaServer
+{
+	public String Name;
+	public String Host;
+	public int32 Port;
+	public bool Enabled;
+	public double Weight;
+	public List<String> Tags;
+	public TypedLimits Limits;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class ArenaRoot
+{
+	public String Title;
+	public int32 Version;
+	public bool Debug;
+	public List<ArenaServer> Servers;
+}
+
 extension Program
 {
 	/// BeefTomlBench typed <read|read-plain|write> <file> <min-samples>
 	///   read       - TomlSerializer.Read into a new TypedRoot (parses with Positions, for located errors)
 	///   read-plain - doc.Read without metadata, then doc.Deserialize
+	///   read-arena - TomlSerializer.Read into ArenaRoot through a scope BumpAllocator
 	///   write      - TomlSerializer.Write of the model read once; MB/s of output
 	static int TypedBench(String[] args)
 	{
@@ -90,6 +114,15 @@ extension Program
 				let root = scope TypedRoot();
 				if (doc.Read(text) case .Ok)
 					doc.Deserialize(root).IgnoreError();
+			});
+		case "read-arena":
+			// TomlSerializer.Read with a scope BumpAllocator per read: nested objects, Strings and Lists
+			// come from the arena and are freed with it
+			m = Measure(minSamples, scope () =>
+			{
+				let arena = scope BumpAllocator();
+				let root = scope ArenaRoot();
+				TomlSerializer.Read(text, root, .(), arena).IgnoreError();
 			});
 		case "write":
 			m = Measure(minSamples, scope () => { output.Clear(); TomlSerializer.Write(model, output).IgnoreError(); });

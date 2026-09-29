@@ -44,11 +44,11 @@ public static class TomlSerializerCodeGen
 		// A [TomlObject] base already has both methods: hide them, and read and write its fields first
 		bool baseIsObject = type.BaseType != null && type.BaseType != typeof(Object) && type.BaseType.HasCustomAttribute<TomlObjectAttribute>();
 		StringView hide = baseIsObject ? "new " : "";
-		read.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table){}\n{{\n", hide, type.IsValueType ? " mut" : "");
+		read.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table, System.ITypedAllocator _alloc = null){}\n{{\n", hide, type.IsValueType ? " mut" : "");
 		write.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlWrite(TomlBeef.TomlTable _table)\n{{\n", hide);
 		if (baseIsObject)
 		{
-			read.Append("\tTry!(base.TomlRead(_table));\n");
+			read.Append("\tTry!(base.TomlRead(_table, _alloc));\n");
 			write.Append("\tTry!(base.TomlWrite(_table));\n");
 		}
 
@@ -292,7 +292,7 @@ public static class TomlSerializerCodeGen
 			code.AppendF("\t\tbool _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadBool(_table, {}, {}, out _v)))\n\t\t\tthis.{} = _v;\n", key, req, name);
 		case .String:
 			code.AppendF("\t\tStringView _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadString(_table, {}, {}, out _v)))\n\t\t{{\n", key, req);
-			code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = new String(_v);\n\t\t\telse\n\t\t\t\tthis.{0}.Set(_v);\n\t\t}}\n", name);
+			code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n\t\t\telse\n\t\t\t\tthis.{0}.Set(_v);\n\t\t}}\n", name, NewExpr("String", "_v", .. scope .()));
 		case .Enum:
 			let cases = scope String();
 			CaseList(type, cases);
@@ -304,25 +304,33 @@ public static class TomlSerializerCodeGen
 		case .Object:
 			code.AppendF("\t\tTomlBeef.TomlTable _t;\n\t\tif (Try!(TomlBeef.TomlBind.ReadTable(_table, {}, {}, out _t)))\n\t\t{{\n", key, req);
 			if (!type.IsValueType)
-				code.AppendF("\t\t\tif (this.{} == null)\n\t\t\t\tthis.{} = new {}();\n", name, name, type.GetFullName(.. scope .()));
-			code.AppendF("\t\t\tTry!(this.{}.TomlRead(_t));\n\t\t}}\n", name);
+				code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
+			code.AppendF("\t\t\tTry!(this.{}.TomlRead(_t, _alloc));\n\t\t}}\n", name);
 		case .List:
 			let element = ListElement(type);
 			let elementKind = Classify(element, let elementConverter);
 			code.AppendF("\t\tTomlBeef.TomlArray _a;\n\t\tif (Try!(TomlBeef.TomlBind.ReadArray(_table, {}, {}, out _a)))\n\t\t{{\n", key, req);
-			code.AppendF("\t\t\tif (this.{} == null)\n\t\t\t\tthis.{} = new {}();\n", name, name, type.GetFullName(.. scope .()));
-			// The list owns its object items (Strings, objects, converted classes): delete them before replacing
+			code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
+			// Without an allocator the list owns its object items (Strings, objects, converted classes):
+			// delete them before replacing. With one, the allocator owns what reads create.
 			if (!element.IsValueType)
-				code.AppendF("\t\t\tfor (let _old in this.{})\n\t\t\t\tdelete _old;\n", name);
+				code.AppendF("\t\t\tif (_alloc == null)\n\t\t\t{{\n\t\t\t\tfor (let _old in this.{})\n\t\t\t\t\tdelete _old;\n\t\t\t}}\n", name);
 			code.AppendF("\t\t\tthis.{}.Clear();\n\t\t\tfor (int _i < _a.Count)\n\t\t\t{{\n", name);
 			EmitReadElement(code, name, element, elementKind, elementConverter);
 			code.Append("\t\t\t}\n\t\t}\n");
 		case .Converter:
-			code.AppendF("\t\tTomlBeef.TomlValue _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadValue(_table, {0}, {1}, out _v)))\n\t\t\tTry!({2}.Read(_v, .(_table, {0}), ref this.{3}));\n",
+			code.AppendF("\t\tTomlBeef.TomlValue _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadValue(_table, {0}, {1}, out _v)))\n\t\t\tTry!({2}.Read(_v, .(_table, {0}, _alloc), ref this.{3}));\n",
 				key, req, converter.GetFullName(.. scope .()), name);
 		default:
 		}
 		code.Append("\t}\n");
+	}
+
+	/// An allocation of `typeName(args)` from the read's allocator when there is one, else from the heap.
+	[Comptime]
+	static void NewExpr(StringView typeName, StringView args, String code)
+	{
+		code.AppendF("((_alloc != null) ? new:_alloc {0}({1}) : new {0}({1}))", typeName, args);
 	}
 
 	/// Appends item `_i` of `_a` to list `name`.
@@ -342,7 +350,7 @@ public static class TomlSerializerCodeGen
 		case .Bool:
 			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementBool(_a, _i)));\n", indent, name);
 		case .String:
-			code.AppendF("{}this.{}.Add(new String(Try!(TomlBeef.TomlBind.ElementString(_a, _i))));\n", indent, name);
+			code.AppendF("{0}let _s = Try!(TomlBeef.TomlBind.ElementString(_a, _i));\n{0}this.{1}.Add({2});\n", indent, name, NewExpr("String", "_s", .. scope .()));
 		case .Enum:
 			let cases = scope String();
 			CaseList(type, cases);
@@ -361,12 +369,12 @@ public static class TomlSerializerCodeGen
 			let typeName = type.GetFullName(.. scope .());
 			code.AppendF("{}let _t = Try!(TomlBeef.TomlBind.ElementTable(_a, _i));\n", indent);
 			if (type.IsValueType)
-				code.AppendF("{0}{1} _o = .();\n{0}Try!(_o.TomlRead(_t));\n{0}this.{2}.Add(_o);\n", indent, typeName, name);
+				code.AppendF("{0}{1} _o = .();\n{0}Try!(_o.TomlRead(_t, _alloc));\n{0}this.{2}.Add(_o);\n", indent, typeName, name);
 			else // added before reading, so the list owns it even if reading fails
-				code.AppendF("{0}let _o = new {1}();\n{0}this.{2}.Add(_o);\n{0}Try!(_o.TomlRead(_t));\n", indent, typeName, name);
+				code.AppendF("{0}let _o = {1};\n{0}this.{2}.Add(_o);\n{0}Try!(_o.TomlRead(_t, _alloc));\n", indent, NewExpr(typeName, "", .. scope .()), name);
 		case .Converter:
 			// Read in place into a new default item, which the list already owns if reading fails
-			code.AppendF("{0}this.{1}.Add(default);\n{0}Try!({2}.Read(_a.GetValueAt(_i), .(_a, _i), ref this.{1}[this.{1}.Count - 1]));\n",
+			code.AppendF("{0}this.{1}.Add(default);\n{0}Try!({2}.Read(_a.GetValueAt(_i), .(_a, _i, _alloc), ref this.{1}[this.{1}.Count - 1]));\n",
 				indent, name, converter.GetFullName(.. scope .()));
 		default:
 		}

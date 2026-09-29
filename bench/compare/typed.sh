@@ -58,6 +58,7 @@ echo "| library | language | mapping | read (ms) | read (MB/s) | write (ms) |"
 echo "|---|---|---|---:|---:|---:|"
 row TomlBeef Beef "[TomlObject], compile time" "$BEEF" typed read "$IN" "$N" -- "$BEEF" typed write "$IN" "$N"
 row "TomlBeef (no positions)" Beef "[TomlObject], compile time" "$BEEF" typed read-plain "$IN" "$N" -- "$BEEF" typed write "$IN" "$N"
+row "TomlBeef (arena)" Beef "[TomlObject], compile time" "$BEEF" typed read-arena "$IN" "$N" -- "$BEEF" typed write "$IN" "$N"
 row glaze C++ "reflection, compile time" "$B/glaze-typed" read "$IN" "$N" -- "$B/glaze-typed" write "$IN" "$N"
 row toml-spanner Rust "derive(Toml), compile time" "$B/rust-tomlbench" typed spanner read "$IN" "$N" -- "$B/rust-tomlbench" typed spanner write "$IN" "$N"
 row "toml (Rust)" Rust "serde derive, compile time" "$B/rust-tomlbench" typed serde read "$IN" "$N" -- "$B/rust-tomlbench" typed serde write "$IN" "$N"
@@ -67,4 +68,4 @@ row BurntSushi Go "struct tags, run-time reflection" "$B/go-tomlbench" typed bur
 row "Tomlyn (source generator)" "C#" "TomlSerializerContext, compile time" "$B/tomlyn/TomlynBench" typed sourcegen read "$IN" "$N" -- "$B/tomlyn/TomlynBench" typed sourcegen write "$IN" "$N"
 row "Tomlyn (reflection)" "C#" "run-time reflection" "$B/tomlyn/TomlynBench" typed reflection read "$IN" "$N" -- "$B/tomlyn/TomlynBench" typed reflection write "$IN" "$N"
 echo
-echo "TomlBeef: TomlSerializer.Read records source positions for located errors; \"no positions\" is doc.Read + doc.Deserialize without metadata. glaze skips UTF-8 validation; zig-toml accepts invalid TOML and cannot write an array of tables (n/a)."
+echo "TomlBeef: TomlSerializer.Read records source positions for located errors; \"no positions\" is doc.Read + doc.Deserialize without metadata; \"arena\" is TomlSerializer.Read through a scope BumpAllocator (the write column repeats the plain write). glaze skips UTF-8 validation; zig-toml accepts invalid TOML and cannot write an array of tables (n/a)."

@@ -331,21 +331,24 @@ public class TomlTable
 		BindContainerMetadata(value);
 	}
 
-	/// @brief Fill a [TomlObject] class from this table (see TomlObjectAttribute). Keys the type does not
-	/// know are ignored; fields whose keys are absent keep their values.
+	/// @brief Fill a [TomlObject] class from this table (see TomlObjectAttribute and
+	/// TomlDocument.Deserialize). Keys the type does not know are ignored; fields whose keys are absent
+	/// keep their values.
 	/// @param target The object to fill.
+	/// @param allocator Where created objects come from (null for the heap); see TomlDocument.Deserialize.
 	/// @return .Ok, or the first error (located when the document has positions).
-	public Result<void, TomlParseError> Deserialize<T>(T target) where T : class, ITomlSerializable
+	public Result<void, TomlParseError> Deserialize<T>(T target, ITypedAllocator allocator = null) where T : class, ITomlSerializable
 	{
-		return target.TomlRead(this);
+		return target.TomlRead(this, allocator);
 	}
 
 	/// @brief Fill a [TomlObject] struct from this table; see the class overload.
 	/// @param target The struct to fill.
+	/// @param allocator Where created objects come from (null for the heap).
 	/// @return .Ok, or the first error.
-	public Result<void, TomlParseError> Deserialize<T>(ref T target) where T : struct, ITomlSerializable
+	public Result<void, TomlParseError> Deserialize<T>(ref T target, ITypedAllocator allocator = null) where T : struct, ITomlSerializable
 	{
-		return target.TomlRead(this);
+		return target.TomlRead(this, allocator);
 	}
 
 	/// @brief Write a [TomlObject]'s fields into this table, updating it in place: unchanged values keep

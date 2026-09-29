@@ -51,28 +51,38 @@ public struct TomlConvertContext
 	StringView mKey;
 	TomlArray mArray;
 	int mIndex;
+	ITypedAllocator mAllocator;
 
 	/// @brief The value under `key` in `table`.
 	/// @param table The table.
 	/// @param key The key.
-	public this(TomlTable table, StringView key)
+	/// @param allocator The read's allocator (see Allocator), or null.
+	public this(TomlTable table, StringView key, ITypedAllocator allocator = null)
 	{
 		mTable = table;
 		mKey = key;
 		mArray = null;
 		mIndex = -1;
+		mAllocator = allocator;
 	}
 
 	/// @brief Item `index` of `array`. Writing replaces the item there, or appends when the array is shorter.
 	/// @param array The array.
 	/// @param index The item.
-	public this(TomlArray array, int index)
+	/// @param allocator The read's allocator (see Allocator), or null.
+	public this(TomlArray array, int index, ITypedAllocator allocator = null)
 	{
 		mTable = null;
 		mKey = default;
 		mArray = array;
 		mIndex = index;
+		mAllocator = allocator;
 	}
+
+	/// @brief The allocator the read was given, or null for the heap. A converter that creates an object
+	/// (a class target that is null) should allocate it with `new:allocator` when this is set, so it
+	/// shares the lifetime of everything else the read created.
+	public ITypedAllocator Allocator => mAllocator;
 
 	/// @brief An InvalidValue error located at the value, naming its key or index.
 	/// @param message What is wrong.

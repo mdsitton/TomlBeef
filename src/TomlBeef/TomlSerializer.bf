@@ -13,24 +13,27 @@ public static class TomlSerializer
 	/// @param toml The TOML text.
 	/// @param target The object to fill; fields whose keys are absent keep their values.
 	/// @param config Read settings. Metadata below Positions is raised to Positions, for error locations.
+	/// @param allocator Where created Strings, objects and Lists come from (for example a
+	/// `scope BumpAllocator`), or null for the heap; see TomlDocument.Deserialize for ownership.
 	/// @return .Ok, or the first error.
-	public static Result<void, TomlParseError> Read<T>(StringView toml, T target, TomlReadConfig config = .()) where T : class, ITomlSerializable
+	public static Result<void, TomlParseError> Read<T>(StringView toml, T target, TomlReadConfig config = .(), ITypedAllocator allocator = null) where T : class, ITomlSerializable
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.Read(toml, WithPositions(config)));
-		return doc.Deserialize(target);
+		return doc.Deserialize(target, allocator);
 	}
 
 	/// @brief Parse `toml` and fill the struct `target` from its root table; see the class overload.
 	/// @param toml The TOML text.
 	/// @param target The struct to fill.
 	/// @param config Read settings.
+	/// @param allocator Where created objects come from, or null for the heap.
 	/// @return .Ok, or the first error.
-	public static Result<void, TomlParseError> Read<T>(StringView toml, ref T target, TomlReadConfig config = .()) where T : struct, ITomlSerializable
+	public static Result<void, TomlParseError> Read<T>(StringView toml, ref T target, TomlReadConfig config = .(), ITypedAllocator allocator = null) where T : struct, ITomlSerializable
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.Read(toml, WithPositions(config)));
-		return doc.Deserialize(ref target);
+		return doc.Deserialize(ref target, allocator);
 	}
 
 	/// @brief Parse the file at `path` and fill `target` from its root table. Errors name the file:
@@ -38,24 +41,26 @@ public static class TomlSerializer
 	/// @param path The file to read.
 	/// @param target The object to fill.
 	/// @param config Read settings.
+	/// @param allocator Where created objects come from, or null for the heap.
 	/// @return .Ok, or the first error.
-	public static Result<void, TomlParseError> ReadFile<T>(StringView path, T target, TomlReadConfig config = .()) where T : class, ITomlSerializable
+	public static Result<void, TomlParseError> ReadFile<T>(StringView path, T target, TomlReadConfig config = .(), ITypedAllocator allocator = null) where T : class, ITomlSerializable
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.ReadFile(path, WithPositions(config)));
-		return doc.Deserialize(target);
+		return doc.Deserialize(target, allocator);
 	}
 
 	/// @brief Parse the file at `path` and fill the struct `target`; see the class overload.
 	/// @param path The file to read.
 	/// @param target The struct to fill.
 	/// @param config Read settings.
+	/// @param allocator Where created objects come from, or null for the heap.
 	/// @return .Ok, or the first error.
-	public static Result<void, TomlParseError> ReadFile<T>(StringView path, ref T target, TomlReadConfig config = .()) where T : struct, ITomlSerializable
+	public static Result<void, TomlParseError> ReadFile<T>(StringView path, ref T target, TomlReadConfig config = .(), ITypedAllocator allocator = null) where T : struct, ITomlSerializable
 	{
 		let doc = scope TomlDocument();
 		Try!(doc.ReadFile(path, WithPositions(config)));
-		return doc.Deserialize(ref target);
+		return doc.Deserialize(ref target, allocator);
 	}
 
 	/// @brief Write `source` as a new TOML document, appending to `output`.

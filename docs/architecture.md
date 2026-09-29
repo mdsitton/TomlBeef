@@ -733,6 +733,16 @@ text through `Compiler.EmitTypeBody`.
   and is added to the list before reading, so the list owns it on failure). Registration is
   compile-time only: nothing is looked up at run time, and the generated code calls the converter's
   static methods directly.
+- *Allocators.* `TomlRead` and every `Deserialize`/`TomlSerializer.Read` take an optional
+  `ITypedAllocator`. With one, everything the read creates (Strings, nested objects, Lists and their
+  items, struct fields, and a converter's objects through `TomlConvertContext.Allocator`) comes from
+  it through `new:alloc`, so a `scope BumpAllocator` gives a whole object graph a stack lifetime.
+  `ITypedAllocator` rather than `IRawAllocator`, so the arena records destructors (a List still
+  frees its item buffer). The allocator owns what it produced: the type's fields must not delete
+  (no `~ delete _`), and a list read again drops its old items instead of deleting them. A
+  per-call parameter rather than a document option, because the allocator's lifetime belongs to the
+  object being filled, and one document may fill heap and scoped objects alike; a document option
+  would also leave the document holding a pointer to an arena that can go out of scope first.
 - *Reading fills an existing object:* absent keys keep their values unless `[TomlRequired]`; null
   String, object and List fields get new instances the type then owns; reading a list deletes its
   old String or object items first. A `[TomlObject]` base class is read and written first through
@@ -897,9 +907,12 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     (41 through `TomlSerializer.Read`, which records them), zig-toml 39 / n/a (its serializer does
     not compile for an array of tables), go-toml 58 / 31, Rust `toml` (serde) 79 / 29, Tomlyn 126 /
     46 with its source generator and 145 / 50 with reflection, BurntSushi 295 / 194. TomlBeef's read
-    is 25 ms of parsing into a document plus ~11 ms of binding (mostly allocating 7 objects per
-    server, and one key lookup per field); glaze and toml-spanner bind while parsing, with no
-    document in between, which is also why they cannot offer the document-first API (8a).
+    is 25 ms of parsing into a document plus ~11 ms of binding (7 objects allocated per server, one
+    key lookup and one `Result`-returning `TomlBind` call per field); glaze and toml-spanner bind
+    while parsing, with no document in between, which is also why they cannot offer the
+    document-first API (8a). Reading through a `scope BumpAllocator` (`read-arena`) instead of the
+    heap saves only ~6% (37.2 vs 39.7 ms), so allocation is not most of the binding cost; the
+    lookups and helper calls are the next thing to measure.
   - *Beef's built-in reader* (`bench/compare/beef/`, `beef.sh`, results in `beef-results.md`).
     `Beefy.utils.StructuredData` (Beefy2D; IDE and BeefBuild project files) is built from the
     installed Beef (`fetch.sh` copies `StructuredData.bf` and `DisposeProxy.bf`) into one program with

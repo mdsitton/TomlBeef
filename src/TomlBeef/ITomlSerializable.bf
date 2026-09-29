@@ -8,8 +8,11 @@ public interface ITomlSerializable
 {
 	/// @brief Fill this object's fields from `table`.
 	/// @param table The table to read.
+	/// @param allocator Where the objects the read creates (Strings, nested objects, Lists and their
+	/// items) come from, for example a `scope BumpAllocator`; null for the heap. See
+	/// TomlDocument.Deserialize for the ownership rules.
 	/// @return .Ok, or the first error, located in the source when the document has positions.
-	Result<void, TomlParseError> TomlRead(TomlTable table) mut;
+	Result<void, TomlParseError> TomlRead(TomlTable table, ITypedAllocator allocator = null) mut;
 
 	/// @brief Add this object's fields to `table`.
 	/// @param table The table to write into (normally empty).

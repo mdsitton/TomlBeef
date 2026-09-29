@@ -195,7 +195,11 @@ struct SerColorToml : ITomlConverter<SerColor>
 		case .Err: return .Err(context.MakeError("expected a color like \"#ff8800\""));
 		}
 		if (target == null)
-			target = new SerColor();
+		{
+			// From the read's allocator when it has one, like everything else the read creates
+			let allocator = context.Allocator;
+			target = (allocator != null) ? new:allocator SerColor() : new SerColor();
+		}
 		target.R = (uint8)(rgb >> 16);
 		target.G = (uint8)(rgb >> 8);
 		target.B = (uint8)rgb;
@@ -235,6 +239,39 @@ class SerServerSection
 	public int32 Port;
 	public List<String> Aliases = new .() ~ DeleteContainerAndItems!(_);
 	public List<SerRoute> Routes = new .() ~ DeleteContainerAndItems!(_);
+}
+
+// Read through an allocator, which owns everything the read creates: no field deletes anything
+
+[TomlObject(Naming = .SnakeCase)]
+class SerArenaLimits
+{
+	public int32 MaxConnections;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+struct SerArenaEndpoint
+{
+	public String Host;
+	public uint16 Port;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerArenaServer
+{
+	public String Name;
+	public List<String> Tags;
+	public SerArenaLimits Limits;
+	public SerArenaEndpoint Admin;
+	public SerColor Tint;
+	public List<SerColor> Palette;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerArenaRoot
+{
+	public String Title;
+	public List<SerArenaServer> Servers;
 }
 
 static class TomlSerializerTests
@@ -521,6 +558,48 @@ static class TomlSerializerTests
 		Test.Assert(sparse.TryGetArray("routes", let sparseRoutes) && sparseRoutes.TryGetTable(0, out first));
 		Test.Assert(first.Deserialize(route) case .Ok && first.Serialize(route) case .Ok);
 		Test.Assert(first.GetInteger("weight", 0) == 1);
+	}
+
+	[Test]
+	public static void Allocator_OwnsEverythingTheReadCreates()
+	{
+		// The types delete nothing, so any heap allocation by the read would show up as a leak
+		// (test-leaks.sh): Strings, nested objects, Lists, list items, struct fields and
+		// converter-created objects all come from the scoped arena and go with it.
+		const String toml = """
+			title = "arena"
+
+			[[servers]]
+			name = "a"
+			tags = ["x", "y"]
+			tint = "#010203"
+			palette = ["#000000", "#ffffff"]
+			[servers.limits]
+			max_connections = 10
+			[servers.admin]
+			host = "localhost"
+			port = 8443
+
+			[[servers]]
+			name = "b"
+			tags = []
+			""";
+		let arena = scope BumpAllocator();
+		let root = scope SerArenaRoot();
+		Test.Assert(TomlSerializer.Read(toml, root, .(), arena) case .Ok);
+		Test.Assert(root.Title == "arena" && root.Servers.Count == 2);
+		let first = root.Servers[0];
+		Test.Assert(first.Name == "a" && first.Tags.Count == 2 && first.Tags[1] == "y" && first.Limits.MaxConnections == 10);
+		Test.Assert(first.Admin.Host == "localhost" && first.Admin.Port == 8443);
+		Test.Assert(first.Tint.B == 3 && first.Palette.Count == 2 && first.Palette[1].R == 0xff);
+		Test.Assert(root.Servers[1].Name == "b" && root.Servers[1].Tags.Count == 0 && root.Servers[1].Limits == null);
+
+		// The document API takes the allocator too, and reading again drops the old items without
+		// deleting them (the arena still owns them)
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read("[mirror]\ntitle = \"again\"\n[[mirror.servers]]\nname = \"c\"") case .Ok);
+		Test.Assert(doc.Deserialize("mirror", root, arena) case .Ok);
+		Test.Assert(root.Title == "again" && root.Servers.Count == 1 && root.Servers[0].Name == "c");
 	}
 
 	[Test]
