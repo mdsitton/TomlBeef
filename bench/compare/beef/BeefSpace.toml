@@ -1,0 +1,11 @@
+FileVersion = 1
+
+# Benchmarks TomlBeef against Beef's built-in TOML reader (Beefy.utils.StructuredData, used by the IDE
+# and BeefBuild for BeefProj.toml / BeefSpace.toml) in one program, so both are built by the same
+# compiler with the same settings. ../fetch.sh copies StructuredData from the installed Beef.
+[Workspace]
+StartupProject = "BeefTomlBench"
+
+[Projects]
+BeefTomlBench = {Path = "."}
+TomlBeef = {Path = "../../.."}

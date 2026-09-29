@@ -72,9 +72,35 @@ def main():
     write("headers", "".join(f"[g{i // 500}.s{i}]\nx = {i}\n" for i in range(150000)))
     write("dotted", "".join(f"a{i % 100}.b{i}.c = {i}\n" for i in range(100000)))
 
+    beef_projects()
+
     # Key lookups after parsing (lookup.sh): random `table key` pairs whose value is an integer
     lookups(rng, "ints", ((f"t{rng.randrange(200)}", f"key_{rng.randrange(1000)}") for _ in range(100000)))
     lookups(rng, "mixed", ((f"section_{rng.randrange(15000)}", "count") for _ in range(100000)))
+
+
+def beef_projects():
+    """Copies real BeefProj.toml / BeefSpace.toml files into inputs/beef-projects/ for beef.sh: from a
+    Beef source checkout (BEEF_SRC, default ~/development/Beef) if there is one, else from the
+    installed Beef next to beefbuild. These are the files Beef's own StructuredData reader is for."""
+    import shutil
+    dest = os.path.join(OUT, "beef-projects")
+    shutil.rmtree(dest, ignore_errors=True)
+    os.makedirs(dest)
+    source = os.environ.get("BEEF_SRC", os.path.expanduser("~/development/Beef"))
+    if not os.path.isdir(source):
+        beefbuild = shutil.which("beefbuild")
+        source = os.path.join(os.path.dirname(os.path.realpath(beefbuild)), "..") if beefbuild else ""
+    files = []
+    for root, dirs, names in os.walk(source):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))  # skip .git and tool worktrees
+        files += [os.path.join(root, n) for n in sorted(names) if n in ("BeefProj.toml", "BeefSpace.toml")]
+    total = 0
+    for i, path in enumerate(files):
+        rel = os.path.relpath(path, source).replace(os.sep, "_")
+        shutil.copyfile(path, os.path.join(dest, f"{i:03d}_{rel}"))
+        total += os.path.getsize(path)
+    print(f"{'beef-projects':16} {len(files)} files, {total} bytes (from {os.path.realpath(source)})")
 
 
 def lookups(rng, name, pairs):

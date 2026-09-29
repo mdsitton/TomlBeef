@@ -8,3 +8,7 @@ java/build/
 java/.gradle/
 js/node_modules/
 zig/.zig-cache/
+beef/src/beefy/
+beef/build/
+beef/BeefSpace_User.toml
+beef/BeefSpace_Lock.toml

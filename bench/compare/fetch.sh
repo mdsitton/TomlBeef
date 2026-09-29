@@ -26,6 +26,13 @@ fetch tomlplusplus https://github.com/marzer/tomlplusplus v3.4.0
 fetch glaze       https://github.com/stephenberry/glaze   v9.0.0
 fetch zig-toml    https://github.com/sam701/zig-toml      8685923e32e8b8a795eb2715684236975a70faed  # zig-0.16 branch
 
+# Beef's built-in TOML reader (Beefy.utils.StructuredData) from the installed Beef, for the beef/
+# benchmark: StructuredData needs only DisposeProxy besides corlib
+BEEF_UTILS="$(dirname "$(readlink -f "$(command -v beefbuild)")")/../BeefLibs/Beefy2D/src/utils"
+mkdir -p "$C/beef/src/beefy"
+cp "$BEEF_UTILS/StructuredData.bf" "$BEEF_UTILS/DisposeProxy.bf" "$C/beef/src/beefy/"
+echo "StructuredData from $(readlink -f "$BEEF_UTILS") ($(beefbuild -version 2>&1 | head -1))"
+
 # Zig itself (zig-toml needs a matching compiler), verified against the published checksum
 ZIG_VERSION=0.16.0
 ZIG_SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00

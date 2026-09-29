@@ -60,6 +60,10 @@ if want js; then
 	step "javascript (js-toml, smol-toml, toml)"
 	(cd "$C/js" && npm install --silent --no-audit --no-fund)
 fi
+if want beef; then
+	step "beef (TomlBeef vs Beef's StructuredData)"
+	(cd "$C/beef" && beefbuild -config=Release > /dev/null)
+fi
 if want tomlyn; then
 	step tomlyn
 	dotnet build -v q -nologo -c Release -o "$B/tomlyn" "$C/cs/TomlynBench.csproj" > /dev/null

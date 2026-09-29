@@ -789,6 +789,22 @@ per document take page faults that malloc's reused memory avoids.
     lookups. Any move toward its table layout must keep indexed lookups for large tables. TomlBeef
     hashes a `StringView` against `Dictionary<String, …>` keys; the faster hash maps (Zig's
     wyhash-based `StringHashMap`, Go maps) suggest room there.
+  - *Beef's built-in reader* (`bench/compare/beef/`, `beef.sh`, results in `beef-results.md`).
+    `Beefy.utils.StructuredData` (Beefy2D; IDE and BeefBuild project files) is built from the
+    installed Beef (`fetch.sh` copies `StructuredData.bf` and `DisposeProxy.bf`) into one program with
+    TomlBeef, so both use the same compiler and settings. Its data model: parallel lists of boxed
+    values and keys in a bump arena, each table a linked list (no hash map, no duplicate check),
+    integers boxed `Int64`, floats `float` (32-bit), dates and anything else containing `-` or `:`
+    kept as raw text. It errors on dotted keys, literal and multi-line strings, trailing commas and
+    comments inside arrays, and validates almost nothing. `check` walks both trees and classifies
+    each file (exact match / match except date text or float32 / values differ / error); only
+    exact matches count as like-for-like. Findings (2026-09-29): 6 of the 10 generated inputs and
+    133 of 134 real project files read identically; toml-test valid 109 exact + 32 with date or
+    float32 differences + 4 wrong of 266, invalid 179 of 492 accepted. StructuredData parses the
+    real project files 1.9× faster and ints / arrays / headers 1.4–2× faster (no hashing, no
+    validation), is even on strings and slower on comments (3.7×); it writes ~1.5–2× faster; its
+    lookups (Open + TryGet, a linear scan) are ~20× slower. The one rejected project file
+    (`BeefManaged/…/BeefProj.toml`) repeats a key in an inline table.
   - An earlier run of 13 libraries (before toml-spanner and the others were added) lost on
     comment-heavy input (glaze 2657, go-toml 1912, toml-c 1230 vs 1114 MB/s; `toml_edit` 636 vs 535
     preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41).
