@@ -47,7 +47,7 @@ REPO = {
 }
 # Why a library rejects some of the (valid) inputs, for its footnote
 FAIL_REASON = {"glaze": "no date/time in its schema-less mode", "toml-span": "no date/time support"}
-# The per-cell time limit run.sh used (TIMEOUT cells count at input size / LIMIT)
+# The per-cell time limit run.sh used (DNF cells count at input size / LIMIT)
 LIMIT = float(os.environ.get("LIMIT", "60"))
 INPUTS = os.path.join(HERE, "inputs")
 INPUT_LABELS = {
@@ -62,8 +62,8 @@ FONT = "system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 
 
 def read_results():
-    """Returns (parsers, table, timeouts): table[input][parser] is MB/s or None (FAIL or TIMEOUT);
-    timeouts[(input, parser)] is the speed bound for a TIMEOUT cell, input size / LIMIT."""
+    """Returns (parsers, table, timeouts): table[input][parser] is MB/s or None (FAIL or DNF);
+    timeouts[(input, parser)] is the speed bound for a DNF cell, input size / LIMIT."""
     rows = [l for l in open(RESULTS) if l.startswith("|") and not l.startswith("|---")]
     split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
     header = split(rows[0])[1:]
@@ -73,7 +73,7 @@ def read_results():
         name = cells[0]
         table[name] = {p: (float(v) if re.match(r"^[0-9.]+$", v) else None) for p, v in zip(header, cells[1:])}
         for p, v in zip(header, cells[1:]):
-            if v == "TIMEOUT":
+            if v == "DNF":
                 timeouts[(name, p)] = os.path.getsize(os.path.join(INPUTS, name + ".toml")) / 1048576.0 / LIMIT
     return header, table, timeouts
 
@@ -266,7 +266,8 @@ def table_panel(parsers, table, timeouts, top):
         out.append(text(name_x, y, group, "group"))
         y += 6
         best = {i: max((table[i][p] for p in members if table[i][p]), default=0) for i in inputs}
-        lookup_best = [min((values[lookup_libs.index(p)] for p in members if p in lookup_libs), default=0)
+        lookup_best = [min((values[lookup_libs.index(p)] for p in members
+                            if p in lookup_libs and isinstance(values[lookup_libs.index(p)], float)), default=0)
                        for _, values in lookup_docs]
         for p in sorted(members, key=lambda p: -speeds[p][0]):
             ours = p.startswith("TomlBeef")
@@ -282,7 +283,7 @@ def table_panel(parsers, table, timeouts, top):
                 x = first_col + c * col_w
                 v = table[name][p]
                 if v is None:
-                    label = "TIMEOUT" if (name, p) in timeouts else "FAIL"
+                    label = "DNF" if (name, p) in timeouts else "FAIL"
                     out.append(text(x + col_w - 6, mid + 4, label, "cell-missing", "end"))
                     continue
                 # Shade: 1.0 at the column's best, fading over a 100× range
@@ -293,10 +294,10 @@ def table_panel(parsers, table, timeouts, top):
                 out.append(text(x + col_w - 7, mid + 4.5, f"{v:.1f}" if v < 100 else f"{v:.0f}", cls, "end"))
             for c, (_, values) in enumerate(lookup_docs):
                 x = lookup_x + c * lookup_w
-                if p not in lookup_libs:
-                    out.append(text(x + lookup_w - 8, mid + 4, "—", "cell-missing", "end"))
+                ns = values[lookup_libs.index(p)] if p in lookup_libs else "—"
+                if not isinstance(ns, float):
+                    out.append(text(x + lookup_w - 8, mid + 4, ns, "cell-missing", "end"))
                     continue
-                ns = values[lookup_libs.index(p)]
                 level = max(0.0, 1.0 + math.log10(lookup_best[c] / ns) / 2.0)
                 out.append(f'<rect x="{x + 2}" y="{y + 3:.1f}" width="{lookup_w - 4}" height="{row_h - 6}" rx="3" '
                            f'class="heat" fill-opacity="{0.06 + 0.34 * level:.2f}"/>')
@@ -308,9 +309,8 @@ def table_panel(parsers, table, timeouts, top):
     divider_x = lookup_x - 8
     out.insert(0, f'<line x1="{divider_x}" y1="{top + 46}" x2="{divider_x}" y2="{y}" class="rule"/>')
     y += 22
-    out.append(text(40, y, f"FAIL = rejected a valid input · TIMEOUT = one parse took over {LIMIT:.0f} s · "
-                    "— = no lookup harness (lookup.sh covers TomlBeef and the Rust libraries) · "
-                    "* see the notes under the chart", "footnote"))
+    out.append(text(40, y, f"Each value is the median of 3 processes · FAIL = could not parse the input · DNF = did not "
+                    f"finish within {LIMIT:.0f} s · * see the notes under the chart", "footnote"))
     return out, y + 8
 
 
@@ -379,58 +379,62 @@ def write_svg(path, width, height, body, label):
 
 
 def read_lookups():
-    """lookup-results.md as (libraries, [(document, [ns per library])])."""
+    """lookup-results.md as (libraries, [(document, [ns, or "FAIL"/"DNF", per library])])."""
     rows = [l for l in open(LOOKUP_RESULTS) if l.startswith("|") and not l.startswith("|---")]
     split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
     libs = split(rows[0])[1:]
-    return libs, [(cells[0], [float(v) for v in cells[1:]]) for cells in map(split, rows[1:])]
+    number = lambda v: float(v) if re.match(r"^[0-9.]+$", v) else v
+    return libs, [(cells[0], [number(v) for v in cells[1:]]) for cells in map(split, rows[1:])]
 
 
 def lookup_panel(top):
     """Key lookups after parsing (lookup-results.md, written by lookup.sh): ns per lookup for each
     library on each document, as log-scale bars (the results span 100 to 16000 ns), each labelled with
     its time and how it compares with TomlBeef."""
-    all_libs, all_docs = read_lookups()
-    # The chart compares the data-model libraries; TomlBeef preserve appears only in the table
-    keep = [i for i, lib in enumerate(all_libs) if lib not in PRESERVING or lib == "toml_edit"]
-    libs = [all_libs[i] for i in keep]
-    docs = [(doc, [values[i] for i in keep]) for doc, values in all_docs]
+    libs, docs = read_lookups()
     out = []
-    label_x, bar_x, bar_w, bar_h, gap = 180, 200, 440, 13, 4
-    lo, hi = math.log10(50), math.log10(max(max(v) for _, v in docs) * 1.2)
+    # One column per document; each lists every library, fastest first
+    col_w, name_w, bar_w, row_h, bar_h = (W - 80) // 2, 150, 150, 18, 12
+    numbers = [v for _, values in docs for v in values if isinstance(v, float)]
+    lo, hi = math.log10(min(numbers) * 0.8), math.log10(max(numbers) * 1.1)
     scale = lambda ns: bar_w * (math.log10(ns) - lo) / (hi - lo)
     y = top
     out.append(text(40, y, "Key lookups after parsing", "title"))
     y += 22
     out.append(text(40, y, "ns per root[table][key] lookup, lower is better · 100,000 random lookups · log scale · "
-                    "same values found by every library", "subtitle"))
-    y += 26
-    for doc, values in docs:
-        out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
-        block_h = len(libs) * (bar_h + gap) + 14
-        mid = y + block_h / 2
-        # "200 tables × 1000 keys" → two lines: the count, then what is in each
-        first, _, rest = doc.partition(" × ")
-        out.append(text(label_x, mid, first, "label", "end"))
-        out.append(text(label_x, mid + 15, "× " + rest, "note-plain small", "end"))
+                    "every library found the same values", "subtitle"))
+    y += 30
+    bottom = y
+    for c, (doc, values) in enumerate(docs):
+        x0 = 40 + c * (col_w + 20)
+        out.append(text(x0, y, doc, "label"))
+        by = y + 12
         base = values[libs.index("TomlBeef")]
-        by = y + 9
-        for lib, ns in zip(libs, values):
-            ours = lib == "TomlBeef"
-            w = max(2.0, scale(ns))
-            out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" class="{"bar-ours" if ours else "bar"}"/>')
-            compare = "" if ours else (f"{ns / base:.1f}× slower" if ns > base else f"{base / ns:.1f}× faster")
-            shown = f"{ns:.0f} ns"
-            out.append(f'<text x="{bar_x + w + 7:.1f}" y="{by + 11:.1f}" class="small">'
-                       f'<tspan class="{"value ours" if ours else "value"}">{shown}</tspan>'
-                       f'<tspan class="{"libname ours" if ours else "libname"}" dx="6">{esc(lib)}</tspan>'
-                       f'<tspan class="note-plain" dx="8">{compare}</tspan></text>')
-            by += bar_h + gap
-        y += block_h
-    out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
-    y += 20
-    out.append(text(40, y, "toml-spanner scans a table's entries on every lookup; the others use a hash map "
-                    "(TomlBeef, toml_edit) or a B-tree (toml).", "footnote"))
+        rank = lambda item: (0, item[1]) if isinstance(item[1], float) else (1, 0)
+        for lib, ns in sorted(zip(libs, values), key=rank):
+            ours = lib.startswith("TomlBeef")
+            name = SHORT.get(lib, lib) + (" (preserve)" if lib == "TomlBeef preserve" else "")
+            out.append(text(x0 + name_w - 8, by + 10, name, "libname ours" if ours else "libname", "end"))
+            bar_x = x0 + name_w
+            if not isinstance(ns, float):
+                out.append(text(bar_x + 2, by + 10, ns, "cell-missing"))
+            else:
+                w = max(2.0, scale(ns))
+                out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" '
+                           f'class="{"bar-ours" if ours else "bar"}"/>')
+                compare = "" if lib == "TomlBeef" else (f"{ns / base:.1f}× slower" if ns > base * 1.05
+                                                         else f"{base / ns:.1f}× faster" if ns < base / 1.05 else "≈")
+                out.append(f'<text x="{bar_x + w + 6:.1f}" y="{by + 10:.1f}" class="small">'
+                           f'<tspan class="{"value ours" if ours else "value"}">{ns:.0f}</tspan>'
+                           f'<tspan class="note-plain" dx="6">{compare}</tspan></text>')
+            by += row_h
+        bottom = max(bottom, by)
+    y = bottom + 10
+    out.append(text(40, y, "Lookups that scan a table's entries grow with table size: toml-spanner, tomlc17, toml-c and "
+                    "Tomlyn's syntax tree (which has no lookup API).", "footnote"))
+    y += 18
+    out.append(text(40, y, "FAIL = could not parse the document (no date/time support) · DNF = parse plus lookups "
+                    f"did not finish within {LIMIT:.0f} s", "footnote"))
     return out, y + 8
 
 
@@ -444,8 +448,8 @@ def main():
     footer = [
         text(40, height - 34, "Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control "
              "characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.", "footer"),
-        text(40, height - 16, "Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · "
-             "Java, C# and JavaScript warm up for 1 s first", "footer"),
+        text(40, height - 16, "Linux x86-64, single thread · 1 s warm-up, then samples until 60% are within ±10% "
+             "of their median · median of 3 processes · bench/compare", "footer"),
     ]
     write_svg(OUT, W, height, panel1 + panel2 + footer, "TomlBeef parsing throughput compared with other TOML libraries")
 

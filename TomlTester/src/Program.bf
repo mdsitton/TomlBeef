@@ -132,7 +132,8 @@ class Program
 
 	/// Times `iterations` parses of stdin through each input path, and writes of the parsed document.
 	/// Build with -config=Release for meaningful numbers.
-	static int Bench(int iterations, TomlReadConfig config)
+	/// Times each read path and the writer (see Measure). `-bench N` sets the minimum sample count.
+	static int Bench(int minSamples, TomlReadConfig config)
 	{
 		String input = scope String();
 		Console.In.ReadToEnd(input);
@@ -145,10 +146,10 @@ class Program
 			return 1;
 		}
 
-		Console.WriteLine(scope $"input: {input.Length} bytes, {iterations} iterations, metadata: {config.MetadataMode}");
-		BenchCase("Read(string)", iterations, input.Length, scope () => { doc.Read(input, config).IgnoreError(); });
-		BenchCase("ReadBytes", iterations, input.Length, scope () => { doc.ReadBytes(bytes, config).IgnoreError(); });
-		BenchCase("Read(Stream)", iterations, input.Length, scope () =>
+		Console.WriteLine(scope $"input: {input.Length} bytes, min {minSamples} samples, metadata: {config.MetadataMode}");
+		BenchCase("Read(string)", minSamples, input.Length, scope () => { doc.Read(input, config).IgnoreError(); });
+		BenchCase("ReadBytes", minSamples, input.Length, scope () => { doc.ReadBytes(bytes, config).IgnoreError(); });
+		BenchCase("Read(Stream)", minSamples, input.Length, scope () =>
 		{
 			let ms = scope MemoryStream();
 			ms.TryWrite(bytes);
@@ -156,15 +157,14 @@ class Program
 			doc.Read(ms, config).IgnoreError();
 		});
 		String output = scope String();
-		BenchCase("Write", iterations, input.Length, scope () => { output.Clear(); doc.Write(output); });
+		BenchCase("Write", minSamples, input.Length, scope () => { output.Clear(); doc.Write(output); });
 		return 0;
 	}
 
-	/// Key lookups after parsing (bench/compare/lookup.sh): parses stdin once, then times up to
-	/// `passes` passes (3 s budget) over the `table key` pairs in `lookupsPath`, each reading the
-	/// integer at root[table][key]. Prints ns per lookup and the sum of the values found, which must
-	/// match across libraries.
-	static int LookupBench(StringView lookupsPath, int passes, TomlReadConfig config)
+	/// Key lookups after parsing (bench/compare/lookup.sh): parses stdin once, then measures passes over
+	/// the `table key` pairs in `lookupsPath` (see Measure), each reading the integer at root[table][key].
+	/// Prints ns per lookup and the sum of the values found, which must match across libraries.
+	static int LookupBench(StringView lookupsPath, int minSamples, TomlReadConfig config)
 	{
 		String input = scope String();
 		Console.In.ReadToEnd(input);
@@ -192,9 +192,7 @@ class Program
 		let root = doc.RootTable;
 		int64 sum = 0;
 		int missing = 0;
-		let watch = scope System.Diagnostics.Stopwatch(true);
-		int done = 0;
-		while (done < passes && (done == 0 || watch.Elapsed.TotalSeconds < 3))
+		let m = Measure(minSamples, scope [&] () =>
 		{
 			sum = 0;
 			missing = 0;
@@ -205,24 +203,69 @@ class Program
 				else
 					missing++;
 			}
-			done++;
-		}
-		watch.Stop();
-		double ns = watch.Elapsed.TotalMilliseconds * 1e6 / ((double)done * tables.Count);
-		Console.WriteLine(scope $"{ns:F1} ns/lookup, {tables.Count} lookups, sum {sum}, missing {missing}");
+		});
+		Console.WriteLine(scope $"{m.mMedianNs / tables.Count:F1} ns/lookup, {tables.Count} lookups, sum {sum}, missing {missing} ({m})");
 		return 0;
 	}
 
-	static void BenchCase(StringView name, int iterations, int bytesPerIteration, delegate void() action)
+	struct Measurement
 	{
-		action(); // warm-up
+		public double mMedianNs;
+		public int mSamples;
+		public bool mConverged;
+
+		public override void ToString(String str)
+		{
+			str.AppendF("n={}, {}", mSamples, mConverged ? "converged" : "capped");
+		}
+	}
+
+	/// The rule shared by every harness in bench/compare (see run.sh): warm up for at least 1 s (at least
+	/// one run), then time single runs until at least `minSamples` were taken and at least 60% of them lie
+	/// within ±10% of their median ("converged"), or 10 s of measuring or 1000 samples have passed. The
+	/// median sample is reported.
+	static Measurement Measure(int minSamples, delegate void() op)
+	{
 		let watch = scope System.Diagnostics.Stopwatch(true);
-		for (int i < iterations)
-			action();
-		watch.Stop();
-		double seconds = watch.Elapsed.TotalSeconds;
-		double mbPerSecond = seconds > 0 ? (double)bytesPerIteration * iterations / (1024.0 * 1024.0) / seconds : 0;
-		Console.WriteLine(scope $"  {name,-14} {seconds * 1000.0 / iterations,10:F3} ms/op  {mbPerSecond,8:F1} MB/s");
+		repeat
+			op();
+		while (watch.Elapsed.TotalSeconds < 1);
+
+		let samples = scope System.Collections.List<double>();
+		let sorted = scope System.Collections.List<double>();
+		watch.Restart();
+		while (true)
+		{
+			let t0 = watch.Elapsed.Ticks;
+			op();
+			samples.Add((watch.Elapsed.Ticks - t0) * 100.0); // TimeSpan ticks are 100 ns
+			sorted.Clear();
+			sorted.AddRange(samples);
+			sorted.Sort(scope (a, b) => a <=> b);
+			int n = sorted.Count;
+			double median = (n % 2 == 1) ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+			if (n >= minSamples)
+			{
+				int within = 0;
+				for (let s in samples)
+				{
+					if (s >= median * 0.9 && s <= median * 1.1)
+						within++;
+				}
+				if (within >= 0.6 * n)
+					return .() { mMedianNs = median, mSamples = n, mConverged = true };
+			}
+			if (n >= 1000 || watch.Elapsed.TotalSeconds >= 10)
+				return .() { mMedianNs = median, mSamples = n, mConverged = false };
+		}
+	}
+
+	static void BenchCase(StringView name, int minSamples, int bytesPerIteration, delegate void() action)
+	{
+		let m = Measure(minSamples, action);
+		double ms = m.mMedianNs / 1e6;
+		double mbPerSecond = (double)bytesPerIteration / (1024.0 * 1024.0) / (ms / 1000.0);
+		Console.WriteLine(scope $"  {name,-14} {ms,10:F3} ms/op  {mbPerSecond,8:F1} MB/s  ({m})");
 	}
 
 	static int UsageError(StringView message)

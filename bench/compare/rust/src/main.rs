@@ -1,25 +1,61 @@
-// Rust TOML benchmark: tomlbench <toml|edit|spanner|span> <file> <iterations>
-// Reads the file once, parses it once to warm up, then times up to <iterations> parses within a
-// 3 s budget.
+// Rust TOML benchmark: tomlbench <toml|edit|spanner|span> <file> <min-samples>
+// Parse mode times single parses under the shared rule (see `measure` and run.sh).
 //   toml     - toml::Table (the plain data model)
 //   edit     - toml_edit::DocumentMut (format-preserving)
 //   spanner  - toml_spanner::parse into a fresh Arena (span-preserving tree; arena freed per parse)
 //   span     - toml_span::parse (span-preserving Value; no date/time support)
 use std::time::Instant;
 
-/// Key lookups after parsing (lookup.sh): tomlbench lookup <toml|edit|spanner> <file> <lookups> <passes>
-/// Parses once, then times up to <passes> passes (3 s budget) over the `table key` pairs, each reading
-/// the integer at root[table][key]. Prints ns per lookup and the sum of the values found.
+/// The rule shared by every harness in bench/compare: warm up for at least 1 s (at least one run),
+/// then time single runs until at least `min_samples` were taken and at least 60% of them lie within
+/// ±10% of their median ("converged"), or 10 s of measuring or 1000 samples have passed. Returns the
+/// median sample in ns, the sample count and whether it converged.
+fn measure(min_samples: usize, mut op: impl FnMut()) -> (f64, usize, bool) {
+    let warm = Instant::now();
+    loop {
+        op();
+        if warm.elapsed().as_secs_f64() >= 1.0 {
+            break;
+        }
+    }
+    let start = Instant::now();
+    let mut samples: Vec<f64> = Vec::new();
+    loop {
+        let t0 = Instant::now();
+        op();
+        samples.push(t0.elapsed().as_nanos() as f64);
+        let mut sorted = samples.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = sorted.len();
+        let median = if n % 2 == 1 { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0 };
+        if n >= min_samples {
+            let within = samples.iter().filter(|&&s| s >= median * 0.9 && s <= median * 1.1).count();
+            if within as f64 >= 0.6 * n as f64 {
+                return (median, n, true);
+            }
+        }
+        if n >= 1000 || start.elapsed().as_secs_f64() >= 10.0 {
+            return (median, n, false);
+        }
+    }
+}
+
+fn status(converged: bool) -> &'static str {
+    if converged { "converged" } else { "capped" }
+}
+
+/// Key lookups after parsing (lookup.sh): tomlbench lookup <toml|edit|spanner|span> <file> <lookups> <min-samples>
+/// Parses once, then measures passes over the `table key` pairs, each reading the integer at
+/// root[table][key]. Prints ns per lookup and the sum of the values found.
 fn lookup_bench(args: &[String]) {
     let (lib, text, pairs_text) = (args[2].as_str(), std::fs::read_to_string(&args[3]).expect("read"),
                                    std::fs::read_to_string(&args[4]).expect("read lookups"));
-    let passes: usize = args[5].parse().expect("passes");
+    let min_samples: usize = args[5].parse().expect("min samples");
     let pairs: Vec<(&str, &str)> = pairs_text.lines().map(|l| l.split_once(' ').expect("pair")).collect();
 
     let run = |lookup: &dyn Fn(&str, &str) -> Option<i64>| {
-        let start = Instant::now();
-        let (mut done, mut sum, mut missing) = (0, 0i64, 0);
-        while done < passes && (done == 0 || start.elapsed().as_secs_f64() < 3.0) {
+        let (mut sum, mut missing) = (0i64, 0);
+        let (median, n, converged) = measure(min_samples, || {
             sum = 0;
             missing = 0;
             for (t, k) in &pairs {
@@ -28,10 +64,9 @@ fn lookup_bench(args: &[String]) {
                     None => missing += 1,
                 }
             }
-            done += 1;
-        }
-        let ns = start.elapsed().as_secs_f64() * 1e9 / (done * pairs.len()) as f64;
-        println!("{ns:.1} ns/lookup, {} lookups, sum {sum}, missing {missing}", pairs.len());
+        });
+        println!("{:.1} ns/lookup, {} lookups, sum {sum}, missing {missing} (n={n}, {})",
+                 median / pairs.len() as f64, pairs.len(), status(converged));
     };
 
     match lib {
@@ -49,6 +84,17 @@ fn lookup_bench(args: &[String]) {
             let root = d.table();
             run(&|a, b| root.get(a)?.as_table()?.get(b)?.as_i64());
         }
+        "span" => {
+            let v = match toml_span::parse(&text) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("parse error: {e:?}");
+                    std::process::exit(1);
+                }
+            };
+            let root = v.as_table().expect("root table");
+            run(&|a, b| root.get(a)?.as_table()?.get(b)?.as_integer());
+        }
         _ => panic!("unknown library {lib}"),
     }
 }
@@ -60,12 +106,12 @@ fn main() {
         return;
     }
     if args.len() < 4 {
-        eprintln!("usage: tomlbench <toml|edit|spanner|span> <file> <iterations>");
+        eprintln!("usage: tomlbench <toml|edit|spanner|span> <file> <min-samples>");
         std::process::exit(2);
     }
     let mode = args[1].as_str();
     let text = std::fs::read_to_string(&args[2]).expect("read");
-    let iterations: usize = args[3].parse().expect("iterations");
+    let min_samples: usize = args[3].parse().expect("min samples");
 
     let parse = |s: &str| -> Result<(), String> {
         match mode {
@@ -95,13 +141,7 @@ fn main() {
         eprintln!("parse error: {e}");
         std::process::exit(1);
     }
-    // Stop after <iterations> parses or 3 s, whichever comes first (at least one)
-    let start = Instant::now();
-    let mut done = 0;
-    while done < iterations && (done == 0 || start.elapsed().as_secs_f64() < 3.0) {
-        parse(&text).unwrap();
-        done += 1;
-    }
-    let ms = start.elapsed().as_secs_f64() * 1000.0 / done as f64;
-    println!("{:.3} ms/op {:.1} MB/s", ms, text.len() as f64 / 1048576.0 / (ms / 1000.0));
+    let (median, n, converged) = measure(min_samples, || parse(&text).unwrap());
+    let ms = median / 1e6;
+    println!("{:.3} ms/op {:.1} MB/s (n={n}, {})", ms, text.len() as f64 / 1048576.0 / (ms / 1000.0), status(converged));
 }

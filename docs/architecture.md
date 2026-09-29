@@ -755,34 +755,40 @@ per document take page faults that malloc's reused memory avoids.
   - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`, `plot.py`;
     results in `bench/compare/results.md`, chart in `docs/benchmark.svg`). 20 libraries parse the
     same generated inputs (2–9 MB, at most 1000 keys per table) into their own schema-less
-    documents, one process per cell: a warm-up (one parse; 1 s for the JIT runtimes Java, C# and
-    JavaScript), then the average of up to 5 parses within 3 s, with a 60 s limit per cell. C/C++
-    at `-O3` and Zig at `ReleaseFast`, without `-march=native`, like TomlBeef's Release build.
+    documents. Every harness uses one rule (documented in `run.sh`): warm up for at least 1 s,
+    then time single operations until at least 5 samples were taken and at least 60% lie within
+    ±10% of their median, or 10 s / 1000 samples pass; report the median sample. Each cell is the
+    median of 3 fresh processes, and a run past 60 s is DNF. (A first version used ±2%: lookups
+    rarely converged and a full run took hours; with the median reported, ±10% is enough to show
+    the samples have settled.) C/C++ at `-O3` and Zig at `ReleaseFast`, without `-march=native`,
+    like TomlBeef's Release build. A full parse run takes ~45 min, the lookup run ~8 min.
     Versions: tomlc17 R260821, toml-c 6a38d40, toml11 v4.4.0, toml++ v3.4.0, glaze v9.0.0; Rust
     1.98.1 with `toml` 1.1.6, `toml_edit` 0.25.15, toml-spanner 1.0.3, toml-span 0.7.1; zig-toml
     8685923 (zig-0.16 branch) with Zig 0.16.0; BurntSushi/toml v1.6.0, go-toml v2.4.3; tomlj
     2.1.1, jtoml 1.8.1 (Java 26); Tomlyn 2.10.1 (.NET 10); js-toml 2.0.1, smol-toml 1.9.0,
     toml 5.0.0 (Node 26).
-  - *Standings* (2026-09-28, geometric mean of MB/s relative to TomlBeef over the 10 inputs). Of
-    the data-model parsers only **toml-spanner** is faster: 1.42× on average and ahead on 9 of the
-    10 inputs, all but comment-only (for example 167 vs 87 MB/s on the mixed config, 134 vs 66 on
-    small arrays). It validates fully, and its tree borrows strings from the input (only escaped
-    strings are copied, into an arena), where TomlBeef copies every string into its document
-    store and builds a hash map per table. Next come zig-toml 0.83×, glaze 0.67× and Rust `toml`
-    0.27×; the rest are 0.26× or slower. Among parsers that keep comments and formatting TomlBeef
-    is fastest: `toml_edit` 0.52×, Tomlyn's syntax tree 0.077×.
+  - *Standings* (2026-09-29, geometric mean of MB/s relative to TomlBeef over the 10 inputs). Of
+    the data-model parsers only **toml-spanner** is faster: 1.48× on average and ahead on 9 of the
+    10 inputs, all but comment-only (for example 183 vs 95 MB/s on the mixed config, 145 vs 67 on
+    small arrays; TomlBeef 2972 vs 1723 on comment-only). It validates fully, and its tree borrows
+    strings from the input (only escaped strings are copied, into an arena), where TomlBeef copies
+    every string into its document store and builds a hash map per table. Next come zig-toml
+    0.82×, glaze 0.66×, smol-toml and Rust `toml` 0.27×; the rest are 0.17× or slower. Among
+    parsers that keep comments and formatting TomlBeef is fastest: `toml_edit` 0.54×, Tomlyn's
+    syntax tree 0.075×.
   - *Lookups after parsing* (`bench/compare/lookup.sh`, results in `lookup-results.md`): 100,000
     random `root[table][key]` integer reads through each library's table API, checked to find the
-    same values. ns per lookup, TomlBeef / toml-spanner / Rust `toml` / `toml_edit`: 149 / 1806 /
-    352 / 225 in 200 tables of 1000 keys, 96 / 15492 / 247 / 217 with 15000 sections at the root
-    (TomlBeef PreserveStyle: 183 / 95). Run-to-run variation is ~±15% (an earlier run gave TomlBeef
-    124 / 104); the ordering and the size of toml-spanner's gap hold. Shown in the chart's last
-    panel and the table's last two columns.
-    toml-spanner's table is a list scanned on every `get` (its hash index exists only during the
-    parse, for duplicate detection), so its parse-speed lead on the mixed config (~22 ms) is used up
-    after ~1,500 lookups. Rust `toml` uses a B-tree map, `toml_edit` an index map; TomlBeef a
-    `Dictionary` per table. Any move toward toml-spanner's table layout must keep indexed lookups
-    for large tables.
+    same values. TomlBeef takes 101 ns in 200 tables of 1000 keys and 85 ns with 15000 sections at
+    the root (PreserveStyle: 105 / 86), mid-range among hash-map libraries: zig-toml 50 / 44,
+    go-toml 53 / 62, BurntSushi/toml 63 / 67 and the JavaScript libraries ~70–110 are faster;
+    Tomlyn, glaze, `toml_edit` (206 / 159), toml11 and Rust `toml` (316 / 226, a B-tree) slower.
+    Libraries that scan a table's entries grow with table size: toml-spanner 1684 / 14290, tomlc17
+    1771 / 15051, toml-c 2376 / 32271, and Tomlyn's syntax tree (no lookup API; the harness scans
+    headers) 17324 / 102887. toml-spanner's hash index exists only during the parse, for duplicate
+    detection, so its parse-speed lead on the mixed config (~20 ms) is used up after ~1,400
+    lookups. Any move toward its table layout must keep indexed lookups for large tables. TomlBeef
+    hashes a `StringView` against `Dictionary<String, …>` keys; the faster hash maps (Zig's
+    wyhash-based `StringHashMap`, Go maps) suggest room there.
   - An earlier run of 13 libraries (before toml-spanner and the others were added) lost on
     comment-heavy input (glaze 2657, go-toml 1912, toml-c 1230 vs 1114 MB/s; `toml_edit` 636 vs 535
     preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41).

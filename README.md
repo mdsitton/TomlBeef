@@ -512,7 +512,7 @@ if (doc.ReadFile(path) case .Err(let err))
 
 <p align="center"><img src="docs/benchmark-table.svg" alt="Full benchmark results: MB/s for every library on every input" width="880"></p>
 
-Every library parses the same generated inputs (2–9 MB) from memory into its own schema-less document, single-threaded, on Linux x86-64; Java, C# and JavaScript get a 1 s warm-up first. The libraries build different kinds of document (toml-spanner, for example, keeps strings as views into the input), so the work is not identical. TomlBeef validates fully (UTF-8 and control characters included); zig-toml accepts invalid TOML, and glaze and toml-c skip UTF-8 validation. Library versions are pinned. To reproduce, from `bench/compare/`:
+Every library parses the same generated inputs (2–9 MB) from memory into its own schema-less document, single-threaded, on Linux x86-64. Each harness warms up for 1 s, then samples until at least 60% of its samples are within ±10% of their median; each value is the median of 3 separate processes. The libraries build different kinds of document (toml-spanner, for example, keeps strings as views into the input), so the work is not identical. TomlBeef validates fully (UTF-8 and control characters included); zig-toml accepts invalid TOML, and glaze and toml-c skip UTF-8 validation. Library versions are pinned. To reproduce, from `bench/compare/`:
 
 ```bash
 ./fetch.sh && ./build.sh && ./gen-inputs.py
@@ -521,7 +521,7 @@ Every library parses the same generated inputs (2–9 MB) from memory into its o
 
 The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 
-Parsing speed is only half of it: TomlBeef tables are hash maps, so reading keys stays fast in large tables. The last panel of the chart, and the last two columns of the table, time 100,000 random `table.key` lookups after parsing (`bench/compare/lookup.sh`, results in `bench/compare/lookup-results.md`). toml-spanner stores a table as a plain list and scans it on every lookup (roughly 12× to 160× slower than TomlBeef there), so on the config above its faster parse is used up after about 1,500 lookups.
+Parsing speed is only half of it. The last panel of the chart, and the last two columns of the table, time 100,000 random `table.key` lookups after parsing (`bench/compare/lookup.sh`, results in `bench/compare/lookup-results.md`). TomlBeef tables are hash maps, so its lookups (~85–100 ns) stay in the same range as the other hash-map libraries; zig-toml, the Go libraries and several JavaScript ones are faster still (~45–75 ns). toml-spanner, tomlc17 and toml-c store a table as a list and scan it on every lookup (roughly 17× to 380× slower than TomlBeef), so on the config above toml-spanner's faster parse is used up after about 1,400 lookups.
 
 ## Running Tests
 
