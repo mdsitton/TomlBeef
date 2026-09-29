@@ -7,7 +7,7 @@
 - Beef uses manual and scope-based memory management. There is no tracing garbage collector.
 - This project currently targets Linux64 first. Treat Windows/macOS support as deferred unless project files or CI say otherwise.
 - Preferred CLI tool: `beefbuild` on Linux, `BeefBuild` on Windows. Use from `PATH`.
-- Treat `BJSON/` and `toml-test/` as external upstream/reference material; do not edit them unless the task explicitly targets those dependencies.
+- External dependencies are not vendored: BJSON (JSON for `TomlTester`) is a Beef package dependency, `BJSON = {Git = "https://github.com/M0n7y5/BJSON.git?path=/BJSON"}` in `TomlTester/BeefProj.toml` (pinned in `BeefSpace_Lock.toml`), and the upstream toml-test suite runs through `go run` in `test-official-toml.sh`. Do not edit fetched copies of either.
 - Treat `recovery/` as forensic/generated reference material; consult it only for historical context and do not edit it unless explicitly requested.
 - Start with `docs/status.md` (current state, verification baseline, open items) and `docs/architecture.md` (design and rationale). Keep `status.md` current: remove finished items and update the baseline when test counts change. Do not add new plan or handoff documents; put open work in `status.md` and durable design notes in `architecture.md`.
 
