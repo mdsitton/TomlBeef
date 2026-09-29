@@ -5,7 +5,7 @@ namespace TomlTester;
 
 /// Serializes a TOML document to toml-test tagged JSON (the decoder direction).
 /// Uses only the public TomlBeef API.
-class TomlSerializer
+class TomlTestJson
 {
 	/// @brief Append the tagged JSON form of `doc` to `outStr`.
 	/// @param doc The document to serialize.

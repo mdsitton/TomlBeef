@@ -123,7 +123,7 @@ class Program
 			doc.Write(output, writeConfig);
 		else
 		{
-			scope TomlSerializer().Serialize(doc, output);
+			scope TomlTestJson().Serialize(doc, output);
 			output.Append('\n');
 		}
 		Console.Write(output);

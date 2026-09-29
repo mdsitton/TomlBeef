@@ -53,11 +53,17 @@ workspace startup project is `TomlTester/`.
 | `TomlChar.bf` | Internal character classes, UTF-8 decode/encode, and whole-buffer `ValidateUtf8` (with BOM handling) |
 | `TomlError.bf` | `TomlErrorKind` and `TomlParseError` |
 | `TomlVersion.bf` | `TomlVersion { V1_0, V1_1 }` |
+| `TomlObjectAttribute.bf` | `[TomlObject]` (with `TomlKeyNaming`), `[TomlName]`, `[TomlIgnore]`, `[TomlRequired]`: compile-time serialization (section 8a) |
+| `TomlSerializerCodeGen.bf` | The comptime generator behind `[TomlObject]`: classifies fields and emits `TomlRead`/`TomlWrite` source |
+| `TomlBind.bf` | Runtime helpers the generated code calls, one per value kind (lookup, type and range checks, located errors) |
+| `TomlSerializer.bf` | `TomlSerializer.Read`/`Write`, the entry points for `[TomlObject]` types |
+| `ITomlSerializable.bf` | The interface `[TomlObject]` adds (`TomlRead`, `TomlWrite`) |
 
 Other locations: tests are in `src/TomlBeef/tests/`, the fixture corpus is in `tests/valid` and
 `tests/invalid`, the CLI is `TomlTester/src/Program.bf`, and the acceptance scripts are
-`test-toml.sh`, `test-roundtrip.sh`, `test-encoder.sh` and `test-official-toml.sh` (with `json-compare.py`). `BJSON/`,
-`toml-test/` and `recovery/` are external or forensic material (see `AGENTS.md`).
+`test-toml.sh`, `test-roundtrip.sh`, `test-encoder.sh` and `test-official-toml.sh` (with `json-compare.py`). BJSON is a
+package dependency of `TomlTester` and toml-test runs through `go run`; `recovery/` is forensic
+material (see `AGENTS.md`).
 
 ## 3. Public API model
 
@@ -673,6 +679,36 @@ PreserveStyle)))` must give the same semantic document as `x`. Tokens are reused
 that are verifiably unchanged; everything else is regenerated from the semantic value. Key order,
 whitespace around `=`, exact blank-line layout and byte-for-byte identity are **not** goals.
 
+## 8a. Compile-time serialization (`[TomlObject]`, prototype)
+
+`[TomlObject]` on a class or struct is an `IComptimeTypeApply` attribute (the pattern BJSON's
+`[JsonObject]` uses). While the type compiles, `TomlSerializerCodeGen.Emit` walks its fields,
+adds `ITomlSerializable`, and emits `TomlRead(TomlTable)` and `TomlWrite(TomlTable)` as source
+text through `Compiler.EmitTypeBody`. `TomlSerializer.Read`/`Write` parse or write a document
+around them.
+
+- *Through the table API, not text.* Generated code reads with `TomlTable` lookups and writes with
+  `Set`/`AddTable`/`AddArray`/`AddArrayOfTables`, so quoting, escaping, key syntax and table layout
+  stay with the tested parser and writer, and a hand-built or merged document can be bound too.
+- *Small emitted code.* Each field is one call into `TomlBind` (lookup, type check, integer range
+  check, located error) plus an assignment; the logic lives in ordinary, testable code.
+- *Errors.* Located errors from the table API: MissingKey at the table, WrongType or InvalidValue
+  at the value (`port: expected integer, found string`), with line and column because `Read` parses
+  with at least Positions metadata. Messages name the key, not yet the full dotted path.
+- *Enums without reflection.* Beef emits reflection data only on request, so `Enum.Parse` and enum
+  `ToString` are not used; the generator writes `switch` statements over the case names, and error
+  messages list the cases from compile time.
+- *Fields.* Public instance fields not marked `[TomlIgnore]`; keys from the field name through
+  `TomlKeyNaming` (words split at case changes, acronyms kept whole: `HTTPPort` → `http_port`) or
+  `[TomlName]`. Supported: bool, integers (range-checked both ways; 64-bit unsigned up to
+  `int64.MaxValue`), float/double (integers accepted), String, simple enums, the four date/time
+  types, `[TomlObject]` types (tables) and `List<T>` of those (a list of objects is an array of
+  tables). Anything else stops the build with a message naming the field.
+- *Reading fills an existing object:* absent keys keep their values unless `[TomlRequired]`; null
+  String, object and List fields get new instances the type then owns; reading a list deletes its
+  old String or object items first. A `[TomlObject]` base class is read and written first through
+  `base.TomlRead`/`TomlWrite`.
+
 ## 9. Testing strategy
 
 Run `beefbuild -test` from the repo root. It runs 206 `[Test]` methods; fixture paths are
@@ -864,7 +900,7 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     - Each library builds a different document type, so the work is not identical.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through
-  `TomlTester/src/TomlSerializer.bf`. Tagged JSON is a test format, so the serializer lives in
+  `TomlTester/src/TomlTestJson.bf`. Tagged JSON is a test format, so the serializer lives in
   `TomlTester` and uses only the public API (`GetKeyAt`/`GetValueAt` walks). Each scalar becomes `{"type": ..., "value": ...}`, with types `string`,
   `integer`, `float`, `bool`, `datetime`, `datetime-local`, `date-local` and `time-local`.
 - `-encode`: reads TOML and writes it back with the normal writer.

@@ -293,6 +293,19 @@ public class TomlTable
 		return arr;
 	}
 
+	/// @brief Create an array of tables for the given key, written as `[[key]]` sections, and return it.
+	/// Add its elements with TomlArray.AddTable.
+	/// @param key The key.
+	/// @return The new array, or null if the key already exists.
+	public TomlArray AddArrayOfTables(StringView key)
+	{
+		if (ContainsKey(key))
+			return null;
+		TomlArray arr = mStore.NewArray();
+		Insert(key, .Array(arr));
+		return arr;
+	}
+
 	/// @brief Check if this table should be written as dotted keys rather than a [header] (PreserveStyle writer).
 	internal bool HasDottedPreference(TomlDocumentMetadata metadata)
 	{
