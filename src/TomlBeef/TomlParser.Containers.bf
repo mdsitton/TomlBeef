@@ -17,6 +17,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		int startLine = mCursor.Line;
 		TomlArray arr = mStore.NewArray();
 		arr.IsStatic = true;
+		if (mMetadata == null)
+			return ParsePlainArray(arr);
 
 		// Array-local pending comment list for PreserveStyle mode (its buffer is only allocated by a comment)
 		List<StringView> arrayPendingComments = (mStyle != null) ? scope:: List<StringView>() : null;
@@ -224,6 +226,37 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			else
 			{
 				
+				return .Err(Error(.UnexpectedToken, "Expected ',' or ']' in array"));
+			}
+		}
+	}
+
+	/// ParseArray without metadata: no positions, comments or style to record, so each element is
+	/// just whitespace, value, whitespace, then ',' or ']'. The opening '[' is already consumed.
+	private Result<TomlValue, TomlParseError> ParsePlainArray(TomlArray arr)
+	{
+		// The loop top is reached only after '[' or ',', the two places where ']' may follow
+		while (true)
+		{
+			Try!(SkipWsAndComments());
+			if (mCursor.PeekByte() == ']')
+			{
+				mCursor.AdvanceByte();
+				return TomlValue.Array(arr);
+			}
+			let val = Try!(ParseValue());
+			Try!(CheckArrayItem(arr));
+			arr.Add(val);
+
+			Try!(SkipWsAndComments());
+			switch (mCursor.PeekByte())
+			{
+			case ',':
+				mCursor.AdvanceByte();
+			case ']':
+				mCursor.AdvanceByte();
+				return TomlValue.Array(arr);
+			default:
 				return .Err(Error(.UnexpectedToken, "Expected ',' or ']' in array"));
 			}
 		}

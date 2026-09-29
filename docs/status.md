@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 291/291 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 291/291 pass |
-| `./test-leaks.sh` | 291/291 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 293/293 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 293/293 pass |
+| `./test-leaks.sh` | 293/293 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -58,7 +58,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 
 | ID | Idea | Size |
 |----|------|------|
-| O8 | *Optional, perf.* Parsing is ~95 MB/s on the mixed bench. In the 20-library comparison (`bench/compare/`, architecture.md "TomlTester") only Rust's toml-spanner is faster (1.48× on average, ahead on 9 of 10 inputs; 2026-09-29), and TomlBeef is the fastest style-preserving parser. Worth studying first: toml-spanner borrows strings from the input and keeps its tree in an arena, where TomlBeef copies every string and builds a dictionary per table. But its tables are scanned on every lookup (17× to 170× slower lookups than TomlBeef, `lookup.sh`), so adopt its small-table scan only below a threshold and keep an index for large tables. Key lookups themselves (~85–100 ns) trail the fastest hash maps (zig-toml ~45 ns, go-toml ~55 ns): the `StringView` hash and compare against `Dictionary<String, …>` may be worth a look. Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), per-element overhead in arrays, multi-line strings through `ScanRun`, fewer allocations per table (dictionary and key list), keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M |
+| O8 | *Optional, perf.* In the 20-library comparison (`bench/compare/`, architecture.md "TomlTester") only Rust's toml-spanner parses faster (1.48× on average before the float/date/array fast paths of 2026-09-29, which took floats 87→143 MB/s, dates 131→157, arrays 66→79), and TomlBeef is the fastest style-preserving parser. **Next: table storage.** Each table owns a corlib `Dictionary<String, TomlTableSlot>` plus a `List<String>` key order: 4–6 allocations per table (the dictionary grows 1→3→7→15), a re-hash per entry whenever the writer or `GetValueAt` walks a table (about half of Write's time on table-heavy input), and lookups of ~85–100 ns against zig-toml ~45 and go-toml ~55. The corlib string hash goes byte by byte below 8 bytes, buckets use `%` over `2^n−1` sizes (1023 = 3·11·31), and that pairing walks 2.12 entries per hit in a 1000-key table where a mixed hash gives ~1.4. Plan: entries in insertion order (arena key view, value, node id), a bounded linear scan for small tables (toml-spanner's layout, whose unbounded scans make its lookups 17–170× slower), and above that an open-addressing index with a power-of-two mask, fingerprint bytes and a finalized word-at-a-time hash (the shape of PortalEmulator's `Sizzle.Core.Collections.Concurrent` maps, single-threaded). Also from the toml-spanner study: resolve header and dotted-key segments as they are read with one find-or-add per segment (today a missing segment hashes twice), copy each string once straight into the store, smaller values (`TomlValue` is ~40 bytes because date/times are 8 × `int32`). Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), multi-line strings through `ScanRun`, keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M–L |
 
 ## Suggested order
 

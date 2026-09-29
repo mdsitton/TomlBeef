@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using TomlBeef;
 using internal TomlBeef;
 using static TomlBeef.TomlTestSupport;
@@ -684,5 +685,93 @@ static class TomlReadTests
 			var bad = scope TomlDocument();
 			Test.Assert(bad.Read(input) case .Err(let err) && err.mKind == kind, scope $"{input}");
 		}
+	}
+
+	[Test]
+	public static void FloatFastPath_MatchesFullParse()
+	{
+		// Edge cases around the fast path's limits (2^53 mantissa, 19 digits, exponent ±22), then generated
+		// floats with 1-20 digits and exponents -30 to 30. Each must read bit-identical to Double.Parse
+		// (fast_float, correctly rounded), whichever path the parser takes.
+		let tokens = scope List<String>();
+		defer { ClearAndDeleteItems!(tokens); }
+		for (let edge in StringView[?]("0.0", "-0.0", "+0.0", "0e0", "1e22", "1e23", "1e-22", "1e-23", "9007199254740992.0",
+			"9007199254740993.0", "1234567890123456789.0", "12345678901234567890.0", "0.1", "0.30000000000000004",
+			"1.7976931348623157e308", "4.9e-324", "2.2250738585072014e-308", "1E5", "1e+05", "5e-0010", "-123.456e-7"))
+			tokens.Add(new String(edge));
+
+		uint64 state = 0x9E3779B97F4A7C15;
+		for (int i = 0; i < 20000; i++)
+		{
+			state = state * 6364136223846793005 + 1442695040888963407;
+			let token = new String();
+			if ((state >> 60) & 1 != 0)
+				token.Append('-');
+			int digits = 1 + (int)((state >> 32) % 20);
+			int intDigits = 1 + (int)((state >> 40) % (uint64)digits);
+			for (int d = 0; d < digits; d++)
+			{
+				if (d == intDigits)
+					token.Append('.');
+				state = state * 6364136223846793005 + 1442695040888963407;
+				// No leading zero on a multi-digit integer part
+				int digit = (d == 0 && intDigits > 1) ? 1 + (int)((state >> 33) % 9) : (int)((state >> 33) % 10);
+				token.Append((char8)('0' + digit));
+			}
+			if ((state >> 61) & 1 != 0 || intDigits == digits)
+				token.AppendF("e{}", (int)((state >> 20) % 61) - 30);
+			tokens.Add(token);
+		}
+
+		let input = scope String();
+		for (int i = 0; i < tokens.Count; i++)
+			input.AppendF("k{} = {}\n", i, tokens[i]);
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, input);
+		for (int i = 0; i < tokens.Count; i++)
+		{
+			Test.Assert(doc.TryGetFloat(scope $"k{i}", var parsed), tokens[i]);
+			var expected = Double.Parse(tokens[i]).Value;
+			Test.Assert(*(uint64*)&parsed == *(uint64*)&expected, tokens[i]);
+		}
+	}
+
+	[Test]
+	public static void DateTimeFastPath_ReadsEveryForm()
+	{
+		var doc = scope TomlDocument();
+		ReadOrFail(doc, """
+			a = 1979-05-27
+			b = 1979-05-27T07:32:00
+			c = 1979-05-27 07:32:00.999999
+			d = 1979-05-27t07:32:00.1234567899Z
+			e = 1979-05-27T00:32:00.5-07:30
+			f = 1979-05-27T07:32Z
+			g = 07:32:00.25
+			h = 23:59
+			i = 2024-02-29T23:59:60+23:59
+			""");
+		Test.Assert(doc.TryGetLocalDate("a", let a) && a.mYear == 1979 && a.mMonth == 5 && a.mDay == 27);
+		Test.Assert(doc.TryGetLocalDateTime("b", let b) && b.mHour == 7 && b.mMinute == 32 && b.mNanosecond == 0);
+		Test.Assert(doc.TryGetLocalDateTime("c", let c) && c.mNanosecond == 999999000);
+		Test.Assert(doc.TryGetOffsetDateTime("d", let d) && d.mNanosecond == 123456789 && d.mOffsetMinutes == 0);
+		Test.Assert(doc.TryGetOffsetDateTime("e", let e) && e.mNanosecond == 500000000 && e.mOffsetMinutes == -450);
+		Test.Assert(doc.TryGetOffsetDateTime("f", let f) && f.mMinute == 32 && f.mSecond == 0);
+		Test.Assert(doc.TryGetLocalTime("g", let g) && g.mSecond == 0 && g.mNanosecond == 250000000);
+		Test.Assert(doc.TryGetLocalTime("h", let h) && h.mHour == 23 && h.mMinute == 59);
+		Test.Assert(doc.TryGetOffsetDateTime("i", let i) && i.mDay == 29 && i.mSecond == 60 && i.mOffsetMinutes == 1439);
+
+		// Forms the fast path declines still get the full path's specific errors
+		(StringView input, TomlErrorKind kind)[?] invalid = .(
+			("x = 1979-02-29", .InvalidDate), ("x = 1979-05-27T24:00:00", .InvalidTime),
+			("x = 1979-05-27T07:32:00+24:00", .InvalidDateTime), ("x = 1979-05-27T07:32:00.", .InvalidTime),
+			("x = 07:60:00", .InvalidTime), ("x = 1979-05-27T07:32:00Zx", .InvalidDateTime));
+		for (let (input, kind) in invalid)
+		{
+			var bad = scope TomlDocument();
+			Test.Assert(bad.Read(input) case .Err(let err) && err.mKind == kind, scope $"{input}");
+		}
+		var v10 = scope TomlDocument();
+		Test.Assert(v10.Read("x = 07:32", .() { Version = .V1_0 }) case .Err(let err10) && err10.mKind == .InvalidTime);
 	}
 }

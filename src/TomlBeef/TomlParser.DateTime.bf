@@ -29,6 +29,67 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return false;
 	}
 
+	/// One-pass parse of a well-formed date/time: `YYYY-MM-DD`, optionally followed by a separator and a
+	/// time and then an optional `Z` or `±HH:MM` offset, or a time on its own. Anything it does not
+	/// accept, valid or not, returns false and takes TryParseDateTime, so errors are unchanged.
+	private bool TryParsePlainDateTime(StringView token, out TomlValue value)
+	{
+		value = default;
+		int pos = 0;
+		int32 hour = ?; int32 minute = ?; int32 second = ?; int32 ns = ?;
+		bool secondsOmitted = ?;
+		if (token.Length >= 5 && token[2] == ':')
+		{
+			if (!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted) ||
+				pos != token.Length || (mVersion == .V1_0 && secondsOmitted))
+				return false;
+			value = TomlValue.LocalTime(TomlLocalTime.Validated(hour, minute, second, ns));
+			return true;
+		}
+
+		if (token.Length < 10 || token[4] != '-')
+			return false;
+		int32 year = ?; int32 month = ?; int32 day = ?;
+		if (!ParseDatePart(token, ref pos, out year, out month, out day))
+			return false;
+		if (pos == token.Length)
+		{
+			value = TomlValue.LocalDate(TomlLocalDate.Validated(year, month, day));
+			return true;
+		}
+
+		let separator = token[pos++];
+		if ((separator != 'T' && separator != 't' && separator != ' ') ||
+			!ParseTimePart(token, ref pos, out hour, out minute, out second, out ns, out secondsOmitted) ||
+			(mVersion == .V1_0 && secondsOmitted))
+			return false;
+		if (pos == token.Length)
+		{
+			value = TomlValue.LocalDateTime(TomlLocalDateTime.Validated(year, month, day, hour, minute, second, ns));
+			return true;
+		}
+
+		int32 offsetMinutes = 0;
+		let zone = token[pos++];
+		if (zone == '+' || zone == '-')
+		{
+			int32 offsetHours = ?;
+			if (!TryReadNDigits(token, ref pos, 2, out offsetHours) || offsetHours > 23 ||
+				pos >= token.Length || token[pos++] != ':' ||
+				!TryReadNDigits(token, ref pos, 2, out offsetMinutes) || offsetMinutes > 59)
+				return false;
+			offsetMinutes += offsetHours * 60;
+			if (zone == '-')
+				offsetMinutes = -offsetMinutes;
+		}
+		else if (zone != 'Z' && zone != 'z')
+			return false;
+		if (pos != token.Length)
+			return false;
+		value = TomlValue.OffsetDateTime(TomlOffsetDateTime.Validated(year, month, day, hour, minute, second, ns, offsetMinutes));
+		return true;
+	}
+
 	private Result<TomlValue, TomlParseError> TryParseDateTime(StringView token)
 	{
 		bool hasT = false;
@@ -216,19 +277,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					pos++;
 				int fracLen = pos - fracStart;
 				if (fracLen == 0)
-				{
 					return false; // trailing dot with no fractional digits
-				}
-				else
-				{
-					String fracStr = scope String(token.Substring(fracStart, fracLen));
-					while (fracStr.Length < 9) fracStr.Append('0');
-					if (fracStr.Length > 9) fracStr.Remove(9, fracStr.Length - 9);
-					// At most 9 digits, so the value fits int32
-					nanosecond = 0;
-					for (int i = 0; i < fracStr.Length; i++)
-						nanosecond = nanosecond * 10 + (int32)(fracStr[i] - '0');
-				}
+				// Digits past the ninth are truncated; fewer are scaled up, so the value fits int32
+				int used = Math.Min(fracLen, 9);
+				for (int i = 0; i < used; i++)
+					nanosecond = nanosecond * 10 + (int32)(token[fracStart + i] - '0');
+				for (int i = used; i < 9; i++)
+					nanosecond *= 10;
 			}
 		}
 		return true;

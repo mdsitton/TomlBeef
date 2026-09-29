@@ -751,7 +751,19 @@ Release-mode asserts (the parser has already checked `TomlDateRules`; Debug stil
 ~127 → ~131, floats ~85 → ~92. Array element lists start with an 8-slot buffer appended to the list
 object, one heap allocation per small array instead of three: small arrays ~59 → ~64. Allocating
 those lists in the document arena instead was tried and was 23% slower, because fresh arena pages
-per document take page faults that malloc's reused memory avoids.
+per document take page faults that malloc's reused memory avoids. The same pattern later covered
+floats and date/times (2026-09-29, same-build A/B): `TryParsePlainFloat` takes
+`[sign]digits[.digits][e[sign]digits]` without underscores in one pass, and when the digits fit an
+exact double mantissa (≤ 2^53) and the decimal exponent is within ±22 it divides or multiplies once
+by an exact power of ten, which IEEE rounds correctly (Clinger's fast path; a test compares 20,000
+generated floats bit for bit with `Double.Parse`); everything else still goes to `Double.Parse`,
+now without copying tokens that have no underscores. `TryParsePlainDateTime` reads the date, time
+and offset in one pass instead of the classify-then-parse scans, and fractional seconds are summed
+arithmetically instead of through a `String`. Both decline anything unusual, so errors come from
+the full path unchanged. Floats 87 → 143 MB/s, dates 131 → 157. The date part sits in a separate
+`ParseOtherBareToken`: inlined into `ParseBareToken` it cost plain integers ~6%. Without metadata,
+arrays use `ParsePlainArray` (whitespace, value, whitespace, then `,` or `]`), skipping the
+per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
   - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`, `plot.py`;
     results in `bench/compare/results.md`, chart in `docs/benchmark.svg`). 20 libraries parse the
     same generated inputs (2–9 MB, at most 1000 keys per table) into their own schema-less
