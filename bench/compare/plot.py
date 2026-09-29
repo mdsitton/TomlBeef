@@ -3,8 +3,8 @@
 
     ./run.sh > results.md && ./plot.py
 
-Two panels: every library's throughput on the config-like `mixed` input, and TomlBeef's speed
-relative to the fastest other library on each input. Plain SVG with its own light/dark colours
+Two panels: every library's throughput on the config-like `mixed` input, and TomlBeef against the
+fastest other library on each input (a labelled pair of MB/s bars). Plain SVG with its own light/dark colours
 (prefers-color-scheme), so it renders crisply on GitHub in either theme. No dependencies.
 """
 import os
@@ -86,52 +86,51 @@ def throughput_panel(parsers, results, top):
     return out, y
 
 
-def speedup_panel(parsers, table, top):
-    """Per input: TomlBeef's MB/s over the fastest other library, plain and style-preserving."""
+def head_to_head_panel(parsers, table, top):
+    """Per input: TomlBeef against the fastest other library, as a pair of labelled MB/s bars, once
+    for data-model parsers and once for style-preserving ones. Inputs differ by 50× in speed, so
+    each input's bars are scaled to its own fastest bar."""
     out = []
-    bar_x, bar_w = 200, 470
+    label_x = 180
+    columns = ((200, "DATA MODEL", "TomlBeef", lambda p: p not in PRESERVING),
+               (565, "KEEPS COMMENTS AND FORMATTING", "TomlBeef preserve", lambda p: p in PRESERVING))
+    bar_w, bar_h, gap, row_h = 190, 13, 4, 46
     y = top
-    out.append(text(40, y, "Speed relative to the fastest other library", "title"))
+    out.append(text(40, y, "TomlBeef against the fastest alternative, per input", "title"))
     y += 22
-    out.append(text(40, y, "per input shape · 1× = as fast as the fastest other library that parsed it", "subtitle"))
-    y += 30
-    rows = []
+    out.append(text(40, y, "MB/s · for each input, the fastest other library that parsed it · bars scaled per input", "subtitle"))
+    y += 34
+    for x, heading, _, _ in columns:
+        out.append(text(x, y, heading, "group"))
+    y += 12
     for name, results in table.items():
-        plain_rivals = {p: v for p, v in results.items() if p not in PRESERVING and p != "TomlBeef" and v}
-        pres_rivals = {p: v for p, v in results.items() if p in PRESERVING and p != "TomlBeef preserve" and v}
-        bp = max(plain_rivals, key=plain_rivals.get)
-        bs = max(pres_rivals, key=pres_rivals.get)
-        rows.append((name, results["TomlBeef"] / plain_rivals[bp], bp,
-                     results["TomlBeef preserve"] / pres_rivals[bs], bs))
-    peak = max(max(r[1], r[3]) for r in rows)
-    scale = lambda ratio: bar_w * ratio / peak
-    # Legend
-    out.append(f'<rect x="{bar_x}" y="{y - 11}" width="12" height="12" rx="2" class="bar-ours"/>')
-    out.append(text(bar_x + 18, y, "data model", "legend"))
-    out.append(f'<rect x="{bar_x + 120}" y="{y - 11}" width="12" height="12" rx="2" class="bar-ours-alt"/>')
-    out.append(text(bar_x + 138, y, "keeps comments and formatting", "legend"))
-    y += 16
-    grid_top = y
-    for name, rp, bp, rs, bs in rows:
-        out.append(text(bar_x - 10, y + 20, INPUT_LABELS.get(name, name), "label", "end"))
-        for i, (ratio, rival, cls) in enumerate(((rp, bp, "bar-ours"), (rs, bs, "bar-ours-alt"))):
-            by = y + 5 + i * 15
-            w = scale(ratio)
-            out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="12" rx="2" class="{cls}"/>')
-            rival_name = "toml (Rust)" if rival == "toml (Rust)" else DISPLAY.get(rival, rival)
-            out.append(text(bar_x + w + 8, by + 10.5, f"{ratio:.1f}×  vs {rival_name}", "small"))
-        y += 40
-    # 1× reference line
-    x1 = bar_x + scale(1.0)
-    out.insert(0, f'<line x1="{x1:.1f}" y1="{grid_top}" x2="{x1:.1f}" y2="{y}" class="ref"/>')
-    out.append(text(x1, y + 14, "1×", "axis", "middle"))
-    return out, y + 20
+        out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+        mid = y + row_h / 2
+        out.append(text(label_x, mid + 5, INPUT_LABELS.get(name, name), "label", "end"))
+        for x, _, ours, member in columns:
+            rivals = {p: v for p, v in results.items() if member(p) and p != ours and v}
+            rival = max(rivals, key=rivals.get)
+            pair = ((DISPLAY.get(ours, ours), results[ours], True),
+                    ("toml (Rust)" if rival == "toml (Rust)" else DISPLAY.get(rival, rival), rivals[rival], False))
+            peak = max(v for _, v, _ in pair)
+            by = mid - bar_h - gap / 2
+            for lib, v, is_ours in pair:
+                w = max(2.0, bar_w * v / peak)
+                out.append(f'<rect x="{x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" class="{"bar-ours" if is_ours else "bar"}"/>')
+                value = f"{v:.1f}" if v < 100 else f"{v:.0f}"
+                out.append(f'<text x="{x + w + 7:.1f}" y="{by + 11:.1f}" class="small">'
+                           f'<tspan class="{"value ours" if is_ours else "value"}">{value}</tspan>'
+                           f'<tspan class="{"libname ours" if is_ours else "libname"}" dx="6">{esc(lib)}</tspan></text>')
+                by += bar_h + gap
+        y += row_h
+    out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+    return out, y + 8
 
 
 def main():
     header, table = read_results()
     panel1, y = throughput_panel(header, table["mixed"], 44)
-    panel2, y = speedup_panel(header, table, y + 56)
+    panel2, y = head_to_head_panel(header, table, y + 56)
     height = y + 36
     footer = text(40, height - 16, "Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · "
                   "glaze and toml-c skip UTF-8 validation", "footer")
@@ -147,23 +146,25 @@ def main():
     .ours {{ font-weight: 700; }}
     .value {{ font-size: 12.5px; fill: #424a53; font-variant-numeric: tabular-nums; }}
     .value.ours {{ fill: #c2410c; }}
-    .small, .legend {{ font-size: 12px; fill: #424a53; }}
+    .small {{ font-size: 12px; fill: #424a53; }}
     .note {{ font-size: 12px; font-style: italic; fill: #8c959f; }}
     .bar {{ fill: #afb8c1; }}
     .bar-ours {{ fill: #ea580c; }}
-    .bar-ours-alt {{ fill: #fb923c; }}
-    .ref {{ stroke: #8c959f; stroke-width: 1; stroke-dasharray: 3 3; }}
+    .rule {{ stroke: #d8dee4; stroke-width: 1; }}
+    .libname {{ fill: #656d76; }}
+    .libname.ours {{ fill: #c2410c; font-weight: 650; }}
     @media (prefers-color-scheme: dark) {{
       .bg {{ fill: #0d1117; }}
       .title, .label {{ fill: #e6edf3; }}
       .subtitle, .footer, .axis, .group {{ fill: #8d96a0; }}
       .lang, .note {{ fill: #6e7681; }}
-      .value, .small, .legend {{ fill: #c9d1d9; }}
+      .value, .small {{ fill: #c9d1d9; }}
       .value.ours {{ fill: #fb923c; }}
       .bar {{ fill: #3d444d; }}
       .bar-ours {{ fill: #f97316; }}
-      .bar-ours-alt {{ fill: #fdba74; }}
-      .ref {{ stroke: #6e7681; }}
+      .rule {{ stroke: #262c36; }}
+      .libname {{ fill: #8d96a0; }}
+      .libname.ours {{ fill: #fb923c; }}
     }}
   </style>"""
     svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}" viewBox="0 0 {W} {height}" role="img" '
