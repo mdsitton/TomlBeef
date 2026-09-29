@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1405" viewBox="0 0 920 1405" role="img" aria-label="TomlBeef parsing throughput compared with other TOML libraries">
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1701" viewBox="0 0 920 1701" role="img" aria-label="TomlBeef parsing throughput compared with other TOML libraries">
 
   <style>
     svg { font-family: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
@@ -50,7 +50,7 @@
       .row-ours { fill: #f97316; fill-opacity: 0.10; }
     }
   </style>
-<rect class="bg" x="0" y="0" width="920" height="1405" rx="10"/>
+<rect class="bg" x="0" y="0" width="920" height="1701" rx="10"/>
 <text x="40.0" y="44.0" class="title" text-anchor="start">Average speed relative to TomlBeef</text>
 <text x="40.0" y="66.0" class="subtitle" text-anchor="start">geometric mean over 10 inputs of each library's MB/s ÷ TomlBeef's · higher is better · TomlBeef = 1×</text>
 <text x="40.0" y="106.0" class="group" text-anchor="start">DATA MODEL</text>
@@ -250,6 +250,32 @@
 <rect x="565" y="1320.0" width="60.7" height="13" rx="2" class="bar"/>
 <text x="632.7" y="1331.0" class="small"><tspan class="value">13.2</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1341.0" x2="880" y2="1341.0" class="rule"/>
-<text x="40.0" y="1371.0" class="footer" text-anchor="start">Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.</text>
-<text x="40.0" y="1389.0" class="footer" text-anchor="start">Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · Java, C# and JavaScript warm up for 1 s first</text>
+<text x="40.0" y="1405.0" class="title" text-anchor="start">Key lookups after parsing</text>
+<text x="40.0" y="1427.0" class="subtitle" text-anchor="start">ns per root[table][key] lookup, lower is better · 100,000 random lookups · log scale · same values found by every library</text>
+<line x1="40" y1="1453.0" x2="880" y2="1453.0" class="rule"/>
+<text x="180.0" y="1494.0" class="label" text-anchor="end">200 tables</text>
+<text x="180.0" y="1509.0" class="note-plain small" text-anchor="end">× 1000 keys</text>
+<rect x="200" y="1462.0" width="67.4" height="13" rx="2" class="bar-ours"/>
+<text x="274.4" y="1473.0" class="small"><tspan class="value ours">124 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1479.0" width="268.7" height="13" rx="2" class="bar"/>
+<text x="475.7" y="1490.0" class="small"><tspan class="value">1892 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">15.2× slower</tspan></text>
+<rect x="200" y="1496.0" width="145.2" height="13" rx="2" class="bar"/>
+<text x="352.2" y="1507.0" class="small"><tspan class="value">356 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.9× slower</tspan></text>
+<rect x="200" y="1513.0" width="118.8" height="13" rx="2" class="bar"/>
+<text x="325.8" y="1524.0" class="small"><tspan class="value">249 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">2.0× slower</tspan></text>
+<line x1="40" y1="1535.0" x2="880" y2="1535.0" class="rule"/>
+<text x="180.0" y="1576.0" class="label" text-anchor="end">15000 root sections</text>
+<text x="180.0" y="1591.0" class="note-plain small" text-anchor="end">× ~10 keys</text>
+<rect x="200" y="1544.0" width="54.4" height="13" rx="2" class="bar-ours"/>
+<text x="261.4" y="1555.0" class="small"><tspan class="value ours">104 ns</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan><tspan class="note-plain" dx="8"></tspan></text>
+<rect x="200" y="1561.0" width="426.5" height="13" rx="2" class="bar"/>
+<text x="633.5" y="1572.0" class="small"><tspan class="value">15968 ns</tspan><tspan class="libname" dx="6">toml-spanner</tspan><tspan class="note-plain" dx="8">153.1× slower</tspan></text>
+<rect x="200" y="1578.0" width="115.8" height="13" rx="2" class="bar"/>
+<text x="322.8" y="1589.0" class="small"><tspan class="value">239 ns</tspan><tspan class="libname" dx="6">toml (Rust)</tspan><tspan class="note-plain" dx="8">2.3× slower</tspan></text>
+<rect x="200" y="1595.0" width="93.9" height="13" rx="2" class="bar"/>
+<text x="300.9" y="1606.0" class="small"><tspan class="value">178 ns</tspan><tspan class="libname" dx="6">toml_edit</tspan><tspan class="note-plain" dx="8">1.7× slower</tspan></text>
+<line x1="40" y1="1617.0" x2="880" y2="1617.0" class="rule"/>
+<text x="40.0" y="1637.0" class="footnote" text-anchor="start">toml-spanner scans a table's entries on every lookup; the others use a hash map (TomlBeef, toml_edit) or a B-tree (toml).</text>
+<text x="40.0" y="1667.0" class="footer" text-anchor="start">Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control characters, bad UTF-8); glaze and toml-c skip UTF-8 checks.</text>
+<text x="40.0" y="1685.0" class="footer" text-anchor="start">Linux x86-64, single thread · bench/compare (pinned versions, generated inputs) · Java, C# and JavaScript warm up for 1 s first</text>
 </svg>

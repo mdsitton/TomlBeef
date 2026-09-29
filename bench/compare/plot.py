@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results.md")
 OUT = os.path.join(HERE, "..", "..", "docs", "benchmark.svg")
 TABLE_OUT = os.path.join(HERE, "..", "..", "docs", "benchmark-table.svg")
+LOOKUP_RESULTS = os.path.join(HERE, "lookup-results.md")
 
 # Style-preserving parsers (keep comments and formatting) are compared with each other
 PRESERVING = {"TomlBeef preserve", "toml_edit", "Tomlyn syntax"}
@@ -349,10 +350,59 @@ def write_svg(path, width, height, body, label):
     print(f"wrote {os.path.relpath(path)}")
 
 
+def lookup_panel(top):
+    """Key lookups after parsing (lookup-results.md, written by lookup.sh): ns per lookup for each
+    library on each document, as log-scale bars (the results span 100 to 16000 ns), each labelled with
+    its time and how it compares with TomlBeef."""
+    rows = [l for l in open(LOOKUP_RESULTS) if l.startswith("|") and not l.startswith("|---")]
+    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    libs = split(rows[0])[1:]
+    docs = [(cells[0], [float(v) for v in cells[1:]]) for cells in map(split, rows[1:])]
+    out = []
+    label_x, bar_x, bar_w, bar_h, gap = 180, 200, 440, 13, 4
+    lo, hi = math.log10(50), math.log10(max(max(v) for _, v in docs) * 1.2)
+    scale = lambda ns: bar_w * (math.log10(ns) - lo) / (hi - lo)
+    y = top
+    out.append(text(40, y, "Key lookups after parsing", "title"))
+    y += 22
+    out.append(text(40, y, "ns per root[table][key] lookup, lower is better · 100,000 random lookups · log scale · "
+                    "same values found by every library", "subtitle"))
+    y += 26
+    for doc, values in docs:
+        out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+        block_h = len(libs) * (bar_h + gap) + 14
+        mid = y + block_h / 2
+        # "200 tables × 1000 keys" → two lines: the count, then what is in each
+        first, _, rest = doc.partition(" × ")
+        out.append(text(label_x, mid, first, "label", "end"))
+        out.append(text(label_x, mid + 15, "× " + rest, "note-plain small", "end"))
+        base = values[libs.index("TomlBeef")]
+        by = y + 9
+        for lib, ns in zip(libs, values):
+            ours = lib == "TomlBeef"
+            w = max(2.0, scale(ns))
+            out.append(f'<rect x="{bar_x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" class="{"bar-ours" if ours else "bar"}"/>')
+            compare = "" if ours else (f"{ns / base:.1f}× slower" if ns > base else f"{base / ns:.1f}× faster")
+            shown = f"{ns:.0f} ns"
+            out.append(f'<text x="{bar_x + w + 7:.1f}" y="{by + 11:.1f}" class="small">'
+                       f'<tspan class="{"value ours" if ours else "value"}">{shown}</tspan>'
+                       f'<tspan class="{"libname ours" if ours else "libname"}" dx="6">{esc(lib)}</tspan>'
+                       f'<tspan class="note-plain" dx="8">{compare}</tspan></text>')
+            by += bar_h + gap
+        y += block_h
+    out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
+    y += 20
+    out.append(text(40, y, "toml-spanner scans a table's entries on every lookup; the others use a hash map "
+                    "(TomlBeef, toml_edit) or a B-tree (toml).", "footnote"))
+    return out, y + 8
+
+
 def main():
     header, table, timeouts = read_results()
     panel1, y = relative_panel(header, table, timeouts, 44)
     panel2, y = head_to_head_panel(header, table, timeouts, y + 56)
+    panel3, y = lookup_panel(y + 56)
+    panel2 += panel3
     height = y + 56
     footer = [
         text(40, height - 34, "Validation differs: zig-toml accepts invalid TOML (duplicate keys, invalid dates, control "
