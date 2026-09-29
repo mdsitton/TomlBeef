@@ -65,92 +65,92 @@
 <text x="40.0" y="131.5" class="lang" text-anchor="start">Rust</text>
 <text x="80" y="131.5"><tspan class="label">toml-spanner</tspan><tspan class="repo" dx="8">exrok/toml-spanner</tspan></text>
 <rect x="340" y="118.5" width="330.0" height="16" rx="3" class="bar"/>
-<text x="678.0" y="131.5" class="small"><tspan class="value">1.48×</tspan><tspan class="note-plain" dx="8">1.5× faster than TomlBeef</tspan></text>
+<text x="678.0" y="131.5" class="small"><tspan class="value">1.09×</tspan><tspan class="note-plain" dx="8">1.1× faster than TomlBeef</tspan></text>
 <text x="40.0" y="156.5" class="lang" text-anchor="start">Beef</text>
 <text x="80" y="156.5"><tspan class="label ours">TomlBeef</tspan><tspan class="repo" dx="8">mdsitton/TomlBeef</tspan></text>
-<rect x="340" y="143.5" width="223.2" height="16" rx="3" class="bar-ours"/>
-<text x="571.2" y="156.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
+<rect x="340" y="143.5" width="303.5" height="16" rx="3" class="bar-ours"/>
+<text x="651.5" y="156.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
 <text x="40.0" y="181.5" class="lang" text-anchor="start">Zig</text>
 <text x="80" y="181.5"><tspan class="label">zig-toml</tspan><tspan class="repo" dx="8">sam701/zig-toml</tspan></text>
-<rect x="340" y="168.5" width="183.3" height="16" rx="3" class="bar"/>
-<text x="531.3" y="181.5" class="small"><tspan class="value">0.82×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.2× faster</tspan></text>
+<rect x="340" y="168.5" width="186.7" height="16" rx="3" class="bar"/>
+<text x="534.7" y="181.5" class="small"><tspan class="value">0.62×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.6× faster</tspan></text>
 <text x="40.0" y="206.5" class="lang" text-anchor="start">C++</text>
 <text x="80" y="206.5"><tspan class="label">glaze*</tspan><tspan class="repo" dx="8">stephenberry/glaze</tspan></text>
-<rect x="340" y="193.5" width="147.6" height="16" rx="3" class="bar"/>
-<text x="495.6" y="206.5" class="small"><tspan class="value">0.66×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.5× faster</tspan></text>
+<rect x="340" y="193.5" width="151.5" height="16" rx="3" class="bar"/>
+<text x="499.5" y="206.5" class="small"><tspan class="value">0.50×</tspan><tspan class="note-plain" dx="8">TomlBeef 2.0× faster</tspan></text>
 <text x="40.0" y="231.5" class="lang" text-anchor="start">JS</text>
 <text x="80" y="231.5"><tspan class="label">smol-toml</tspan><tspan class="repo" dx="8">squirrelchat/smol-toml</tspan></text>
-<rect x="340" y="218.5" width="61.1" height="16" rx="3" class="bar"/>
-<text x="409.1" y="231.5" class="small"><tspan class="value">0.27×</tspan><tspan class="note-plain" dx="8">TomlBeef 3.7× faster</tspan></text>
+<rect x="340" y="218.5" width="61.4" height="16" rx="3" class="bar"/>
+<text x="409.4" y="231.5" class="small"><tspan class="value">0.20×</tspan><tspan class="note-plain" dx="8">TomlBeef 4.9× faster</tspan></text>
 <text x="40.0" y="256.5" class="lang" text-anchor="start">Rust</text>
 <text x="80" y="256.5"><tspan class="label">toml</tspan><tspan class="repo" dx="8">toml-rs/toml</tspan></text>
-<rect x="340" y="243.5" width="60.4" height="16" rx="3" class="bar"/>
-<text x="408.4" y="256.5" class="small"><tspan class="value">0.27×</tspan><tspan class="note-plain" dx="8">TomlBeef 3.7× faster</tspan></text>
+<rect x="340" y="243.5" width="61.2" height="16" rx="3" class="bar"/>
+<text x="409.2" y="256.5" class="small"><tspan class="value">0.20×</tspan><tspan class="note-plain" dx="8">TomlBeef 5.0× faster</tspan></text>
 <text x="40.0" y="281.5" class="lang" text-anchor="start">C#</text>
 <text x="80" y="281.5"><tspan class="label">Tomlyn</tspan><tspan class="repo" dx="8">xoofx/Tomlyn</tspan></text>
-<rect x="340" y="268.5" width="38.6" height="16" rx="3" class="bar"/>
-<text x="386.6" y="281.5" class="small"><tspan class="value">0.17×</tspan><tspan class="note-plain" dx="8">TomlBeef 5.8× faster</tspan></text>
+<rect x="340" y="268.5" width="39.1" height="16" rx="3" class="bar"/>
+<text x="387.1" y="281.5" class="small"><tspan class="value">0.13×</tspan><tspan class="note-plain" dx="8">TomlBeef 7.8× faster</tspan></text>
 <text x="40.0" y="306.5" class="lang" text-anchor="start">Rust</text>
 <text x="80" y="306.5"><tspan class="label">toml-span*</tspan><tspan class="repo" dx="8">EmbarkStudios/toml-span</tspan></text>
-<rect x="340" y="293.5" width="37.2" height="16" rx="3" class="bar"/>
-<text x="385.2" y="306.5" class="small"><tspan class="value">0.17×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.0× faster</tspan></text>
+<rect x="340" y="293.5" width="38.4" height="16" rx="3" class="bar"/>
+<text x="386.4" y="306.5" class="small"><tspan class="value">0.13×</tspan><tspan class="note-plain" dx="8">TomlBeef 7.9× faster</tspan></text>
 <text x="40.0" y="331.5" class="lang" text-anchor="start">C++</text>
 <text x="80" y="331.5"><tspan class="label">toml++</tspan><tspan class="repo" dx="8">marzer/tomlplusplus</tspan></text>
-<rect x="340" y="318.5" width="35.7" height="16" rx="3" class="bar"/>
-<text x="383.7" y="331.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.3× faster</tspan></text>
+<rect x="340" y="318.5" width="36.3" height="16" rx="3" class="bar"/>
+<text x="384.3" y="331.5" class="small"><tspan class="value">0.12×</tspan><tspan class="note-plain" dx="8">TomlBeef 8.4× faster</tspan></text>
 <text x="40.0" y="356.5" class="lang" text-anchor="start">C</text>
 <text x="80" y="356.5"><tspan class="label">toml-c</tspan><tspan class="repo" dx="8">arp242/toml-c</tspan></text>
-<rect x="340" y="343.5" width="22.1" height="16" rx="3" class="bar"/>
-<text x="370.1" y="356.5" class="small"><tspan class="value">0.099×</tspan><tspan class="note-plain" dx="8">TomlBeef 10.1× faster</tspan></text>
+<rect x="340" y="343.5" width="22.3" height="16" rx="3" class="bar"/>
+<text x="370.3" y="356.5" class="small"><tspan class="value">0.074×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.6× faster</tspan></text>
 <text x="40.0" y="381.5" class="lang" text-anchor="start">C</text>
 <text x="80" y="381.5"><tspan class="label">tomlc17</tspan><tspan class="repo" dx="8">cktan/tomlc17</tspan></text>
-<rect x="340" y="368.5" width="21.7" height="16" rx="3" class="bar"/>
-<text x="369.7" y="381.5" class="small"><tspan class="value">0.097×</tspan><tspan class="note-plain" dx="8">TomlBeef 10.3× faster</tspan></text>
+<rect x="340" y="368.5" width="22.0" height="16" rx="3" class="bar"/>
+<text x="370.0" y="381.5" class="small"><tspan class="value">0.072×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.8× faster</tspan></text>
 <text x="40.0" y="406.5" class="lang" text-anchor="start">Go</text>
 <text x="80" y="406.5"><tspan class="label">toml</tspan><tspan class="repo" dx="8">BurntSushi/toml</tspan></text>
-<rect x="340" y="393.5" width="20.1" height="16" rx="3" class="bar"/>
-<text x="368.1" y="406.5" class="small"><tspan class="value">0.090×</tspan><tspan class="note-plain" dx="8">TomlBeef 11.1× faster</tspan></text>
+<rect x="340" y="393.5" width="20.0" height="16" rx="3" class="bar"/>
+<text x="368.0" y="406.5" class="small"><tspan class="value">0.066×</tspan><tspan class="note-plain" dx="8">TomlBeef 15.2× faster</tspan></text>
 <text x="40.0" y="431.5" class="lang" text-anchor="start">JS</text>
 <text x="80" y="431.5"><tspan class="label">js-toml</tspan><tspan class="repo" dx="8">sunnyadn/js-toml</tspan></text>
-<rect x="340" y="418.5" width="10.7" height="16" rx="3" class="bar"/>
-<text x="358.7" y="431.5" class="small"><tspan class="value">0.048×</tspan><tspan class="note-plain" dx="8">TomlBeef 20.9× faster</tspan></text>
+<rect x="340" y="418.5" width="10.9" height="16" rx="3" class="bar"/>
+<text x="358.9" y="431.5" class="small"><tspan class="value">0.036×</tspan><tspan class="note-plain" dx="8">TomlBeef 27.9× faster</tspan></text>
 <text x="40.0" y="456.5" class="lang" text-anchor="start">Go</text>
 <text x="80" y="456.5"><tspan class="label">go-toml</tspan><tspan class="repo" dx="8">pelletier/go-toml</tspan></text>
-<rect x="340" y="443.5" width="10.6" height="16" rx="3" class="bar"/>
-<text x="358.6" y="456.5" class="small"><tspan class="value">0.048×</tspan><tspan class="note-plain" dx="8">TomlBeef 21.0× faster</tspan></text>
+<rect x="340" y="443.5" width="10.9" height="16" rx="3" class="bar"/>
+<text x="358.9" y="456.5" class="small"><tspan class="value">0.036×</tspan><tspan class="note-plain" dx="8">TomlBeef 28.0× faster</tspan></text>
 <text x="40.0" y="481.5" class="lang" text-anchor="start">Java</text>
-<text x="80" y="481.5"><tspan class="label">tomlj*</tspan><tspan class="repo" dx="8">tomlj/tomlj</tspan></text>
-<rect x="340" y="468.5" width="8.9" height="16" rx="3" class="bar"/>
-<text x="356.9" y="481.5" class="small"><tspan class="value">0.040×</tspan><tspan class="note-plain" dx="8">TomlBeef 25.2× faster</tspan></text>
+<text x="80" y="481.5"><tspan class="label">jtoml*</tspan><tspan class="repo" dx="8">WasabiThumb/jtoml</tspan></text>
+<rect x="340" y="468.5" width="8.7" height="16" rx="3" class="bar"/>
+<text x="356.7" y="481.5" class="small"><tspan class="value">0.029×</tspan><tspan class="note-plain" dx="8">TomlBeef 34.9× faster</tspan></text>
 <text x="40.0" y="506.5" class="lang" text-anchor="start">Java</text>
-<text x="80" y="506.5"><tspan class="label">jtoml*</tspan><tspan class="repo" dx="8">WasabiThumb/jtoml</tspan></text>
-<rect x="340" y="493.5" width="8.8" height="16" rx="3" class="bar"/>
-<text x="356.8" y="506.5" class="small"><tspan class="value">0.039×</tspan><tspan class="note-plain" dx="8">TomlBeef 25.4× faster</tspan></text>
+<text x="80" y="506.5"><tspan class="label">tomlj*</tspan><tspan class="repo" dx="8">tomlj/tomlj</tspan></text>
+<rect x="340" y="493.5" width="7.9" height="16" rx="3" class="bar"/>
+<text x="355.9" y="506.5" class="small"><tspan class="value">0.026×</tspan><tspan class="note-plain" dx="8">TomlBeef 38.5× faster</tspan></text>
 <text x="40.0" y="531.5" class="lang" text-anchor="start">JS</text>
 <text x="80" y="531.5"><tspan class="label">toml</tspan><tspan class="repo" dx="8">BinaryMuse/toml-node</tspan></text>
-<rect x="340" y="518.5" width="6.6" height="16" rx="3" class="bar"/>
-<text x="354.6" y="531.5" class="small"><tspan class="value">0.029×</tspan><tspan class="note-plain" dx="8">TomlBeef 34.0× faster</tspan></text>
+<rect x="340" y="518.5" width="6.7" height="16" rx="3" class="bar"/>
+<text x="354.7" y="531.5" class="small"><tspan class="value">0.022×</tspan><tspan class="note-plain" dx="8">TomlBeef 45.3× faster</tspan></text>
 <text x="40.0" y="556.5" class="lang" text-anchor="start">C++</text>
 <text x="80" y="556.5"><tspan class="label">toml11</tspan><tspan class="repo" dx="8">ToruNiina/toml11</tspan></text>
 <rect x="340" y="543.5" width="3.2" height="16" rx="3" class="bar"/>
-<text x="351.2" y="556.5" class="small"><tspan class="value">0.014×</tspan><tspan class="note-plain" dx="8">TomlBeef 70.3× faster</tspan></text>
+<text x="351.2" y="556.5" class="small"><tspan class="value">0.010×</tspan><tspan class="note-plain" dx="8">TomlBeef 95.8× faster</tspan></text>
 <text x="40.0" y="586.0" class="group" text-anchor="start">KEEPS COMMENTS AND FORMATTING</text>
 <text x="40.0" y="611.5" class="lang" text-anchor="start">Beef</text>
 <text x="80" y="611.5"><tspan class="label ours">TomlBeef</tspan><tspan class="repo" dx="8">mdsitton/TomlBeef</tspan></text>
-<rect x="340" y="598.5" width="223.2" height="16" rx="3" class="bar-ours"/>
-<text x="571.2" y="611.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
+<rect x="340" y="598.5" width="303.5" height="16" rx="3" class="bar-ours"/>
+<text x="651.5" y="611.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
 <text x="40.0" y="636.5" class="lang" text-anchor="start">Rust</text>
 <text x="80" y="636.5"><tspan class="label">toml_edit</tspan><tspan class="repo" dx="8">toml-rs/toml</tspan></text>
-<rect x="340" y="623.5" width="120.2" height="16" rx="3" class="bar"/>
-<text x="468.2" y="636.5" class="small"><tspan class="value">0.54×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.9× faster</tspan></text>
+<rect x="340" y="623.5" width="142.4" height="16" rx="3" class="bar"/>
+<text x="490.4" y="636.5" class="small"><tspan class="value">0.47×</tspan><tspan class="note-plain" dx="8">TomlBeef 2.1× faster</tspan></text>
 <text x="40.0" y="661.5" class="lang" text-anchor="start">C#</text>
 <text x="80" y="661.5"><tspan class="label">Tomlyn (syntax tree)</tspan><tspan class="repo" dx="8">xoofx/Tomlyn</tspan></text>
-<rect x="340" y="648.5" width="16.8" height="16" rx="3" class="bar"/>
-<text x="364.8" y="661.5" class="small"><tspan class="value">0.075×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.3× faster</tspan></text>
+<rect x="340" y="648.5" width="19.7" height="16" rx="3" class="bar"/>
+<text x="367.7" y="661.5" class="small"><tspan class="value">0.065×</tspan><tspan class="note-plain" dx="8">TomlBeef 15.4× faster</tspan></text>
 <text x="40.0" y="691.0" class="footnote" text-anchor="start">* glaze failed config (mixed) and dates (no date/time in its schema-less mode; left out of its average).</text>
 <text x="40.0" y="713.0" class="footnote" text-anchor="start">* toml-span failed config (mixed) and dates (no date/time support; left out of its average).</text>
-<text x="40.0" y="735.0" class="footnote" text-anchor="start">* tomlj did not finish comments only within 60 s (counted at that bound, which flatters it).</text>
-<text x="40.0" y="757.0" class="footnote" text-anchor="start">* jtoml did not finish config (mixed) within 60 s (counted at that bound, which flatters it).</text>
+<text x="40.0" y="735.0" class="footnote" text-anchor="start">* jtoml did not finish config (mixed) within 60 s (counted at that bound, which flatters it).</text>
+<text x="40.0" y="757.0" class="footnote" text-anchor="start">* tomlj did not finish comments only within 60 s (counted at that bound, which flatters it).</text>
 <text x="40.0" y="813.0" class="title" text-anchor="start">TomlBeef against the fastest alternative, per input</text>
 <text x="40.0" y="835.0" class="subtitle" text-anchor="start">MB/s · for each input, the fastest other library that parsed it · bars scaled per input</text>
 <text x="200.0" y="869.0" class="group" text-anchor="start">DATA MODEL</text>
@@ -158,227 +158,227 @@
 <line x1="40" y1="881.0" x2="880" y2="881.0" class="rule"/>
 <text x="180.0" y="905.0" class="label" text-anchor="end">config (mixed)</text>
 <text x="180.0" y="919.0" class="note-plain small" text-anchor="end">glaze*, toml-span* failed</text>
-<rect x="200" y="889.0" width="98.2" height="13" rx="2" class="bar-ours"/>
-<text x="305.2" y="900.0" class="small"><tspan class="value ours">94.6</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="889.0" width="132.5" height="13" rx="2" class="bar-ours"/>
+<text x="339.5" y="900.0" class="small"><tspan class="value ours">124</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="906.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="917.0" class="small"><tspan class="value">183</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="917.0" class="small"><tspan class="value">178</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="889.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="900.0" class="small"><tspan class="value ours">54.8</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="906.0" width="99.2" height="13" rx="2" class="bar"/>
-<text x="671.2" y="917.0" class="small"><tspan class="value">28.6</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="900.0" class="small"><tspan class="value ours">63.5</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="906.0" width="86.2" height="13" rx="2" class="bar"/>
+<text x="658.2" y="917.0" class="small"><tspan class="value">28.8</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="927.0" x2="880" y2="927.0" class="rule"/>
 <text x="180.0" y="955.0" class="label" text-anchor="end">commented config</text>
-<rect x="200" y="935.0" width="171.1" height="13" rx="2" class="bar-ours"/>
-<text x="378.1" y="946.0" class="small"><tspan class="value ours">546</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="200" y="952.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="963.0" class="small"><tspan class="value">606</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<rect x="200" y="935.0" width="190.0" height="13" rx="2" class="bar-ours"/>
+<text x="397.0" y="946.0" class="small"><tspan class="value ours">609</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="952.0" width="188.8" height="13" rx="2" class="bar"/>
+<text x="395.8" y="963.0" class="small"><tspan class="value">605</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="935.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="946.0" class="small"><tspan class="value ours">264</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="952.0" width="105.0" height="13" rx="2" class="bar"/>
-<text x="677.0" y="963.0" class="small"><tspan class="value">146</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="946.0" class="small"><tspan class="value ours">284</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="952.0" width="99.3" height="13" rx="2" class="bar"/>
+<text x="671.3" y="963.0" class="small"><tspan class="value">148</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="973.0" x2="880" y2="973.0" class="rule"/>
 <text x="180.0" y="1001.0" class="label" text-anchor="end">comments only</text>
 <rect x="200" y="981.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="397.0" y="992.0" class="small"><tspan class="value ours">2972</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="200" y="998.0" width="176.1" height="13" rx="2" class="bar"/>
-<text x="383.1" y="1009.0" class="small"><tspan class="value">2754</tspan><tspan class="libname" dx="6">glaze</tspan></text>
+<text x="397.0" y="992.0" class="small"><tspan class="value ours">2976</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="998.0" width="176.2" height="13" rx="2" class="bar"/>
+<text x="383.2" y="1009.0" class="small"><tspan class="value">2759</tspan><tspan class="libname" dx="6">glaze</tspan></text>
 <rect x="565" y="981.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="992.0" class="small"><tspan class="value ours">746</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="998.0" width="146.8" height="13" rx="2" class="bar"/>
-<text x="718.8" y="1009.0" class="small"><tspan class="value">576</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="992.0" class="small"><tspan class="value ours">773</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="998.0" width="142.3" height="13" rx="2" class="bar"/>
+<text x="714.3" y="1009.0" class="small"><tspan class="value">579</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1019.0" x2="880" y2="1019.0" class="rule"/>
 <text x="180.0" y="1047.0" class="label" text-anchor="end">strings</text>
-<rect x="200" y="1027.0" width="114.8" height="13" rx="2" class="bar-ours"/>
-<text x="321.8" y="1038.0" class="small"><tspan class="value ours">494</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1027.0" width="164.6" height="13" rx="2" class="bar-ours"/>
+<text x="371.6" y="1038.0" class="small"><tspan class="value ours">706</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="1044.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1055.0" class="small"><tspan class="value">818</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="1055.0" class="small"><tspan class="value">815</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1027.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1038.0" class="small"><tspan class="value ours">272</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1044.0" width="124.7" height="13" rx="2" class="bar"/>
-<text x="696.7" y="1055.0" class="small"><tspan class="value">178</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1038.0" class="small"><tspan class="value ours">357</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1044.0" width="94.1" height="13" rx="2" class="bar"/>
+<text x="666.1" y="1055.0" class="small"><tspan class="value">177</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1065.0" x2="880" y2="1065.0" class="rule"/>
 <text x="180.0" y="1093.0" class="label" text-anchor="end">integers</text>
-<rect x="200" y="1073.0" width="165.0" height="13" rx="2" class="bar-ours"/>
-<text x="372.0" y="1084.0" class="small"><tspan class="value ours">153</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="200" y="1090.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1101.0" class="small"><tspan class="value">176</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<rect x="200" y="1073.0" width="190.0" height="13" rx="2" class="bar-ours"/>
+<text x="397.0" y="1084.0" class="small"><tspan class="value ours">197</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1090.0" width="164.0" height="13" rx="2" class="bar"/>
+<text x="371.0" y="1101.0" class="small"><tspan class="value">170</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1073.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1084.0" class="small"><tspan class="value ours">106</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1090.0" width="87.0" height="13" rx="2" class="bar"/>
-<text x="659.0" y="1101.0" class="small"><tspan class="value">48.4</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1084.0" class="small"><tspan class="value ours">112</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1090.0" width="80.5" height="13" rx="2" class="bar"/>
+<text x="652.5" y="1101.0" class="small"><tspan class="value">47.6</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1111.0" x2="880" y2="1111.0" class="rule"/>
 <text x="180.0" y="1139.0" class="label" text-anchor="end">floats</text>
-<rect x="200" y="1119.0" width="111.0" height="13" rx="2" class="bar-ours"/>
-<text x="318.0" y="1130.0" class="small"><tspan class="value ours">88.2</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="200" y="1136.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1147.0" class="small"><tspan class="value">151</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<rect x="200" y="1119.0" width="190.0" height="13" rx="2" class="bar-ours"/>
+<text x="397.0" y="1130.0" class="small"><tspan class="value ours">175</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1136.0" width="166.1" height="13" rx="2" class="bar"/>
+<text x="373.1" y="1147.0" class="small"><tspan class="value">153</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1119.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1130.0" class="small"><tspan class="value ours">59.7</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1136.0" width="133.0" height="13" rx="2" class="bar"/>
-<text x="705.0" y="1147.0" class="small"><tspan class="value">41.8</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1130.0" class="small"><tspan class="value ours">97.1</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1136.0" width="80.8" height="13" rx="2" class="bar"/>
+<text x="652.8" y="1147.0" class="small"><tspan class="value">41.3</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1157.0" x2="880" y2="1157.0" class="rule"/>
 <text x="180.0" y="1181.0" class="label" text-anchor="end">dates</text>
 <text x="180.0" y="1195.0" class="note-plain small" text-anchor="end">glaze*, toml-span* failed</text>
-<rect x="200" y="1165.0" width="108.2" height="13" rx="2" class="bar-ours"/>
-<text x="315.2" y="1176.0" class="small"><tspan class="value ours">130</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1165.0" width="173.2" height="13" rx="2" class="bar-ours"/>
+<text x="380.2" y="1176.0" class="small"><tspan class="value ours">204</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="1182.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1193.0" class="small"><tspan class="value">229</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="1193.0" class="small"><tspan class="value">224</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1165.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1176.0" class="small"><tspan class="value ours">89.7</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1182.0" width="122.9" height="13" rx="2" class="bar"/>
-<text x="694.9" y="1193.0" class="small"><tspan class="value">58.0</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1176.0" class="small"><tspan class="value ours">122</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1182.0" width="89.8" height="13" rx="2" class="bar"/>
+<text x="661.8" y="1193.0" class="small"><tspan class="value">57.4</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1203.0" x2="880" y2="1203.0" class="rule"/>
 <text x="180.0" y="1231.0" class="label" text-anchor="end">small arrays</text>
-<rect x="200" y="1211.0" width="88.2" height="13" rx="2" class="bar-ours"/>
-<text x="295.2" y="1222.0" class="small"><tspan class="value ours">67.2</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1211.0" width="107.2" height="13" rx="2" class="bar-ours"/>
+<text x="314.2" y="1222.0" class="small"><tspan class="value ours">79.3</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="1228.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1239.0" class="small"><tspan class="value">145</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="1239.0" class="small"><tspan class="value">141</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1211.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1222.0" class="small"><tspan class="value ours">35.3</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1228.0" width="105.5" height="13" rx="2" class="bar"/>
-<text x="677.5" y="1239.0" class="small"><tspan class="value">19.6</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1222.0" class="small"><tspan class="value ours">31.8</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1228.0" width="118.9" height="13" rx="2" class="bar"/>
+<text x="690.9" y="1239.0" class="small"><tspan class="value">19.9</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1249.0" x2="880" y2="1249.0" class="rule"/>
 <text x="180.0" y="1277.0" class="label" text-anchor="end">[table] headers</text>
-<rect x="200" y="1257.0" width="107.8" height="13" rx="2" class="bar-ours"/>
-<text x="314.8" y="1268.0" class="small"><tspan class="value ours">73.1</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1257.0" width="138.5" height="13" rx="2" class="bar-ours"/>
+<text x="345.5" y="1268.0" class="small"><tspan class="value ours">92.4</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="1274.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1285.0" class="small"><tspan class="value">129</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="1285.0" class="small"><tspan class="value">127</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1257.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1268.0" class="small"><tspan class="value ours">55.4</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1274.0" width="73.4" height="13" rx="2" class="bar"/>
-<text x="645.4" y="1285.0" class="small"><tspan class="value">21.4</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1268.0" class="small"><tspan class="value ours">56.2</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1274.0" width="73.0" height="13" rx="2" class="bar"/>
+<text x="645.0" y="1285.0" class="small"><tspan class="value">21.6</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1295.0" x2="880" y2="1295.0" class="rule"/>
 <text x="180.0" y="1323.0" class="label" text-anchor="end">dotted keys</text>
-<rect x="200" y="1303.0" width="102.9" height="13" rx="2" class="bar-ours"/>
-<text x="309.9" y="1314.0" class="small"><tspan class="value ours">56.0</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="200" y="1303.0" width="158.0" height="13" rx="2" class="bar-ours"/>
+<text x="365.0" y="1314.0" class="small"><tspan class="value ours">84.9</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
 <rect x="200" y="1320.0" width="190.0" height="13" rx="2" class="bar"/>
-<text x="397.0" y="1331.0" class="small"><tspan class="value">103</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
+<text x="397.0" y="1331.0" class="small"><tspan class="value">102</tspan><tspan class="libname" dx="6">toml-spanner</tspan></text>
 <rect x="565" y="1303.0" width="190.0" height="13" rx="2" class="bar-ours"/>
-<text x="762.0" y="1314.0" class="small"><tspan class="value ours">41.6</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
-<rect x="565" y="1320.0" width="59.8" height="13" rx="2" class="bar"/>
-<text x="631.8" y="1331.0" class="small"><tspan class="value">13.1</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
+<text x="762.0" y="1314.0" class="small"><tspan class="value ours">47.2</tspan><tspan class="libname ours" dx="6">TomlBeef</tspan></text>
+<rect x="565" y="1320.0" width="54.3" height="13" rx="2" class="bar"/>
+<text x="626.3" y="1331.0" class="small"><tspan class="value">13.5</tspan><tspan class="libname" dx="6">toml_edit</tspan></text>
 <line x1="40" y1="1341.0" x2="880" y2="1341.0" class="rule"/>
 <text x="40.0" y="1405.0" class="title" text-anchor="start">Key lookups after parsing</text>
 <text x="40.0" y="1427.0" class="subtitle" text-anchor="start">ns per root[table][key] lookup, lower is better · 100,000 random lookups · log scale · every library found the same values</text>
 <text x="40.0" y="1457.0" class="label" text-anchor="start">200 tables × 1000 keys</text>
 <text x="182.0" y="1479.0" class="libname" text-anchor="end">zig-toml</text>
-<rect x="190" y="1469.0" width="6.5" height="12" rx="2" class="bar"/>
-<text x="202.5" y="1479.0" class="small"><tspan class="value">50</tspan><tspan class="note-plain" dx="6">2.0× faster</tspan></text>
+<rect x="190" y="1469.0" width="4.3" height="12" rx="2" class="bar"/>
+<text x="200.3" y="1479.0" class="small"><tspan class="value">45</tspan><tspan class="note-plain" dx="6">1.6× faster</tspan></text>
 <text x="182.0" y="1497.0" class="libname" text-anchor="end">go-toml</text>
-<rect x="190" y="1487.0" width="7.7" height="12" rx="2" class="bar"/>
-<text x="203.7" y="1497.0" class="small"><tspan class="value">53</tspan><tspan class="note-plain" dx="6">1.9× faster</tspan></text>
+<rect x="190" y="1487.0" width="7.6" height="12" rx="2" class="bar"/>
+<text x="203.6" y="1497.0" class="small"><tspan class="value">54</tspan><tspan class="note-plain" dx="6">1.4× faster</tspan></text>
 <text x="182.0" y="1515.0" class="libname" text-anchor="end">BurntSushi/toml</text>
-<rect x="190" y="1505.0" width="11.0" height="12" rx="2" class="bar"/>
-<text x="207.0" y="1515.0" class="small"><tspan class="value">63</tspan><tspan class="note-plain" dx="6">1.6× faster</tspan></text>
-<text x="182.0" y="1533.0" class="libname" text-anchor="end">smol-toml</text>
-<rect x="190" y="1523.0" width="12.8" height="12" rx="2" class="bar"/>
-<text x="208.8" y="1533.0" class="small"><tspan class="value">70</tspan><tspan class="note-plain" dx="6">1.5× faster</tspan></text>
+<rect x="190" y="1505.0" width="12.3" height="12" rx="2" class="bar"/>
+<text x="208.3" y="1515.0" class="small"><tspan class="value">69</tspan><tspan class="note-plain" dx="6">1.1× faster</tspan></text>
+<text x="182.0" y="1533.0" class="libname ours" text-anchor="end">TomlBeef (preserve)</text>
+<rect x="190" y="1523.0" width="12.6" height="12" rx="2" class="bar-ours"/>
+<text x="208.6" y="1533.0" class="small"><tspan class="value ours">70</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
 <text x="182.0" y="1551.0" class="libname" text-anchor="end">toml (JS)</text>
-<rect x="190" y="1541.0" width="13.4" height="12" rx="2" class="bar"/>
-<text x="209.4" y="1551.0" class="small"><tspan class="value">72</tspan><tspan class="note-plain" dx="6">1.4× faster</tspan></text>
-<text x="182.0" y="1569.0" class="libname" text-anchor="end">js-toml</text>
-<rect x="190" y="1559.0" width="14.0" height="12" rx="2" class="bar"/>
-<text x="210.0" y="1569.0" class="small"><tspan class="value">74</tspan><tspan class="note-plain" dx="6">1.4× faster</tspan></text>
-<text x="182.0" y="1587.0" class="libname ours" text-anchor="end">TomlBeef</text>
-<rect x="190" y="1577.0" width="19.8" height="12" rx="2" class="bar-ours"/>
-<text x="215.8" y="1587.0" class="small"><tspan class="value ours">101</tspan><tspan class="note-plain" dx="6"></tspan></text>
-<text x="182.0" y="1605.0" class="libname ours" text-anchor="end">TomlBeef (preserve)</text>
-<rect x="190" y="1595.0" width="20.4" height="12" rx="2" class="bar-ours"/>
-<text x="216.4" y="1605.0" class="small"><tspan class="value ours">105</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
+<rect x="190" y="1541.0" width="12.6" height="12" rx="2" class="bar"/>
+<text x="208.6" y="1551.0" class="small"><tspan class="value">71</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
+<text x="182.0" y="1569.0" class="libname" text-anchor="end">smol-toml</text>
+<rect x="190" y="1559.0" width="13.0" height="12" rx="2" class="bar"/>
+<text x="209.0" y="1569.0" class="small"><tspan class="value">72</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
+<text x="182.0" y="1587.0" class="libname" text-anchor="end">js-toml</text>
+<rect x="190" y="1577.0" width="13.2" height="12" rx="2" class="bar"/>
+<text x="209.2" y="1587.0" class="small"><tspan class="value">73</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
+<text x="182.0" y="1605.0" class="libname ours" text-anchor="end">TomlBeef</text>
+<rect x="190" y="1595.0" width="13.3" height="12" rx="2" class="bar-ours"/>
+<text x="209.3" y="1605.0" class="small"><tspan class="value ours">73</tspan><tspan class="note-plain" dx="6"></tspan></text>
 <text x="182.0" y="1623.0" class="libname" text-anchor="end">Tomlyn</text>
-<rect x="190" y="1613.0" width="25.3" height="12" rx="2" class="bar"/>
-<text x="221.3" y="1623.0" class="small"><tspan class="value">136</tspan><tspan class="note-plain" dx="6">1.3× slower</tspan></text>
+<rect x="190" y="1613.0" width="23.5" height="12" rx="2" class="bar"/>
+<text x="219.5" y="1623.0" class="small"><tspan class="value">127</tspan><tspan class="note-plain" dx="6">1.7× slower</tspan></text>
 <text x="182.0" y="1641.0" class="libname" text-anchor="end">glaze</text>
-<rect x="190" y="1631.0" width="28.2" height="12" rx="2" class="bar"/>
-<text x="224.2" y="1641.0" class="small"><tspan class="value">160</tspan><tspan class="note-plain" dx="6">1.6× slower</tspan></text>
+<rect x="190" y="1631.0" width="28.3" height="12" rx="2" class="bar"/>
+<text x="224.3" y="1641.0" class="small"><tspan class="value">164</tspan><tspan class="note-plain" dx="6">2.2× slower</tspan></text>
 <text x="182.0" y="1659.0" class="libname" text-anchor="end">tomlj</text>
-<rect x="190" y="1649.0" width="31.6" height="12" rx="2" class="bar"/>
-<text x="227.6" y="1659.0" class="small"><tspan class="value">191</tspan><tspan class="note-plain" dx="6">1.9× slower</tspan></text>
-<text x="182.0" y="1677.0" class="libname" text-anchor="end">toml_edit</text>
-<rect x="190" y="1667.0" width="32.9" height="12" rx="2" class="bar"/>
-<text x="228.9" y="1677.0" class="small"><tspan class="value">206</tspan><tspan class="note-plain" dx="6">2.0× slower</tspan></text>
-<text x="182.0" y="1695.0" class="libname" text-anchor="end">toml11</text>
-<rect x="190" y="1685.0" width="33.6" height="12" rx="2" class="bar"/>
-<text x="229.6" y="1695.0" class="small"><tspan class="value">213</tspan><tspan class="note-plain" dx="6">2.1× slower</tspan></text>
-<text x="182.0" y="1713.0" class="libname" text-anchor="end">toml-span</text>
-<rect x="190" y="1703.0" width="40.1" height="12" rx="2" class="bar"/>
-<text x="236.1" y="1713.0" class="small"><tspan class="value">302</tspan><tspan class="note-plain" dx="6">3.0× slower</tspan></text>
-<text x="182.0" y="1731.0" class="libname" text-anchor="end">toml (Rust)</text>
-<rect x="190" y="1721.0" width="40.9" height="12" rx="2" class="bar"/>
-<text x="236.9" y="1731.0" class="small"><tspan class="value">316</tspan><tspan class="note-plain" dx="6">3.1× slower</tspan></text>
+<rect x="190" y="1649.0" width="31.0" height="12" rx="2" class="bar"/>
+<text x="227.0" y="1659.0" class="small"><tspan class="value">190</tspan><tspan class="note-plain" dx="6">2.6× slower</tspan></text>
+<text x="182.0" y="1677.0" class="libname" text-anchor="end">toml11</text>
+<rect x="190" y="1667.0" width="33.1" height="12" rx="2" class="bar"/>
+<text x="229.1" y="1677.0" class="small"><tspan class="value">212</tspan><tspan class="note-plain" dx="6">2.9× slower</tspan></text>
+<text x="182.0" y="1695.0" class="libname" text-anchor="end">toml_edit</text>
+<rect x="190" y="1685.0" width="33.3" height="12" rx="2" class="bar"/>
+<text x="229.3" y="1695.0" class="small"><tspan class="value">215</tspan><tspan class="note-plain" dx="6">2.9× slower</tspan></text>
+<text x="182.0" y="1713.0" class="libname" text-anchor="end">toml (Rust)</text>
+<rect x="190" y="1703.0" width="39.8" height="12" rx="2" class="bar"/>
+<text x="235.8" y="1713.0" class="small"><tspan class="value">305</tspan><tspan class="note-plain" dx="6">4.2× slower</tspan></text>
+<text x="182.0" y="1731.0" class="libname" text-anchor="end">toml-span</text>
+<rect x="190" y="1721.0" width="40.2" height="12" rx="2" class="bar"/>
+<text x="236.2" y="1731.0" class="small"><tspan class="value">312</tspan><tspan class="note-plain" dx="6">4.3× slower</tspan></text>
 <text x="182.0" y="1749.0" class="libname" text-anchor="end">jtoml</text>
-<rect x="190" y="1739.0" width="42.7" height="12" rx="2" class="bar"/>
-<text x="238.7" y="1749.0" class="small"><tspan class="value">348</tspan><tspan class="note-plain" dx="6">3.4× slower</tspan></text>
+<rect x="190" y="1739.0" width="42.9" height="12" rx="2" class="bar"/>
+<text x="238.9" y="1749.0" class="small"><tspan class="value">359</tspan><tspan class="note-plain" dx="6">4.9× slower</tspan></text>
 <text x="182.0" y="1767.0" class="libname" text-anchor="end">toml++</text>
-<rect x="190" y="1757.0" width="46.9" height="12" rx="2" class="bar"/>
-<text x="242.9" y="1767.0" class="small"><tspan class="value">438</tspan><tspan class="note-plain" dx="6">4.3× slower</tspan></text>
+<rect x="190" y="1757.0" width="47.1" height="12" rx="2" class="bar"/>
+<text x="243.1" y="1767.0" class="small"><tspan class="value">452</tspan><tspan class="note-plain" dx="6">6.2× slower</tspan></text>
 <text x="182.0" y="1785.0" class="libname" text-anchor="end">toml-spanner</text>
-<rect x="190" y="1775.0" width="71.9" height="12" rx="2" class="bar"/>
-<text x="267.9" y="1785.0" class="small"><tspan class="value">1684</tspan><tspan class="note-plain" dx="6">16.6× slower</tspan></text>
+<rect x="190" y="1775.0" width="71.7" height="12" rx="2" class="bar"/>
+<text x="267.7" y="1785.0" class="small"><tspan class="value">1697</tspan><tspan class="note-plain" dx="6">23.2× slower</tspan></text>
 <text x="182.0" y="1803.0" class="libname" text-anchor="end">tomlc17</text>
-<rect x="190" y="1793.0" width="72.9" height="12" rx="2" class="bar"/>
-<text x="268.9" y="1803.0" class="small"><tspan class="value">1771</tspan><tspan class="note-plain" dx="6">17.5× slower</tspan></text>
+<rect x="190" y="1793.0" width="72.6" height="12" rx="2" class="bar"/>
+<text x="268.6" y="1803.0" class="small"><tspan class="value">1780</tspan><tspan class="note-plain" dx="6">24.4× slower</tspan></text>
 <text x="182.0" y="1821.0" class="libname" text-anchor="end">toml-c</text>
 <rect x="190" y="1811.0" width="78.3" height="12" rx="2" class="bar"/>
-<text x="274.3" y="1821.0" class="small"><tspan class="value">2376</tspan><tspan class="note-plain" dx="6">23.5× slower</tspan></text>
+<text x="274.3" y="1821.0" class="small"><tspan class="value">2414</tspan><tspan class="note-plain" dx="6">33.1× slower</tspan></text>
 <text x="182.0" y="1839.0" class="libname" text-anchor="end">Tomlyn (syntax tree)</text>
-<rect x="190" y="1829.0" width="115.2" height="12" rx="2" class="bar"/>
-<text x="311.2" y="1839.0" class="small"><tspan class="value">17324</tspan><tspan class="note-plain" dx="6">171.0× slower</tspan></text>
+<rect x="190" y="1829.0" width="115.3" height="12" rx="2" class="bar"/>
+<text x="311.3" y="1839.0" class="small"><tspan class="value">17731</tspan><tspan class="note-plain" dx="6">242.9× slower</tspan></text>
 <text x="480.0" y="1457.0" class="label" text-anchor="start">15000 root sections × ~10 keys</text>
 <text x="622.0" y="1479.0" class="libname" text-anchor="end">zig-toml</text>
 <rect x="630" y="1469.0" width="4.1" height="12" rx="2" class="bar"/>
-<text x="640.1" y="1479.0" class="small"><tspan class="value">44</tspan><tspan class="note-plain" dx="6">1.9× faster</tspan></text>
+<text x="640.1" y="1479.0" class="small"><tspan class="value">45</tspan><tspan class="note-plain" dx="6">1.6× faster</tspan></text>
 <text x="622.0" y="1497.0" class="libname" text-anchor="end">go-toml</text>
-<rect x="630" y="1487.0" width="10.8" height="12" rx="2" class="bar"/>
-<text x="646.8" y="1497.0" class="small"><tspan class="value">62</tspan><tspan class="note-plain" dx="6">1.4× faster</tspan></text>
+<rect x="630" y="1487.0" width="10.2" height="12" rx="2" class="bar"/>
+<text x="646.2" y="1497.0" class="small"><tspan class="value">62</tspan><tspan class="note-plain" dx="6">1.1× faster</tspan></text>
 <text x="622.0" y="1515.0" class="libname" text-anchor="end">BurntSushi/toml</text>
-<rect x="630" y="1505.0" width="12.0" height="12" rx="2" class="bar"/>
-<text x="648.0" y="1515.0" class="small"><tspan class="value">67</tspan><tspan class="note-plain" dx="6">1.3× faster</tspan></text>
+<rect x="630" y="1505.0" width="11.6" height="12" rx="2" class="bar"/>
+<text x="647.6" y="1515.0" class="small"><tspan class="value">67</tspan><tspan class="note-plain" dx="6">1.1× faster</tspan></text>
 <text x="622.0" y="1533.0" class="libname ours" text-anchor="end">TomlBeef</text>
-<rect x="630" y="1523.0" width="16.5" height="12" rx="2" class="bar-ours"/>
-<text x="652.5" y="1533.0" class="small"><tspan class="value ours">85</tspan><tspan class="note-plain" dx="6"></tspan></text>
+<rect x="630" y="1523.0" width="12.7" height="12" rx="2" class="bar-ours"/>
+<text x="648.7" y="1533.0" class="small"><tspan class="value ours">71</tspan><tspan class="note-plain" dx="6"></tspan></text>
 <text x="622.0" y="1551.0" class="libname ours" text-anchor="end">TomlBeef (preserve)</text>
-<rect x="630" y="1541.0" width="16.6" height="12" rx="2" class="bar-ours"/>
-<text x="652.6" y="1551.0" class="small"><tspan class="value ours">86</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
+<rect x="630" y="1541.0" width="12.8" height="12" rx="2" class="bar-ours"/>
+<text x="648.8" y="1551.0" class="small"><tspan class="value ours">71</tspan><tspan class="note-plain" dx="6">≈</tspan></text>
 <text x="622.0" y="1569.0" class="libname" text-anchor="end">Tomlyn</text>
-<rect x="630" y="1559.0" width="17.6" height="12" rx="2" class="bar"/>
-<text x="653.6" y="1569.0" class="small"><tspan class="value">90</tspan><tspan class="note-plain" dx="6">1.1× slower</tspan></text>
-<text x="622.0" y="1587.0" class="libname" text-anchor="end">js-toml</text>
-<rect x="630" y="1577.0" width="19.5" height="12" rx="2" class="bar"/>
-<text x="655.5" y="1587.0" class="small"><tspan class="value">100</tspan><tspan class="note-plain" dx="6">1.2× slower</tspan></text>
-<text x="622.0" y="1605.0" class="libname" text-anchor="end">smol-toml</text>
-<rect x="630" y="1595.0" width="20.2" height="12" rx="2" class="bar"/>
-<text x="656.2" y="1605.0" class="small"><tspan class="value">104</tspan><tspan class="note-plain" dx="6">1.2× slower</tspan></text>
-<text x="622.0" y="1623.0" class="libname" text-anchor="end">tomlj</text>
-<rect x="630" y="1613.0" width="20.9" height="12" rx="2" class="bar"/>
-<text x="656.9" y="1623.0" class="small"><tspan class="value">108</tspan><tspan class="note-plain" dx="6">1.3× slower</tspan></text>
+<rect x="630" y="1559.0" width="16.4" height="12" rx="2" class="bar"/>
+<text x="652.4" y="1569.0" class="small"><tspan class="value">87</tspan><tspan class="note-plain" dx="6">1.2× slower</tspan></text>
+<text x="622.0" y="1587.0" class="libname" text-anchor="end">tomlj</text>
+<rect x="630" y="1577.0" width="19.2" height="12" rx="2" class="bar"/>
+<text x="655.2" y="1587.0" class="small"><tspan class="value">100</tspan><tspan class="note-plain" dx="6">1.4× slower</tspan></text>
+<text x="622.0" y="1605.0" class="libname" text-anchor="end">js-toml</text>
+<rect x="630" y="1595.0" width="19.3" height="12" rx="2" class="bar"/>
+<text x="655.3" y="1605.0" class="small"><tspan class="value">101</tspan><tspan class="note-plain" dx="6">1.4× slower</tspan></text>
+<text x="622.0" y="1623.0" class="libname" text-anchor="end">smol-toml</text>
+<rect x="630" y="1613.0" width="19.9" height="12" rx="2" class="bar"/>
+<text x="655.9" y="1623.0" class="small"><tspan class="value">104</tspan><tspan class="note-plain" dx="6">1.5× slower</tspan></text>
 <text x="622.0" y="1641.0" class="libname" text-anchor="end">toml (JS)</text>
-<rect x="630" y="1631.0" width="22.0" height="12" rx="2" class="bar"/>
-<text x="658.0" y="1641.0" class="small"><tspan class="value">114</tspan><tspan class="note-plain" dx="6">1.3× slower</tspan></text>
+<rect x="630" y="1631.0" width="21.8" height="12" rx="2" class="bar"/>
+<text x="657.8" y="1641.0" class="small"><tspan class="value">116</tspan><tspan class="note-plain" dx="6">1.6× slower</tspan></text>
 <text x="622.0" y="1659.0" class="libname" text-anchor="end">toml_edit</text>
-<rect x="630" y="1649.0" width="28.1" height="12" rx="2" class="bar"/>
-<text x="664.1" y="1659.0" class="small"><tspan class="value">159</tspan><tspan class="note-plain" dx="6">1.9× slower</tspan></text>
+<rect x="630" y="1649.0" width="28.4" height="12" rx="2" class="bar"/>
+<text x="664.4" y="1659.0" class="small"><tspan class="value">165</tspan><tspan class="note-plain" dx="6">2.3× slower</tspan></text>
 <text x="622.0" y="1677.0" class="libname" text-anchor="end">toml (Rust)</text>
-<rect x="630" y="1667.0" width="34.7" height="12" rx="2" class="bar"/>
-<text x="670.7" y="1677.0" class="small"><tspan class="value">226</tspan><tspan class="note-plain" dx="6">2.7× slower</tspan></text>
+<rect x="630" y="1667.0" width="34.3" height="12" rx="2" class="bar"/>
+<text x="670.3" y="1677.0" class="small"><tspan class="value">227</tspan><tspan class="note-plain" dx="6">3.2× slower</tspan></text>
 <text x="622.0" y="1695.0" class="libname" text-anchor="end">toml11</text>
-<rect x="630" y="1685.0" width="36.7" height="12" rx="2" class="bar"/>
-<text x="672.7" y="1695.0" class="small"><tspan class="value">252</tspan><tspan class="note-plain" dx="6">3.0× slower</tspan></text>
+<rect x="630" y="1685.0" width="36.5" height="12" rx="2" class="bar"/>
+<text x="672.5" y="1695.0" class="small"><tspan class="value">254</tspan><tspan class="note-plain" dx="6">3.6× slower</tspan></text>
 <text x="622.0" y="1713.0" class="libname" text-anchor="end">toml++</text>
-<rect x="630" y="1703.0" width="38.8" height="12" rx="2" class="bar"/>
-<text x="674.8" y="1713.0" class="small"><tspan class="value">283</tspan><tspan class="note-plain" dx="6">3.3× slower</tspan></text>
+<rect x="630" y="1703.0" width="39.1" height="12" rx="2" class="bar"/>
+<text x="675.1" y="1713.0" class="small"><tspan class="value">293</tspan><tspan class="note-plain" dx="6">4.1× slower</tspan></text>
 <text x="622.0" y="1731.0" class="libname" text-anchor="end">toml-spanner</text>
-<rect x="630" y="1721.0" width="111.6" height="12" rx="2" class="bar"/>
-<text x="747.6" y="1731.0" class="small"><tspan class="value">14290</tspan><tspan class="note-plain" dx="6">168.1× slower</tspan></text>
+<rect x="630" y="1721.0" width="112.0" height="12" rx="2" class="bar"/>
+<text x="748.0" y="1731.0" class="small"><tspan class="value">14835</tspan><tspan class="note-plain" dx="6">208.9× slower</tspan></text>
 <text x="622.0" y="1749.0" class="libname" text-anchor="end">tomlc17</text>
-<rect x="630" y="1739.0" width="112.6" height="12" rx="2" class="bar"/>
-<text x="748.6" y="1749.0" class="small"><tspan class="value">15051</tspan><tspan class="note-plain" dx="6">177.1× slower</tspan></text>
+<rect x="630" y="1739.0" width="116.9" height="12" rx="2" class="bar"/>
+<text x="752.9" y="1749.0" class="small"><tspan class="value">19285</tspan><tspan class="note-plain" dx="6">271.6× slower</tspan></text>
 <text x="622.0" y="1767.0" class="libname" text-anchor="end">toml-c</text>
-<rect x="630" y="1757.0" width="126.7" height="12" rx="2" class="bar"/>
-<text x="762.7" y="1767.0" class="small"><tspan class="value">32271</tspan><tspan class="note-plain" dx="6">379.7× slower</tspan></text>
+<rect x="630" y="1757.0" width="129.6" height="12" rx="2" class="bar"/>
+<text x="765.6" y="1767.0" class="small"><tspan class="value">38313</tspan><tspan class="note-plain" dx="6">539.6× slower</tspan></text>
 <text x="622.0" y="1785.0" class="libname" text-anchor="end">Tomlyn (syntax tree)</text>
 <rect x="630" y="1775.0" width="148.2" height="12" rx="2" class="bar"/>
-<text x="784.2" y="1785.0" class="small"><tspan class="value">102887</tspan><tspan class="note-plain" dx="6">1210.4× slower</tspan></text>
+<text x="784.2" y="1785.0" class="small"><tspan class="value">104325</tspan><tspan class="note-plain" dx="6">1469.4× slower</tspan></text>
 <text x="622.0" y="1803.0" class="libname" text-anchor="end">glaze</text>
 <text x="632.0" y="1803.0" class="cell-missing" text-anchor="start">FAIL</text>
 <text x="622.0" y="1821.0" class="libname" text-anchor="end">toml-span</text>

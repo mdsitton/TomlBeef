@@ -20,15 +20,15 @@ toml-test invalid: 503 files: 4 exact match, 3 match except date/time text or fl
 
 | input | StructuredData | TomlBeef | TomlBeef preserve | like-for-like |
 |---|---:|---:|---:|---|
-| Beef project files | 206.0 | 109.0 | 64.7 | yes (both read the same values; files either rejects are skipped) |
-| commented | 506.7 | 548.9 | 191.8 | yes |
-| comments | 796.7 | 2923.1 | 735.9 | yes |
-| strings | 677.9 | 660.1 | 296.6 | yes |
-| ints | 213.4 | 155.6 | 96.9 | yes |
-| arrays | 131.5 | 65.4 | 34.4 | yes |
-| headers | 115.6 | 62.8 | 46.6 | yes |
-| floats | 205.9 | 94.9 | 58.7 | no: StructuredData parses float32 |
-| dates | 332.6 | 146.1 | 98.9 | no: StructuredData keeps dates as text |
+| Beef project files | 202.4 | 152.1 | 82.0 | yes (both read the same values; files either rejects are skipped) |
+| commented | 432.0 | 615.2 | 296.0 | yes |
+| comments | 800.0 | 2626.1 | 719.6 | yes |
+| strings | 700.0 | 656.2 | 424.1 | yes |
+| ints | 191.2 | 188.6 | 122.3 | yes |
+| arrays | 124.3 | 79.7 | 32.5 | yes |
+| headers | 117.9 | 94.4 | 58.1 | yes |
+| floats | 204.1 | 169.3 | 96.3 | no: StructuredData parses float32 |
+| dates | 259.7 | 187.5 | 119.7 | no: StructuredData keeps dates as text |
 
 mixed and dotted: StructuredData cannot read them (literal strings, dotted keys).
 
@@ -36,14 +36,14 @@ mixed and dotted: StructuredData cannot read them (literal strings, dotted keys)
 
 | document | StructuredData (Open + TryGet) | TomlBeef |
 |---|---:|---:|
-| 200 tables × 1000 keys | 2044.8 | 105.2 |
+| 200 tables × 1000 keys | 2025.9 | 74.7 |
 
 ### Writing (MB/s of output, higher is better)
 
 | input | StructuredData ToTOML | TomlBeef Write |
 |---|---:|---:|
-| commented | 334.5 | 243.9 |
-| strings | 369.2 | 240.5 |
-| ints | 458.4 | 236.1 |
-| arrays | 162.8 | 180.8 |
-| headers | 255.1 | 173.2 |
+| commented | 324.6 | 290.0 |
+| strings | 369.3 | 241.8 |
+| ints | 459.8 | 405.9 |
+| arrays | 173.5 | 210.4 |
+| headers | 258.1 | 271.1 |

@@ -521,7 +521,7 @@ Every library parses the same generated inputs (2–9 MB) from memory into its o
 
 The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 
-Parsing speed is only half of it. The last panel of the chart, and the last two columns of the table, time 100,000 random `table.key` lookups after parsing (`bench/compare/lookup.sh`, results in `bench/compare/lookup-results.md`). TomlBeef tables are hash maps, so its lookups (~85–100 ns) stay in the same range as the other hash-map libraries; zig-toml, the Go libraries and several JavaScript ones are faster still (~45–75 ns). toml-spanner, tomlc17 and toml-c store a table as a list and scan it on every lookup (roughly 17× to 380× slower than TomlBeef), so on the config above toml-spanner's faster parse is used up after about 1,400 lookups.
+Parsing speed is only half of it. The last panel of the chart, and the last two columns of the table, time 100,000 random `table.key` lookups after parsing (`bench/compare/lookup.sh`, results in `bench/compare/lookup-results.md`). TomlBeef scans small tables and hash-indexes larger ones, so its lookups (~70 ns) match the fastest JavaScript libraries; zig-toml and the Go libraries are faster still (~45–65 ns). toml-spanner, tomlc17 and toml-c store a table as a list and scan it on every lookup (roughly 23× to 540× slower than TomlBeef), so on the 15,000-section document toml-spanner's faster parse is used up after about 650 lookups.
 
 ### Compared with Beef's built-in reader
 
@@ -529,7 +529,7 @@ The Beef IDE and BeefBuild read project files with `Beefy.utils.StructuredData`,
 
 <p align="center"><img src="docs/benchmark-beef.svg" alt="TomlBeef compared with Beef's built-in TOML reader: correctness, parsing, lookups and writing" width="820"></p>
 
-StructuredData is faster at parsing table-heavy files because it does less: its tables are linked lists with no duplicate-key check, so it never hashes a key, and it skips UTF-8 validation. The same design makes every lookup a linear scan. One Beef project file in the corpus (in `BeefManaged`) is invalid TOML, a key repeated in an inline table, which StructuredData accepts and TomlBeef rejects.
+StructuredData parses Beef project files and small arrays faster because it does less: its tables are linked lists with no duplicate-key check, and it skips UTF-8 validation. TomlBeef is faster on comments, and the two are close on the rest. The linked lists also make every StructuredData lookup a linear scan, about 27× slower than TomlBeef's. One Beef project file in the corpus (in `BeefManaged`) is invalid TOML, a key repeated in an inline table, which StructuredData accepts and TomlBeef rejects.
 
 ## Running Tests
 
