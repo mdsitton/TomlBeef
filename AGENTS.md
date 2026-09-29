@@ -47,6 +47,7 @@ These are non-obvious Beef behaviors discovered through debugging. Violating the
 - **`switch` does NOT fall through in Beef.** Each case breaks automatically. `fallthrough;` needed to continue into the next case.
 - **`switch` on `Result<T, E>`**: `case .Ok(let val):` and `case .Err(let e):`
 - **`if (X case .Err(let e))`** is preferred over `switch` for simple error checks. But it does NOT bind the success value — for `.Ok(let val)` extraction, use `switch` or a temporary variable.
+- **A variable declared inside a condition cannot be used after a `||` that might skip it.** `if (!TryGetArray(let a) || a.Count != 3)` is fine (`a` is declared left of the `||`), but `if (!a.TryGetFloat(0, let x) || !a.TryGetFloat(1, let y)) return; use(x, y);` fails with "Conditional short-circuiting may skip variable initialization". Declare the variables first and pass them with `out`, split the checks into separate `if`s, or `switch` on a tuple of results.
 - **Enum switches without `default:` warn on non-exhaustiveness** — useful for catching new enum variants.
 
 ### Test framework

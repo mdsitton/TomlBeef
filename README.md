@@ -448,7 +448,9 @@ doc.Set("version", doc.GetInteger("version", 1) + 1);   // the rest, by hand
 Try!(doc.WriteFile("app.toml"));            // comments and layout kept
 ```
 
-**Converters** handle other types. Register one once and every field or list item of that type uses it; `[TomlUseConverter(typeof(...))]` picks a different one for a single field.
+**Converters** handle types the serializer does not know, typically ones you cannot annotate (a `Vector3` from another library). A field whose type is itself `[TomlObject]` needs no converter: it is read and written as a nested table through that type's own generated code. Register a converter once and every field or list item of that type uses it; `[TomlUseConverter(typeof(...))]` picks a different one for a single field.
+
+For each field, the first match wins: `[TomlUseConverter]` on the field, then a registered `[TomlConverter]` for its type, then the type's own `[TomlObject]` handling. So a converter can also give a `[TomlObject]` type a different TOML form (a `Point` written as `"3,4"` instead of a table), everywhere or per field. The TOML scalar types (bool, numbers, String, dates) always use the built-in handling.
 
 ```bf
 [TomlConverter(typeof(Vector3))]

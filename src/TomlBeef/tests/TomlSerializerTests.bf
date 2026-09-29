@@ -274,6 +274,71 @@ class SerArenaRoot
 	public List<SerArenaServer> Servers;
 }
 
+// A [TomlObject] type with a registered converter: the converter wins, everywhere the type appears
+
+[TomlObject]
+struct SerPoint
+{
+	public int32 X, Y;
+}
+
+/// "x,y" instead of the {X, Y} table [TomlObject] would give
+[TomlConverter(typeof(SerPoint))]
+struct SerPointToml : ITomlConverter<SerPoint>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerPoint target)
+	{
+		if (!value.TryGetString(let text))
+			return .Err(context.MakeError("expected \"x,y\""));
+		let comma = text.IndexOf(',');
+		if (comma < 0)
+			return .Err(context.MakeError("expected \"x,y\""));
+		switch ((int32.Parse(text.Substring(0, comma)), int32.Parse(text.Substring(comma + 1))))
+		{
+		case (.Ok(let x), .Ok(let y)): target = .() { X = x, Y = y };
+		default: return .Err(context.MakeError("expected \"x,y\""));
+		}
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerPoint value, TomlConvertContext context)
+	{
+		context.Set(scope $"{value.X},{value.Y}");
+		return .Ok;
+	}
+}
+
+/// {X, Y} spelled out as a two-item array, for one field
+struct SerPointArrayToml : ITomlConverter<SerPoint>
+{
+	public static Result<void, TomlParseError> Read(TomlValue value, TomlConvertContext context, ref SerPoint target)
+	{
+		if (!value.TryGetArray(let array) || array.Count != 2)
+			return .Err(context.MakeError("expected [x, y]"));
+		int64 x = 0, y = 0;
+		if (!array.TryGetInteger(0, out x) || !array.TryGetInteger(1, out y))
+			return .Err(context.MakeError("expected [x, y]"));
+		target = .() { X = (.)x, Y = (.)y };
+		return .Ok;
+	}
+
+	public static Result<void, TomlParseError> Write(SerPoint value, TomlConvertContext context)
+	{
+		let array = context.SetArray();
+		array.Add((int64)value.X);
+		array.Add((int64)value.Y);
+		return .Ok;
+	}
+}
+
+[TomlObject]
+class SerShape
+{
+	public SerPoint Origin;
+	public List<SerPoint> Corners = new .() ~ delete _;
+	[TomlUseConverter(typeof(SerPointArrayToml))] public SerPoint Anchor;
+}
+
 static class TomlSerializerTests
 {
 	const String cConfig = """
@@ -600,6 +665,30 @@ static class TomlSerializerTests
 		Test.Assert(doc.Read("[mirror]\ntitle = \"again\"\n[[mirror.servers]]\nname = \"c\"") case .Ok);
 		Test.Assert(doc.Deserialize("mirror", root, arena) case .Ok);
 		Test.Assert(root.Title == "again" && root.Servers.Count == 1 && root.Servers[0].Name == "c");
+	}
+
+	[Test]
+	public static void Converters_WinOverTomlObject()
+	{
+		// SerPoint is a [TomlObject], but its registered converter decides its form everywhere, and
+		// [TomlUseConverter] on a field wins over the registered one
+		let shape = scope SerShape();
+		ReadOk("Origin = \"1,2\"\nCorners = [\"0,0\", \"4,5\"]\nAnchor = [7, 8]", shape);
+		Test.Assert(shape.Origin.X == 1 && shape.Origin.Y == 2);
+		Test.Assert(shape.Corners.Count == 2 && shape.Corners[1].Y == 5);
+		Test.Assert(shape.Anchor.X == 7 && shape.Anchor.Y == 8);
+
+		let text = scope String();
+		Test.Assert(TomlSerializer.Write(shape, text) case .Ok);
+		Test.Assert(text == "Origin = \"1,2\"\nCorners = [\"0,0\", \"4,5\"]\nAnchor = [7, 8]\n", text);
+
+		// Without a converter the same type is a table (its own [TomlObject] code)
+		var point = SerPoint() { X = 3, Y = 4 };
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Serialize(point) case .Ok);
+		text.Clear();
+		doc.Write(text);
+		Test.Assert(text == "X = 3\nY = 4\n", text);
 	}
 
 	[Test]
