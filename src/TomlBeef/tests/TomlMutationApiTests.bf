@@ -442,4 +442,65 @@ static class TomlMutationApiTests
 			Test.Assert(output.Length <= input.Length + 2, scope $"{input.Length} bytes wrote {output.Length}");
 		}
 	}
+
+	[Test]
+	public static void Table_LookupsHoldThroughGrowthRemovalAndRename()
+	{
+		// Tables scan their keys up to 8 entries and use a hash index past that (TomlEntryMap). Keys of
+		// every length from 0 to 40 cover each hash branch; removing, renaming and clearing go through
+		// both layouts and back.
+		var doc = scope TomlDocument();
+		let table = doc.RootTable;
+		let keys = scope List<String>();
+		defer { ClearAndDeleteItems!(keys); }
+		for (int i = 0; i < 300; i++)
+		{
+			let key = new String();
+			for (int c = 0; c < i % 41; c++)
+				key.Append((char8)('a' + (i + c * 7) % 26));
+			// Past the first 41, the index keeps the keys distinct
+			if (i >= 41)
+				key.AppendF("{}", i);
+			keys.Add(key);
+		}
+
+		for (int i = 0; i < keys.Count; i++)
+		{
+			table.Set(keys[i], (int64)i);
+			// Every key so far is found, in insertion order, and one not yet added is not
+			for (int j = 0; j <= i; j += Math.Max(i / 7, 1))
+				Test.Assert(table.TryGetInteger(keys[j], var value) && value == j && table.GetKeyAt(j) == keys[j], keys[j]);
+			if (i + 1 < keys.Count)
+				Test.Assert(!table.ContainsKey(keys[i + 1]), keys[i + 1]);
+		}
+		Test.Assert(table.Count == keys.Count);
+
+		// Remove all but the first 5 (below the scan limit) in a scattered order
+		for (int i = keys.Count - 1; i >= 5; i -= 2)
+			Test.Assert(table.Remove(keys[i]));
+		for (int i = keys.Count - 2; i >= 5; i -= 2)
+			Test.Assert(table.Remove(keys[i]));
+		Test.Assert(table.Count == 5);
+		for (int i = 0; i < keys.Count; i++)
+			Test.Assert(table.ContainsKey(keys[i]) == (i < 5), keys[i]);
+
+		// Grow again, then rename inside the indexed table
+		for (int i = 5; i < 40; i++)
+			table.Set(keys[i], (int64)i * 10);
+		Test.Assert(table[20].Rename("renamed") case .Ok);
+		Test.Assert(!table.ContainsKey(keys[20]));
+		Test.Assert(table.TryGetInteger("renamed", var renamed) && renamed == 200);
+		Test.Assert(table.GetKeyAt(20) == "renamed");
+		Test.Assert(table[21].Rename("renamed") case .Err, "Renaming onto an existing key fails");
+		for (int i = 21; i < 40; i++)
+			Test.Assert(table.TryGetInteger(keys[i], var value) && value == i * 10, keys[i]);
+
+		table.Clear();
+		Test.Assert(table.Count == 0 && !table.ContainsKey(keys[30]));
+		for (int i = 0; i < 20; i++)
+			table.Set(keys[i], -(int64)i);
+		for (int i = 0; i < 20; i++)
+			Test.Assert(table.TryGetInteger(keys[i], var value) && value == -i, keys[i]);
+		Test.Assert(!table.ContainsKey(keys[25]));
+	}
 }

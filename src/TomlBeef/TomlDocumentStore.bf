@@ -9,7 +9,34 @@ namespace TomlBeef;
 /// when the store is reset or destroyed.
 internal class TomlDocumentStore
 {
-	private BumpAllocator mAlloc ~ delete _;
+	/// A BumpAllocator that takes its pools from, and returns them to, a cache the store keeps across
+	/// resets. Reading into a document again then reuses the previous document's memory: freeing it
+	/// instead lets glibc trim the heap, and the next parse page-faults every page back in (up to 40%
+	/// of parse time on large inputs). The cache holds at most the pools of the largest document read.
+	class PoolRecyclingAllocator : BumpAllocator
+	{
+		List<Span<uint8>> mCache;
+
+		public this(List<Span<uint8>> cache) : base(.Allow)
+		{
+			mCache = cache;
+		}
+
+		protected override Span<uint8> AllocPool()
+		{
+			if (!mCache.IsEmpty)
+				return mCache.PopBack();
+			return base.AllocPool();
+		}
+
+		protected override void FreePool(Span<uint8> span)
+		{
+			mCache.Add(span);
+		}
+	}
+
+	private List<Span<uint8>> mPoolCache = new .();
+	private BumpAllocator mAlloc;
 	private TomlTable mRootTable;
 	/// @brief Set while the parser fills this store: containers and entries it creates start clean
 	/// instead of being marked dirty. One flag for the whole store, so ending a parse needs no tree walk.
@@ -17,8 +44,17 @@ internal class TomlDocumentStore
 
 	public this()
 	{
-		mAlloc = new BumpAllocator(.Allow);
+		mAlloc = new PoolRecyclingAllocator(mPoolCache);
 		mRootTable = NewTable(.Root);
+	}
+
+	public ~this()
+	{
+		// The allocator returns its pools to the cache as it goes
+		delete mAlloc;
+		for (let pool in mPoolCache)
+			delete pool.Ptr;
+		delete mPoolCache;
 	}
 
 	/// @brief The store-owned root table. Borrowed reference — do not delete.
@@ -30,6 +66,18 @@ internal class TomlDocumentStore
 	internal String NewString(StringView source)
 	{
 		return new:mAlloc String(source);
+	}
+
+	/// @brief Copy a table key into the store arena as plain bytes (no String object or destructor).
+	/// @param key The key to copy.
+	/// @return A view of the store-owned copy.
+	internal StringView NewKey(StringView key)
+	{
+		if (key.IsEmpty)
+			return "";
+		let bytes = (char8*)mAlloc.Alloc(key.Length, 1);
+		Internal.MemCpy(bytes, key.Ptr, key.Length);
+		return .(bytes, key.Length);
 	}
 
 	/// @brief Allocate a TomlTable in the store arena, bound to this store.
@@ -65,7 +113,7 @@ internal class TomlDocumentStore
 	internal void Reset()
 	{
 		delete mAlloc;
-		mAlloc = new BumpAllocator(.Allow);
+		mAlloc = new PoolRecyclingAllocator(mPoolCache);
 		mRootTable = NewTable(.Root);
 		// A parse that failed (and cleared the document) must not leave suppression on
 		mSuppressAutoDirty = false;

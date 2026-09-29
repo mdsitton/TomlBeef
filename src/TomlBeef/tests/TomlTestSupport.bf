@@ -54,11 +54,10 @@ public static class TomlTestSupport
 	public static bool TomlTableEquals(TomlTable a, TomlTable b)
 	{
 		if (a.Count != b.Count) return false;
-		for (int i = 0; i < a.KeyOrder.Count; i++)
+		for (int i = 0; i < a.Count; i++)
 		{
-			String key = a.KeyOrder[i];
-			if (!b.ContainsKey(key)) return false;
-			if (!TomlValueEquals(a.Entries[key].mValue, b.Entries[key].mValue)) return false;
+			if (!b.TryGetValue(a.GetKeyAt(i), let other)) return false;
+			if (!TomlValueEquals(a.GetValueAt(i), other)) return false;
 		}
 		return true;
 	}

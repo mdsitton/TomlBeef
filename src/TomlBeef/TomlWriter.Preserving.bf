@@ -44,10 +44,10 @@ extension TomlWriterImpl
 	private static void WriteTablePreserving(TomlTable tbl, StringView pathPrefix, bool dottedContext, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
 	{
 		// Phase 1: scalar keys, inline tables, static arrays
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 
 			if (dottedContext)
 			{
@@ -86,10 +86,10 @@ extension TomlWriterImpl
 		}
 
 		// Phase 2: non-inline, non-array-element sub-tables as [header] or dotted keys
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 
 			if (val.IsTable)
 			{
@@ -100,10 +100,10 @@ extension TomlWriterImpl
 					if (sub.HasDottedPreference(metadata))
 					{
 						// Emit dotted keys from parent level, then recurse for non-dotted sub-tables
-						for (int j = 0; j < sub.KeyOrder.Count; j++)
+						for (int j = 0; j < sub.Count; j++)
 						{
-							String sk = sub.KeyOrder[j];
-							TomlValue sv = sub.Entries[sk].mValue;
+							StringView sk = sub.GetKeyAt(j);
+							TomlValue sv = sub.GetValueAt(j);
 							if (!sv.IsTable || sv.AsTable.Origin == .InlineTable)
 							{
 								// Emit leading comments
@@ -174,10 +174,10 @@ extension TomlWriterImpl
 		}
 
 		// Phase 3: array-of-tables
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 
 			if (val.IsArray)
 			{
@@ -655,7 +655,7 @@ extension TomlWriterImpl
 		if (hasFormat && fmt.mOpenBraceSpacing > 0)
 			outStr.Append(' ');
 
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
 			if (i > 0)
 			{
@@ -665,8 +665,8 @@ extension TomlWriterImpl
 				if (!noCommaSpace)
 					outStr.Append(' ');
 			}
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 			WriteKeyPreserving(key, tbl, metadata, outStr, version);
 			// Without a captured format (e.g. a sub-table created by a dotted key), match the normal writer
 			if (!hasFormat || fmt.mEqualsSpacing > 0)
@@ -692,10 +692,10 @@ extension TomlWriterImpl
 			? fmt.mEntryIndent
 			: metadata.mDocumentStyle.mIndentSize;
 
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 			TomlNodeId fieldId = .Invalid;
 			if (tbl.MetadataContext != null)
 				tbl.TryGetEntryNodeId(key, out fieldId);
@@ -709,7 +709,7 @@ extension TomlWriterImpl
 			else
 				outStr.Append('=');
 			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
-			if (i < tbl.KeyOrder.Count - 1 || fmt.mTrailingComma)
+			if (i < tbl.Count - 1 || fmt.mTrailingComma)
 				outStr.Append(',');
 			if (fieldId.IsValid)
 				EmitTrailingComment(fieldId, outStr, metadata);

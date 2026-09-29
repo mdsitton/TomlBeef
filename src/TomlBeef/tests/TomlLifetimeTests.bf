@@ -214,11 +214,11 @@ static class TomlLifetimeTests
 	[Test]
 	public static void Layout_ValueAndTableSlotStayCompact()
 	{
-		// Every table entry stores a TomlTableSlot (value + metadata node ID) and every array element a
-		// TomlValue, so their sizes decide the memory and speed of all documents, metadata or not. The
-		// node ID has to fit where the value's own alignment would otherwise pad.
+		// Every table entry stores a TomlTableSlot (key view + value + metadata node ID) and every array
+		// element a TomlValue, so their sizes decide the memory and speed of all documents, metadata or
+		// not. The node ID has to fit where the value's own alignment would otherwise pad.
 		Test.Assert(sizeof(TomlOffsetDateTime) <= 32, scope $"TomlOffsetDateTime is {sizeof(TomlOffsetDateTime)} bytes");
 		Test.Assert(sizeof(TomlValue) <= 40, scope $"TomlValue is {sizeof(TomlValue)} bytes");
-		Test.Assert(sizeof(TomlTableSlot) <= 48, scope $"TomlTableSlot is {sizeof(TomlTableSlot)} bytes");
+		Test.Assert(sizeof(TomlTableSlot) <= 56, scope $"TomlTableSlot is {sizeof(TomlTableSlot)} bytes");
 	}
 }

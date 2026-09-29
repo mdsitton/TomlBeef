@@ -25,10 +25,10 @@ static class TomlWriterImpl
 			WriteLines(tbl, scope String(), outStr, version);
 
 		// Phase 2: non-inline, non-array-element sub-tables as [header]
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 
 			if (val.IsTable)
 			{
@@ -58,10 +58,10 @@ static class TomlWriterImpl
 		}
 
 		// Phase 3: array-of-tables last to avoid absorbing parent keys
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 
 			if (val.IsArray)
 			{
@@ -84,10 +84,10 @@ static class TomlWriterImpl
 	/// @param keyPrefix The dotted key path from the enclosing header to `tbl` (empty for its own lines).
 	private static void WriteLines(TomlTable tbl, String keyPrefix, String outStr, TomlVersion version)
 	{
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			String key = tbl.KeyOrder[i];
-			TomlValue val = tbl.Entries[key].mValue;
+			StringView key = tbl.GetKeyAt(i);
+			TomlValue val = tbl.GetValueAt(i);
 			switch (val)
 			{
 			case .Table(let sub):
@@ -128,9 +128,9 @@ static class TomlWriterImpl
 	private static bool IsHeaderImplied(TomlTable tbl)
 	{
 		bool hasSubHeader = false;
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
-			switch (tbl.Entries[tbl.KeyOrder[i]].mValue)
+			switch (tbl.GetValueAt(i))
 			{
 			case .Table(let sub):
 				// Inline and dotted-key tables are written as lines under this header
@@ -431,13 +431,12 @@ static class TomlWriterImpl
 	private static void WriteInlineTable(TomlTable tbl, String outStr, TomlVersion version)
 	{
 		outStr.Append('{');
-		for (int i = 0; i < tbl.KeyOrder.Count; i++)
+		for (int i = 0; i < tbl.Count; i++)
 		{
 			if (i > 0) outStr.Append(", ");
-			String key = tbl.KeyOrder[i];
-			WriteKey(key, outStr, version);
+			WriteKey(tbl.GetKeyAt(i), outStr, version);
 			outStr.Append(" = ");
-			WriteValue(tbl.Entries[key].mValue, outStr, version);
+			WriteValue(tbl.GetValueAt(i), outStr, version);
 		}
 		outStr.Append('}');
 	}

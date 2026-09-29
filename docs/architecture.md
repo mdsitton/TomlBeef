@@ -31,7 +31,8 @@ workspace startup project is `TomlTester/`.
 | `TomlDocumentStore.bf` | Internal arena (`BumpAllocator`) that owns every string, table and array of a document |
 | `TomlTextArena.bf` | Append-only text blocks for the metadata sidecar's comments and original tokens |
 | `TomlValue.bf` | `TomlTableOrigin` enum and the non-owning `TomlValue` tagged union (`Is*`, `As*`, `TryGet*`, internal `CloneInto`, `IsSemanticallyEqualTo`) |
-| `TomlTable.bf` | `TomlTable`: an ordered map (`Dictionary<String, TomlTableSlot>` of value plus metadata node ID, and a `List<String>` key order) with internal origin and sealing flags, `Set`, `MergeFrom`, validation (`Require*`, `MakeError`), and the `TomlTableEntry` proxy |
+| `TomlTable.bf` | `TomlTable`: an ordered map (a `TomlEntryMap`) with internal origin and sealing flags, `Set`, `MergeFrom`, validation (`Require*`, `MakeError`), and the `TomlTableEntry` proxy |
+| `TomlEntryMap.bf` | A table's entries (`TomlTableSlot`: key, value, metadata node ID) in insertion order: scanned up to 8 entries, hash-indexed past that |
 | `TomlArray.bf` | `TomlArray` (static array or array of tables) and the `TomlInputValue` scalar-input wrapper |
 | `TomlDateTime.bf` | `TomlOffsetDateTime`, `TomlLocalDateTime`, `TomlLocalDate`, `TomlLocalTime`, and the internal `TomlDateRules` (RFC 3339 validity: years 0–9999, real month lengths with leap years, times to 23:59:60, offsets within ±23:59) shared with the parser. Public fields; constructors assert the rules (a programming error is fatal), `Create` factories return `Result` for untrusted input |
 | `TomlCursor.bf` | `ITomlCursor` interface, `TomlCursorMark`, and `TomlByteCursor` (zero-copy over contiguous bytes) |
@@ -175,11 +176,16 @@ containing `]` cannot be reached with a path string. Use `GetPath(segments...)` 
 
 ## 4. Ownership and lifetime model
 
-- **`TomlDocumentStore`** owns a `BumpAllocator(.Allow)`. Every string payload, table key,
-  `TomlTable` and `TomlArray` of a document is allocated with `new:mAlloc` through `NewString`,
-  `NewTable(origin)` and `NewArray()`. `.Allow` records destructors, so each table's dictionary and
-  key list and each array's item list are freed when the arena is deleted. `Reset()` deletes the
-  arena, creates a fresh one, and allocates a new root table.
+- **`TomlDocumentStore`** owns a `BumpAllocator(.Allow)`. Every string payload, `TomlTable` and
+  `TomlArray` of a document is allocated with `new:mAlloc` through `NewString`, `NewTable(origin)`
+  and `NewArray()`; table keys are plain bytes (`NewKey`, no `String` object). `.Allow` records
+  destructors, so each table's entry and index arrays and each array's item list are freed when the
+  arena is deleted. `Reset()` deletes the arena, creates a fresh one, and allocates a new root
+  table. The arena's pools go back to a cache the store keeps rather than to the system, and the
+  next arena takes them from there: reading into the same document again reuses the memory, where
+  freeing it let glibc trim the heap and every page fault back in on the next parse (296,000 page
+  faults against 7,000 over a `strings` benchmark run, 40% of parse time). The cache never holds
+  more than the pools of the largest document read, and is freed with the document.
 - **`TomlValue` is a non-owning tagged union.** Scalars and date/times are stored inline;
   `.String(String)`, `.Array(TomlArray)` and `.Table(TomlTable)` are borrowed references into the
   arena. `TomlValue` has no `Dispose`, and copying one is always safe.
@@ -565,15 +571,16 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   headers into dotted keys: one dotted key anywhere would otherwise restyle every new table.
 
 Node identity is stored **beside the values, not in `TomlValue`**. A table's entries are
-`TomlTableSlot`s (value plus `TomlNodeId`), so one hash lookup finds both, and removal, `Rename`
+`TomlTableSlot`s (key, value and `TomlNodeId`), so one lookup finds both, and removal, `Rename`
 and `Clear` carry the ID with the entry; an array keeps its elements' IDs in a list. Each table and
 array with metadata also has a small `TomlContainerMetadataContext` holding the sidecar and the
 container's own node ID. This keeps `TomlValue` small and lets style follow the slot or path. New
 entries inserted after the parse get node IDs automatically.
   - *Layout:* `TomlNodeId` and the metadata references are 32-bit, and `mNanosecond` in the
     date/time structs is `int32` (0–999,999,999), which keeps `TomlOffsetDateTime` (the largest
-    `TomlValue` payload) at 32 bytes, `TomlValue` at 40 and a `TomlTableSlot` at 48: the node ID
-    fits in the value's alignment padding, so documents without metadata pay nothing for it.
+    `TomlValue` payload) at 32 bytes, `TomlValue` at 40 and a `TomlTableSlot` at 56 (a 16-byte key
+    view, then the value): the node ID fits in the value's alignment padding, so documents without
+    metadata pay nothing for it.
     `Layout_ValueAndTableSlotStayCompact` guards these sizes. The root table's context is attached before parsing, so every
 table created during the parse (including intermediate tables of dotted keys) inherits one. A
 `[header]` table is a single node: the parent's entry ID and the table's own context ID are the same
@@ -798,9 +805,24 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     1771 / 15051, toml-c 2376 / 32271, and Tomlyn's syntax tree (no lookup API; the harness scans
     headers) 17324 / 102887. toml-spanner's hash index exists only during the parse, for duplicate
     detection, so its parse-speed lead on the mixed config (~20 ms) is used up after ~1,400
-    lookups. Any move toward its table layout must keep indexed lookups for large tables. TomlBeef
-    hashes a `StringView` against `Dictionary<String, …>` keys; the faster hash maps (Zig's
-    wyhash-based `StringHashMap`, Go maps) suggest room there.
+    lookups. Any move toward its table layout must keep indexed lookups for large tables (the
+    numbers here predate `TomlEntryMap`; see *Table storage* below).
+  - *Table storage* (`TomlEntryMap`, 2026-09-29). Tables were a corlib `Dictionary<String,
+    TomlTableSlot>` plus a `List<String>` key order. That cost 4–6 heap allocations per table (the
+    dictionary grows 1→3→7→15), a re-hash per entry whenever the writer walked a table (about half
+    of Write's time on table-heavy input), and slow lookups: corlib hashes keys under 8 bytes one
+    byte at a time and picks buckets with `%` over `2^n−1` sizes, which together walk 2.12 entries
+    per hit in a 1000-key table. Now a table's entries sit in one array in insertion order (writers
+    and `GetValueAt` never hash). Up to 8 entries a lookup compares keys directly (toml-spanner's
+    layout, without its unbounded scans). Past that, an open-addressing index at most half full,
+    with a power-of-two mask and each slot holding the entry position and full 32-bit hash, so a
+    probe reads a key only on a hash match. The hash takes one or two overlapping loads for keys
+    under 8 bytes and 8 bytes per step above, then a splitmix64 finalizer. Removal and rename
+    rebuild the index, as removal shifts positions anyway. With the arena pool reuse above,
+    same-build A/B against the previous commit (MB/s, parse): mixed 101 → 124, commented 514 →
+    610, strings 505 → 696, ints 147 → 179, floats 143 → 171, dates 156 → 190, arrays 78 → 80,
+    headers 74 → 95, dotted 52 → 84; PreserveStyle dotted 40 → 47. Writing: ints 232 → 425, headers
+    166 → 271, dotted 56 → 174. Lookups: 100 → 69 ns (ints), 84 → 71 ns (mixed).
   - *Beef's built-in reader* (`bench/compare/beef/`, `beef.sh`, results in `beef-results.md`).
     `Beefy.utils.StructuredData` (Beefy2D; IDE and BeefBuild project files) is built from the
     installed Beef (`fetch.sh` copies `StructuredData.bf` and `DisposeProxy.bf`) into one program with
