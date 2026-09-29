@@ -4,7 +4,10 @@
 //   edit     - toml_edit::DocumentMut (format-preserving)
 //   spanner  - toml_spanner::parse into a fresh Arena (span-preserving tree; arena freed per parse)
 //   span     - toml_span::parse (span-preserving Value; no date/time support)
+// Typed serialization (typed.sh): tomlbench typed <serde|spanner> <read|write> <file> <min-samples>, see typed.rs
 use std::time::Instant;
+
+mod typed;
 
 /// The rule shared by every harness in bench/compare: warm up for at least 1 s (at least one run),
 /// then time single runs until at least `min_samples` were taken and at least 60% of them lie within
@@ -103,6 +106,10 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 6 && args[1] == "lookup" {
         lookup_bench(&args);
+        return;
+    }
+    if args.len() >= 6 && args[1] == "typed" {
+        typed::typed_bench(&args);
         return;
     }
     if args.len() < 4 {

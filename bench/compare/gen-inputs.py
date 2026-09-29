@@ -58,6 +58,28 @@ def commented(rng):
     return "".join(parts)
 
 
+def typed(rng):
+    """For typed.sh: a document every typed mapper can bind (no dates, one level of nesting), a few
+    root scalars and 20000 [[servers]] entries with a nested [servers.limits] table."""
+    regions = ("eu", "us", "ap", "sa")
+    roles = ("web", "api", "db", "cache", "queue")
+    parts = ["title = \"typed benchmark\"\nversion = 3\ndebug = false\n"]
+    for s in range(20000):
+        tags = ", ".join(f'"{t}"' for t in (rng.choice(roles), rng.choice(regions), f"rack-{s % 40}"))
+        parts.append(
+            f"\n[[servers]]\n"
+            f"name = \"srv-{s:06d}\"\n"
+            f"host = \"10.{s // 65536 % 256}.{s // 256 % 256}.{s % 256}\"\n"
+            f"port = {8000 + rng.randrange(2000)}\n"
+            f"enabled = {'true' if s % 3 else 'false'}\n"
+            f"weight = {rng.random():.4f}\n"
+            f"tags = [{tags}]\n"
+            f"\n[servers.limits]\n"
+            f"max_connections = {rng.randrange(100, 10000)}\n"
+            f"timeout_ms = {rng.randrange(100, 30000)}\n")
+    return "".join(parts)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     rng = random.Random(1)
@@ -77,6 +99,9 @@ def main():
     # Key lookups after parsing (lookup.sh): random `table key` pairs whose value is an integer
     lookups(rng, "ints", ((f"t{rng.randrange(200)}", f"key_{rng.randrange(1000)}") for _ in range(100000)))
     lookups(rng, "mixed", ((f"section_{rng.randrange(15000)}", "count") for _ in range(100000)))
+
+    # Typed serialization (typed.sh); its own generator, so the inputs above stay as they were
+    write("typed", typed(random.Random(2)))
 
 
 def beef_projects():

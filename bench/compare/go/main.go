@@ -124,6 +124,10 @@ func lookupBench(args []string) {
 }
 
 func main() {
+	if len(os.Args) >= 6 && os.Args[1] == "typed" {
+		typedBench(os.Args)
+		return
+	}
 	if len(os.Args) >= 6 && os.Args[1] == "lookup" {
 		lookupBench(os.Args)
 		return

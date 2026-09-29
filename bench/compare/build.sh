@@ -35,6 +35,7 @@ fi
 if want glaze; then
 	step glaze
 	c++ -O3 -std=c++23 -I"$D/glaze/include" -o "$B/glaze" "$C/cpp/glaze.cpp"
+	c++ -O3 -std=c++23 -I"$D/glaze/include" -o "$B/glaze-typed" "$C/cpp/glaze-typed.cpp"
 fi
 if want rust; then
 	step "rust (toml, toml_edit, toml-spanner, toml-span)"
@@ -50,6 +51,8 @@ if want zig-toml; then
 	step zig-toml
 	(cd "$C/zig" && "$D/zig/zig" build-exe -O ReleaseFast --dep toml -Mroot=bench.zig -Mtoml="$D/zig-toml/src/root.zig" \
 		-femit-bin="$B/zig-toml" --cache-dir "$C/zig/.zig-cache" --global-cache-dir "$C/zig/.zig-cache")
+	(cd "$C/zig" && "$D/zig/zig" build-exe -O ReleaseFast --dep toml -Mroot=typed.zig -Mtoml="$D/zig-toml/src/root.zig" \
+		-femit-bin="$B/zig-toml-typed" --cache-dir "$C/zig/.zig-cache" --global-cache-dir "$C/zig/.zig-cache")
 fi
 if want java; then
 	step "java (tomlj, jtoml)"

@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
 toml = "1.1.6"
 toml-span = "0.7.1"
-toml-spanner = "1.0.3"
+toml-spanner = { version = "1.0.3", features = ["derive", "to-toml"] }
 toml_edit = "0.25.15"
 
 [profile.release]

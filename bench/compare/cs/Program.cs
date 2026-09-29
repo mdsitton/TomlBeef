@@ -12,6 +12,8 @@ using Tomlyn.Syntax;
 
 if (args.Length >= 5 && args[0] == "lookup")
 	return LookupBench(args);
+if (args.Length >= 5 && args[0] == "typed")
+	return TypedBench.Run(args);
 
 if (args.Length < 3)
 {

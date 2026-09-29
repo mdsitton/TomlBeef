@@ -889,6 +889,17 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     610, strings 505 → 696, ints 147 → 179, floats 143 → 171, dates 156 → 190, arrays 78 → 80,
     headers 74 → 95, dotted 52 → 84; PreserveStyle dotted 40 → 47. Writing: ints 232 → 425, headers
     166 → 271, dotted 56 → 174. Lookups: 100 → 69 ns (ints), 84 → 71 ns (mixed).
+  - *Typed serialization* (`typed.sh`, results in `typed-results.md`, 2026-09-29). Every library with
+    a typed mapping reads `typed.toml` (3.8 MB: 20000 `[[servers]]`, each with strings, integers, a
+    float, a bool, a string list and a nested table) into matching native types and writes them
+    back; each prints the same checksum after the read and after re-reading its own output. Read /
+    write in ms: glaze 16 / 3.8, toml-spanner (derive) 21 / 12, TomlBeef 36 / 24 without positions
+    (41 through `TomlSerializer.Read`, which records them), zig-toml 39 / n/a (its serializer does
+    not compile for an array of tables), go-toml 58 / 31, Rust `toml` (serde) 79 / 29, Tomlyn 126 /
+    46 with its source generator and 145 / 50 with reflection, BurntSushi 295 / 194. TomlBeef's read
+    is 25 ms of parsing into a document plus ~11 ms of binding (mostly allocating 7 objects per
+    server, and one key lookup per field); glaze and toml-spanner bind while parsing, with no
+    document in between, which is also why they cannot offer the document-first API (8a).
   - *Beef's built-in reader* (`bench/compare/beef/`, `beef.sh`, results in `beef-results.md`).
     `Beefy.utils.StructuredData` (Beefy2D; IDE and BeefBuild project files) is built from the
     installed Beef (`fetch.sh` copies `StructuredData.bf` and `DisposeProxy.bf`) into one program with

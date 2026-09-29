@@ -18,6 +18,8 @@ namespace BeefTomlBench;
 ///       Parses once, then times passes over `table key` lookups of integers.
 ///   BeefTomlBench write <structured|tomlbeef> <min-samples> <file>
 ///       Parses once, then times serializing it back to TOML.
+///   BeefTomlBench typed <read|read-plain|write> <file> <min-samples>
+///       TomlBeef's [TomlObject] serialization of typed.toml (Typed.bf, ../typed.sh).
 ///
 /// Timings follow the rule every harness in bench/compare uses (see ../run.sh and Measure).
 class Program
@@ -32,6 +34,8 @@ class Program
 			return LookupBench(args);
 		if (args.Count >= 4 && args[0] == "write")
 			return WriteBench(args);
+		if (args.Count >= 4 && args[0] == "typed")
+			return TypedBench(args);
 		Console.Error.WriteLine("usage: BeefTomlBench check|parse|lookup|write ... (see Program.bf)");
 		return 2;
 	}
