@@ -12,7 +12,7 @@
     .value { font-size: 12.5px; fill: #424a53; font-variant-numeric: tabular-nums; }
     .value.ours { fill: #c2410c; }
     .small { font-size: 12px; fill: #424a53; }
-    .note { font-size: 12px; font-style: italic; fill: #8c959f; }
+    .note-plain { fill: #8c959f; }
     .bar { fill: #afb8c1; }
     .bar-ours { fill: #ea580c; }
     .rule { stroke: #d8dee4; stroke-width: 1; }
@@ -22,7 +22,7 @@
       .bg { fill: #0d1117; }
       .title, .label { fill: #e6edf3; }
       .subtitle, .footer, .axis, .group { fill: #8d96a0; }
-      .lang, .note { fill: #6e7681; }
+      .lang, .note-plain { fill: #6e7681; }
       .value, .small { fill: #c9d1d9; }
       .value.ours { fill: #fb923c; }
       .bar { fill: #3d444d; }
@@ -33,61 +33,62 @@
     }
   </style>
 <rect class="bg" x="0" y="0" width="920" height="1097" rx="10"/>
-<text x="40.0" y="44.0" class="title" text-anchor="start">Parsing a 3.9 MB config file</text>
-<text x="40.0" y="66.0" class="subtitle" text-anchor="start">MB/s, higher is better · each library into its own document type</text>
+<text x="40.0" y="44.0" class="title" text-anchor="start">Average speed relative to TomlBeef</text>
+<text x="40.0" y="66.0" class="subtitle" text-anchor="start">geometric mean over 10 inputs of each library's MB/s ÷ TomlBeef's · higher is better · TomlBeef = 1×</text>
 <text x="40.0" y="106.0" class="group" text-anchor="start">DATA MODEL</text>
 <text x="40.0" y="131.5" class="lang" text-anchor="start">Beef</text>
 <text x="190.0" y="131.5" class="label ours" text-anchor="end">TomlBeef</text>
-<rect x="200" y="118.5" width="560.0" height="16" rx="3" class="bar-ours"/>
-<text x="768.0" y="131.5" class="value ours" text-anchor="start">90.7</text>
-<text x="40.0" y="156.5" class="lang" text-anchor="start">Rust</text>
-<text x="190.0" y="156.5" class="label" text-anchor="end">toml</text>
-<rect x="200" y="143.5" width="188.9" height="16" rx="3" class="bar"/>
-<text x="396.9" y="156.5" class="value" text-anchor="start">30.6</text>
-<text x="40.0" y="181.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="181.5" class="label" text-anchor="end">toml++</text>
-<rect x="200" y="168.5" width="145.1" height="16" rx="3" class="bar"/>
-<text x="353.1" y="181.5" class="value" text-anchor="start">23.5</text>
+<rect x="200" y="118.5" width="440.0" height="16" rx="3" class="bar-ours"/>
+<text x="648.0" y="131.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
+<text x="40.0" y="156.5" class="lang" text-anchor="start">C++</text>
+<text x="190.0" y="156.5" class="label" text-anchor="end">glaze</text>
+<rect x="200" y="143.5" width="289.4" height="16" rx="3" class="bar"/>
+<text x="497.4" y="156.5" class="small"><tspan class="value">0.66×</tspan><tspan class="note-plain" dx="8">TomlBeef 1.5× faster · 8 of 10 inputs (no date/time support)</tspan></text>
+<text x="40.0" y="181.5" class="lang" text-anchor="start">Rust</text>
+<text x="190.0" y="181.5" class="label" text-anchor="end">toml</text>
+<rect x="200" y="168.5" width="119.7" height="16" rx="3" class="bar"/>
+<text x="327.7" y="181.5" class="small"><tspan class="value">0.27×</tspan><tspan class="note-plain" dx="8">TomlBeef 3.7× faster</tspan></text>
 <text x="40.0" y="206.5" class="lang" text-anchor="start">C#</text>
 <text x="190.0" y="206.5" class="label" text-anchor="end">Tomlyn</text>
-<rect x="200" y="193.5" width="106.8" height="16" rx="3" class="bar"/>
-<text x="314.8" y="206.5" class="value" text-anchor="start">17.3</text>
-<text x="40.0" y="231.5" class="lang" text-anchor="start">Go</text>
-<text x="190.0" y="231.5" class="label" text-anchor="end">BurntSushi/toml</text>
-<rect x="200" y="218.5" width="66.1" height="16" rx="3" class="bar"/>
-<text x="274.1" y="231.5" class="value" text-anchor="start">10.7</text>
+<rect x="200" y="193.5" width="70.5" height="16" rx="3" class="bar"/>
+<text x="278.5" y="206.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.2× faster</tspan></text>
+<text x="40.0" y="231.5" class="lang" text-anchor="start">C++</text>
+<text x="190.0" y="231.5" class="label" text-anchor="end">toml++</text>
+<rect x="200" y="218.5" width="68.4" height="16" rx="3" class="bar"/>
+<text x="276.4" y="231.5" class="small"><tspan class="value">0.16×</tspan><tspan class="note-plain" dx="8">TomlBeef 6.4× faster</tspan></text>
 <text x="40.0" y="256.5" class="lang" text-anchor="start">C</text>
-<text x="190.0" y="256.5" class="label" text-anchor="end">tomlc17</text>
-<rect x="200" y="243.5" width="38.3" height="16" rx="3" class="bar"/>
-<text x="246.3" y="256.5" class="value" text-anchor="start">6.2</text>
+<text x="190.0" y="256.5" class="label" text-anchor="end">toml-c</text>
+<rect x="200" y="243.5" width="44.5" height="16" rx="3" class="bar"/>
+<text x="252.5" y="256.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
 <text x="40.0" y="281.5" class="lang" text-anchor="start">C</text>
-<text x="190.0" y="281.5" class="label" text-anchor="end">toml-c</text>
-<rect x="200" y="268.5" width="37.0" height="16" rx="3" class="bar"/>
-<text x="245.0" y="281.5" class="value" text-anchor="start">6.0</text>
+<text x="190.0" y="281.5" class="label" text-anchor="end">tomlc17</text>
+<rect x="200" y="268.5" width="44.3" height="16" rx="3" class="bar"/>
+<text x="252.3" y="281.5" class="small"><tspan class="value">0.10×</tspan><tspan class="note-plain" dx="8">TomlBeef 9.9× faster</tspan></text>
 <text x="40.0" y="306.5" class="lang" text-anchor="start">Go</text>
-<text x="190.0" y="306.5" class="label" text-anchor="end">go-toml</text>
-<rect x="200" y="293.5" width="13.6" height="16" rx="3" class="bar"/>
-<text x="221.6" y="306.5" class="value" text-anchor="start">2.2</text>
-<text x="40.0" y="331.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="331.5" class="label" text-anchor="end">toml11</text>
-<rect x="200" y="318.5" width="13.0" height="16" rx="3" class="bar"/>
-<text x="221.0" y="331.5" class="value" text-anchor="start">2.1</text>
+<text x="190.0" y="306.5" class="label" text-anchor="end">BurntSushi/toml</text>
+<rect x="200" y="293.5" width="41.8" height="16" rx="3" class="bar"/>
+<text x="249.8" y="306.5" class="small"><tspan class="value">0.095×</tspan><tspan class="note-plain" dx="8">TomlBeef 10.5× faster</tspan></text>
+<text x="40.0" y="331.5" class="lang" text-anchor="start">Go</text>
+<text x="190.0" y="331.5" class="label" text-anchor="end">go-toml</text>
+<rect x="200" y="318.5" width="21.4" height="16" rx="3" class="bar"/>
+<text x="229.4" y="331.5" class="small"><tspan class="value">0.049×</tspan><tspan class="note-plain" dx="8">TomlBeef 20.6× faster</tspan></text>
 <text x="40.0" y="356.5" class="lang" text-anchor="start">C++</text>
-<text x="190.0" y="356.5" class="label" text-anchor="end">glaze</text>
-<text x="204.0" y="356.5" class="note" text-anchor="start">n/a: no date/time in schema-less mode</text>
+<text x="190.0" y="356.5" class="label" text-anchor="end">toml11</text>
+<rect x="200" y="343.5" width="6.4" height="16" rx="3" class="bar"/>
+<text x="214.4" y="356.5" class="small"><tspan class="value">0.015×</tspan><tspan class="note-plain" dx="8">TomlBeef 68.9× faster</tspan></text>
 <text x="40.0" y="386.0" class="group" text-anchor="start">KEEPS COMMENTS AND FORMATTING</text>
 <text x="40.0" y="411.5" class="lang" text-anchor="start">Beef</text>
 <text x="190.0" y="411.5" class="label ours" text-anchor="end">TomlBeef</text>
-<rect x="200" y="398.5" width="334.0" height="16" rx="3" class="bar-ours"/>
-<text x="542.0" y="411.5" class="value ours" text-anchor="start">54.1</text>
+<rect x="200" y="398.5" width="440.0" height="16" rx="3" class="bar-ours"/>
+<text x="648.0" y="411.5" class="small"><tspan class="value ours">1.00×</tspan><tspan class="note-plain" dx="8">baseline</tspan></text>
 <text x="40.0" y="436.5" class="lang" text-anchor="start">Rust</text>
 <text x="190.0" y="436.5" class="label" text-anchor="end">toml_edit</text>
-<rect x="200" y="423.5" width="167.9" height="16" rx="3" class="bar"/>
-<text x="375.9" y="436.5" class="value" text-anchor="start">27.2</text>
+<rect x="200" y="423.5" width="223.3" height="16" rx="3" class="bar"/>
+<text x="431.3" y="436.5" class="small"><tspan class="value">0.51×</tspan><tspan class="note-plain" dx="8">TomlBeef 2.0× faster</tspan></text>
 <text x="40.0" y="461.5" class="lang" text-anchor="start">C#</text>
 <text x="190.0" y="461.5" class="label" text-anchor="end">Tomlyn (syntax tree)</text>
-<rect x="200" y="448.5" width="25.9" height="16" rx="3" class="bar"/>
-<text x="233.9" y="461.5" class="value" text-anchor="start">4.2</text>
+<rect x="200" y="448.5" width="32.6" height="16" rx="3" class="bar"/>
+<text x="240.6" y="461.5" class="small"><tspan class="value">0.074×</tspan><tspan class="note-plain" dx="8">TomlBeef 13.5× faster</tspan></text>
 <text x="40.0" y="525.0" class="title" text-anchor="start">TomlBeef against the fastest alternative, per input</text>
 <text x="40.0" y="547.0" class="subtitle" text-anchor="start">MB/s · for each input, the fastest other library that parsed it · bars scaled per input</text>
 <text x="200.0" y="581.0" class="group" text-anchor="start">DATA MODEL</text>
