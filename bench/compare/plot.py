@@ -72,6 +72,7 @@ def relative_panel(parsers, table, top):
     bar_x, bar_w = 200, 440
     row_h, bar_h = 25, 16
     speeds = relative_speeds(parsers, table)
+    footnotes = []
     y = top
     out.append(text(40, y, "Average speed relative to TomlBeef", "title"))
     y += 22
@@ -87,18 +88,27 @@ def relative_panel(parsers, table, top):
             ratio, parsed = speeds[p]
             cy = y + row_h / 2
             ours = p.startswith("TomlBeef")
+            name = DISPLAY.get(p, p)
+            # A library that failed some inputs is starred and explained in a footnote below
+            failed = [INPUT_LABELS.get(i, i) for i, row in table.items() if row[p] is None]
+            if failed:
+                name += "*"
+                footnotes.append(f"* {DISPLAY.get(p, p)} failed the {' and '.join(failed)} inputs "
+                                 f"(no date/time support in its schema-less mode); its average covers "
+                                 f"the other {parsed}.")
             out.append(text(40, cy + 5, LANGUAGE[p], "lang"))
-            out.append(text(bar_x - 10, cy + 5, DISPLAY.get(p, p), "label ours" if ours else "label", "end"))
+            out.append(text(bar_x - 10, cy + 5, name, "label ours" if ours else "label", "end"))
             w = max(2.0, bar_w * ratio)
             out.append(f'<rect x="{bar_x}" y="{cy - bar_h / 2:.1f}" width="{w:.1f}" height="{bar_h}" rx="3" class="{"bar-ours" if ours else "bar"}"/>')
             shown = f"{ratio:.2f}×" if ratio >= 0.1 else f"{ratio:.3f}×"
             note = "baseline" if ours else f"TomlBeef {1 / ratio:.1f}× faster"
-            if parsed < len(table):
-                note += f" · {parsed} of {len(table)} inputs (no date/time support)"
             out.append(f'<text x="{bar_x + w + 8:.1f}" y="{cy + 5:.1f}" class="small">'
                        f'<tspan class="{"value ours" if ours else "value"}">{shown}</tspan>'
                        f'<tspan class="note-plain" dx="8">{esc(note)}</tspan></text>')
             y += row_h
+    for note in footnotes:
+        y += 22
+        out.append(text(40, y, note, "footnote"))
     return out, y
 
 
@@ -129,14 +139,19 @@ def head_to_head_panel(parsers, table, top):
             pair = ((DISPLAY.get(ours, ours), results[ours], True),
                     ("toml (Rust)" if rival == "toml (Rust)" else DISPLAY.get(rival, rival), rivals[rival], False))
             peak = max(v for _, v, _ in pair)
+            # Libraries in this group that failed this input (starred as in the panel above)
+            failed = [DISPLAY.get(p, p) for p, v in results.items() if member(p) and v is None]
             by = mid - bar_h - gap / 2
             for lib, v, is_ours in pair:
                 w = max(2.0, bar_w * v / peak)
                 out.append(f'<rect x="{x}" y="{by:.1f}" width="{w:.1f}" height="{bar_h}" rx="2" class="{"bar-ours" if is_ours else "bar"}"/>')
                 value = f"{v:.1f}" if v < 100 else f"{v:.0f}"
+                failed_note = "" if is_ours or not failed else \
+                    f'<tspan class="note-plain" dx="8">· {esc(", ".join(f + "*" for f in failed))} failed</tspan>'
                 out.append(f'<text x="{x + w + 7:.1f}" y="{by + 11:.1f}" class="small">'
                            f'<tspan class="{"value ours" if is_ours else "value"}">{value}</tspan>'
-                           f'<tspan class="{"libname ours" if is_ours else "libname"}" dx="6">{esc(lib)}</tspan></text>')
+                           f'<tspan class="{"libname ours" if is_ours else "libname"}" dx="6">{esc(lib)}</tspan>'
+                           f'{failed_note}</text>')
                 by += bar_h + gap
         y += row_h
     out.append(f'<line x1="40" y1="{y:.1f}" x2="{W - 40}" y2="{y:.1f}" class="rule"/>')
@@ -164,6 +179,7 @@ def main():
     .value.ours {{ fill: #c2410c; }}
     .small {{ font-size: 12px; fill: #424a53; }}
     .note-plain {{ fill: #8c959f; }}
+    .footnote {{ font-size: 12px; fill: #656d76; }}
     .bar {{ fill: #afb8c1; }}
     .bar-ours {{ fill: #ea580c; }}
     .rule {{ stroke: #d8dee4; stroke-width: 1; }}
@@ -174,6 +190,7 @@ def main():
       .title, .label {{ fill: #e6edf3; }}
       .subtitle, .footer, .axis, .group {{ fill: #8d96a0; }}
       .lang, .note-plain {{ fill: #6e7681; }}
+      .footnote {{ fill: #8d96a0; }}
       .value, .small {{ fill: #c9d1d9; }}
       .value.ours {{ fill: #fb923c; }}
       .bar {{ fill: #3d444d; }}
