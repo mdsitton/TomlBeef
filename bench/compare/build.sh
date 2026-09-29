@@ -37,13 +37,28 @@ if want glaze; then
 	c++ -O3 -std=c++23 -I"$D/glaze/include" -o "$B/glaze" "$C/cpp/glaze.cpp"
 fi
 if want rust; then
-	step "rust (toml, toml_edit)"
-	cargo build -q --release --manifest-path "$C/rust/Cargo.toml" --target-dir "$C/rust/target"
+	step "rust (toml, toml_edit, toml-spanner, toml-span)"
+	# Built from its directory so rustup picks the pinned toolchain in rust-toolchain.toml
+	(cd "$C/rust" && cargo build -q --release --target-dir "$C/rust/target")
 	cp "$C/rust/target/release/tomlbench" "$B/rust-tomlbench"
 fi
 if want go; then
 	step "go (BurntSushi/toml, go-toml)"
 	(cd "$C/go" && go build -o "$B/go-tomlbench" .)
+fi
+if want zig-toml; then
+	step zig-toml
+	(cd "$C/zig" && "$D/zig/zig" build-exe -O ReleaseFast --dep toml -Mroot=bench.zig -Mtoml="$D/zig-toml/src/root.zig" \
+		-femit-bin="$B/zig-toml" --cache-dir "$C/zig/.zig-cache" --global-cache-dir "$C/zig/.zig-cache")
+fi
+if want java; then
+	step "java (tomlj, jtoml)"
+	(cd "$C/java" && gradle -q --console=plain installDist)
+	rm -rf "$B/java" && cp -r "$C/java/build/install/tomlbench" "$B/java"
+fi
+if want js; then
+	step "javascript (js-toml, smol-toml, toml)"
+	(cd "$C/js" && npm install --silent --no-audit --no-fund)
 fi
 if want tomlyn; then
 	step tomlyn

@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 toml = "1.1.6"
+toml-span = "0.7.1"
+toml-spanner = "1.0.3"
 toml_edit = "0.25.15"
 
 [profile.release]

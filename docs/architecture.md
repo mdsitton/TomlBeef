@@ -752,40 +752,44 @@ Release-mode asserts (the parser has already checked `TomlDateRules`; Debug stil
 object, one heap allocation per small array instead of three: small arrays ~59 → ~64. Allocating
 those lists in the document arena instead was tried and was 23% slower, because fresh arena pages
 per document take page faults that malloc's reused memory avoids.
-  - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`). Each
-    library parses the same generated inputs (2–9 MB, at most 1000 keys per table) into its own
-    schema-less document, in one process per cell: one warm-up parse, then the average of up to 5
-    parses within 3 s. C/C++ at `-O3` without `-march=native`, like TomlBeef's Release build.
-    Versions: tomlc17 R260821, toml-c 6a38d40, toml11 v4.4.0, toml++ v3.4.0, glaze v9.0.0, Rust
-    `toml` 1.1.6 / `toml_edit` 0.25.15, BurntSushi/toml v1.6.0, go-toml v2.4.3, Tomlyn 2.10.1.
-    MB/s, Linux x86-64, 2026-09-28, after the changes below; the last three columns keep comments
-    and formatting:
-
-    | input | TomlBeef | tomlc17 | toml-c | toml11 | toml++ | glaze | toml (Rust) | BurntSushi | go-toml | Tomlyn | TomlBeef preserve | toml_edit | Tomlyn syntax |
-    |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-    | mixed | 90.7 | 6.2 | 6.0 | 2.1 | 23.5 | FAIL | 30.6 | 10.7 | 2.2 | 17.3 | 54.1 | 27.2 | 4.2 |
-    | commented | 534.2 | 44.2 | 55.3 | 5.8 | 53.1 | 420.1 | 204.9 | 41.4 | 27.2 | 66.7 | 238.8 | 142.6 | 17.4 |
-    | comments | 2754.3 | 555.8 | 1222.1 | 12.3 | 63.4 | 2580.0 | 653.7 | 65.4 | 2227.2 | 109.8 | 699.8 | 639.7 | 63.0 |
-    | strings | 490.9 | 38.5 | 34.6 | 7.0 | 44.8 | 246.4 | 136.5 | 41.6 | 40.2 | 82.0 | 265.1 | 150.4 | 24.8 |
-    | ints | 150.8 | 10.4 | 8.5 | 1.8 | 23.6 | 67.1 | 34.3 | 14.3 | 8.5 | 30.4 | 102.0 | 39.8 | 5.7 |
-    | floats | 87.4 | 9.0 | 8.1 | 1.8 | 14.6 | 67.2 | 31.2 | 11.9 | 8.0 | 26.1 | 59.5 | 31.7 | 5.2 |
-    | dates | 129.3 | 15.0 | 12.0 | 2.9 | 26.8 | FAIL | 26.9 | 16.5 | 11.5 | 18.1 | 85.1 | 47.5 | 5.5 |
-    | arrays | 63.8 | 9.6 | 9.2 | 0.5 | 19.7 | 51.3 | 17.3 | 10.0 | 12.2 | 11.4 | 34.4 | 17.5 | 2.1 |
-    | headers | 74.6 | 7.9 | 11.6 | 1.3 | 20.3 | 39.6 | 16.1 | 7.7 | 0.2 | 14.8 | 51.6 | 19.1 | 3.3 |
-    | dotted | 52.0 | 4.7 | 2.5 | 1.8 | 17.5 | 33.7 | 13.7 | 6.4 | 0.2 | 12.3 | 39.0 | 13.0 | 3.3 |
-
-    TomlBeef leads on every input in both groups. The first run of this comparison lost on
+  - *Comparison* (`bench/compare/`: `fetch.sh`, `build.sh`, `gen-inputs.py`, `run.sh`, `plot.py`;
+    results in `bench/compare/results.md`, chart in `docs/benchmark.svg`). 20 libraries parse the
+    same generated inputs (2–9 MB, at most 1000 keys per table) into their own schema-less
+    documents, one process per cell: a warm-up (one parse; 1 s for the JIT runtimes Java, C# and
+    JavaScript), then the average of up to 5 parses within 3 s, with a 60 s limit per cell. C/C++
+    at `-O3` and Zig at `ReleaseFast`, without `-march=native`, like TomlBeef's Release build.
+    Versions: tomlc17 R260821, toml-c 6a38d40, toml11 v4.4.0, toml++ v3.4.0, glaze v9.0.0; Rust
+    1.98.1 with `toml` 1.1.6, `toml_edit` 0.25.15, toml-spanner 1.0.3, toml-span 0.7.1; zig-toml
+    8685923 (zig-0.16 branch) with Zig 0.16.0; BurntSushi/toml v1.6.0, go-toml v2.4.3; tomlj
+    2.1.1, jtoml 1.8.1 (Java 26); Tomlyn 2.10.1 (.NET 10); js-toml 2.0.1, smol-toml 1.9.0,
+    toml 5.0.0 (Node 26).
+  - *Standings* (2026-09-28, geometric mean of MB/s relative to TomlBeef over the 10 inputs). Of
+    the data-model parsers only **toml-spanner** is faster: 1.42× on average and ahead on 9 of the
+    10 inputs, all but comment-only (for example 167 vs 87 MB/s on the mixed config, 134 vs 66 on
+    small arrays). It validates fully, and its tree borrows strings from the input (only escaped
+    strings are copied, into an arena), where TomlBeef copies every string into its document
+    store and builds a hash map per table. Next come zig-toml 0.83×, glaze 0.67× and Rust `toml`
+    0.27×; the rest are 0.26× or slower. Among parsers that keep comments and formatting TomlBeef
+    is fastest: `toml_edit` 0.52×, Tomlyn's syntax tree 0.077×.
+  - An earlier run of 13 libraries (before toml-spanner and the others were added) lost on
     comment-heavy input (glaze 2657, go-toml 1912, toml-c 1230 vs 1114 MB/s; `toml_edit` 636 vs 535
-    preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41). Studying
-    those libraries led to the changes described under `TomlByteCursor` (columns on demand, eight
-    bytes at a time) and the integer, keyword/date and array-allocation changes below. glaze and
-    toml-c do not validate UTF-8 and glaze accepts some invalid TOML (see its notes); go-toml and
-    `toml_edit` validate fully. Notes:
+    preserving), the commented config (glaze 418 vs 398) and small arrays (glaze 49 vs 41).
+    Studying those libraries led to the changes described under `TomlByteCursor` (columns on
+    demand, eight bytes at a time) and the integer, keyword/date and array-allocation changes below.
+  - Validation differs, so some speeds buy less work. Checked with duplicate keys and tables,
+    extending an inline table, two pairs on one line, a leading zero, February 30, a bare CR, a
+    control character in a comment and invalid UTF-8: zig-toml accepts all of them; smol-toml
+    accepts February 30; glaze and toml-c skip UTF-8 validation. toml-spanner, toml-span, tomlj,
+    jtoml, js-toml and toml (JS) reject the rest (the Java and JavaScript libraries take decoded
+    strings, so UTF-8 is not theirs to check). The same check found TomlBeef accepting a bare CR
+    after a value, since fixed. Other notes:
     - glaze reads TOML into known C++ types. Its schema-less value is JSON-shaped, has no date/time,
       and fails on dates (FAIL). Reading into that value picks the type from the first byte, so a
       document starting with `[table]` is taken for an array; the harness reads into the generic
-      object type instead.
-    - go-toml's time grows superlinearly with the number of tables (~20 s per parse on `headers`).
+      object type instead. toml-span has no date/time support either.
+    - Some parsers are superlinear: go-toml in the number of tables (~20 s per parse on `headers`),
+      jtoml in document size (~90 s for the 3.9 MB config), tomlj on the 8.9 MB comment-only file.
+      Cells past the limit print TIMEOUT and count at input size / limit, which flatters them.
     - Each library builds a different document type, so the work is not identical.
 
 - Default (decoder): reads TOML from stdin and writes toml-test tagged JSON through

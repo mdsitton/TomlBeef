@@ -4,3 +4,7 @@ inputs/
 rust/target/
 cs/bin/
 cs/obj/
+java/build/
+java/.gradle/
+js/node_modules/
+zig/.zig-cache/

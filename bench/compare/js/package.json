@@ -1,0 +1,11 @@
+{
+  "name": "tomlbench",
+  "private": true,
+  "type": "module",
+  "description": "JavaScript harness for the comparison benchmark (see ../build.sh)",
+  "dependencies": {
+    "js-toml": "2.0.1",
+    "smol-toml": "1.9.0",
+    "toml": "5.0.0"
+  }
+}

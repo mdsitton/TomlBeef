@@ -1,0 +1,19 @@
+// Java harness for the comparison benchmark (see ../build.sh). `gradle installDist` puts a launcher
+// script and the library jars under build/install/tomlbench.
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.tomlj:tomlj:2.1.1'
+    implementation 'io.github.wasabithumb:jtoml:1.8.1'
+}
+
+application {
+    mainClass = 'TomlBench'
+    applicationName = 'tomlbench'
+}

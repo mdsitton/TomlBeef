@@ -1,6 +1,5 @@
 // Tomlyn benchmark: TomlynBench <model|syntax> <file> <iterations>
-// Reads the file once, parses it once to warm up, then times up to <iterations> parses within a
-// 3 s budget.
+// Reads the file once, warms up for 1 s, then times up to <iterations> parses within a 3 s budget.
 //   model  - TomlSerializer.Deserialize<TomlTable> (the runtime data model)
 //   syntax - SyntaxParser.Parse (the lossless, trivia-preserving syntax tree)
 using System.Diagnostics;
@@ -35,7 +34,12 @@ void ParseOnce()
 	}
 }
 
-ParseOnce();
+// Warm up for 1 s (at least one parse) so the JIT has compiled the parser, as in the Java and
+// JavaScript harnesses
+var warm = Stopwatch.StartNew();
+do
+	ParseOnce();
+while (warm.Elapsed.TotalSeconds < 1);
 // Stop after <iterations> parses or 3 s, whichever comes first (at least one)
 var sw = Stopwatch.StartNew();
 int done = 0;
