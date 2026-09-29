@@ -10,6 +10,9 @@ public interface ITomlSerializable
 	/// or Serialize is given no path (see TomlObjectAttribute.Key).
 	static StringView TomlKey { get; }
 
+	/// @brief Older paths of that table ([TomlAlias] on the type), tried in order when TomlKey is absent.
+	static Span<StringView> TomlKeyAliases { get; }
+
 	/// @brief Fill this object's fields from `table`.
 	/// @param table The table to read.
 	/// @param allocator Where the objects the read creates (Strings, nested objects, Lists and their

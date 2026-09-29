@@ -54,6 +54,22 @@ public static class TomlSerializerCodeGen
 			ApplyNaming(type.GetName(.. scope .()), naming, home);
 		let homeLiteral = AppendLiteral(.. scope .(), home);
 		read.AppendF("public {}static StringView TomlKey => {};\n", hide, homeLiteral);
+		// Older paths of the type's table, from [TomlAlias] on the type
+		let typeAliases = scope String();
+		int aliasCount = 0;
+		for (let alias in type.GetCustomAttributes<TomlAliasAttribute>())
+		{
+			if (aliasCount++ > 0)
+				typeAliases.Append(", ");
+			AppendLiteral(typeAliases, alias.mName);
+		}
+		if (aliasCount == 0)
+			read.AppendF("public {}static Span<StringView> TomlKeyAliases => default;\n", hide);
+		else
+		{
+			read.AppendF("static StringView[{}] sTomlKeyAliases = .({});\n", aliasCount, typeAliases);
+			read.AppendF("public {}static Span<StringView> TomlKeyAliases => sTomlKeyAliases;\n", hide);
+		}
 		read.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table, System.ITypedAllocator _alloc = null){}\n{{\n", hide, type.IsValueType ? " mut" : "");
 		write.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlWrite(TomlBeef.TomlTable _table)\n{{\n", hide);
 		if (baseIsObject)
@@ -92,7 +108,14 @@ public static class TomlSerializerCodeGen
 				Runtime.FatalError(scope $"[TomlObject] {ownerName}.{field.Name}: TOML serialization does not support fields of type {typeName}. Supported: bool, integers, float, double, String, enums, the TOML date/time types, [TomlObject] types, List<T> of those, and types with a converter ([TomlConverter] registration or [TomlUseConverter] on the field). Mark the field [TomlIgnore] to leave it out.");
 			}
 
-			EmitRead(read, field.Name, key, required, fieldType, kind, converter);
+			// Older names from [TomlAlias], as `, "a", "b"` to append to a call's arguments
+			let aliases = scope String();
+			for (let alias in field.GetCustomAttributes<TomlAliasAttribute>())
+				AppendLiteral(aliases..Append(", "), alias.mName);
+
+			EmitRead(read, field.Name, key, aliases, required, fieldType, kind, converter);
+			if (!aliases.IsEmpty)
+				write.AppendF("\tTomlBeef.TomlBind.RenameAlias(_table, {}{});\n", key, aliases);
 			EmitWrite(write, field.Name, key, fieldType, kind, converter);
 		}
 
@@ -285,10 +308,17 @@ public static class TomlSerializerCodeGen
 	}
 
 	[Comptime]
-	static void EmitRead(String code, StringView name, StringView key, bool required, Type type, Kind kind, Type converter)
+	static void EmitRead(String code, StringView name, StringView literalKey, StringView aliases, bool required, Type type, Kind kind, Type converter)
 	{
 		StringView req = required ? "true" : "false";
 		code.Append("\t{\n");
+		// With aliases, the key is whichever name the table has: the current one first
+		StringView key = literalKey;
+		if (!aliases.IsEmpty)
+		{
+			code.AppendF("\t\tlet _k = TomlBeef.TomlBind.FindKey(_table, {}{});\n", literalKey, aliases);
+			key = "_k";
+		}
 		switch (kind)
 		{
 		case .Integer:

@@ -359,6 +359,21 @@ struct SerToolSection
 	public int32 Level;
 }
 
+// Renamed since an older file format: [TomlAlias] reads the old names, writing migrates to the new ones
+
+[TomlObject(Key = "listener", Naming = .SnakeCase), TomlAlias("server")]
+class SerListener
+{
+	[TomlAlias("hostname"), TomlAlias("host_name")] public String Host ~ delete _;
+	[TomlAlias("port_number")] public int32 Port;
+}
+
+[TomlObject(Key = "net.listener"), TomlAlias("server")]
+class SerMovedListener
+{
+	public int32 Port;
+}
+
 static class TomlSerializerTests
 {
 	const String cConfig = """
@@ -742,6 +757,54 @@ static class TomlSerializerTests
 		let whole = scope SerKeyed();
 		ReadOk("Port = 5\n[server]\nPort = 6", whole);
 		Test.Assert(whole.Port == 5);
+	}
+
+	[Test]
+	public static void Aliases_ReadOldNamesAndMigrateOnWrite()
+	{
+		const String old = """
+			# app config
+			[server] # the public listener
+			hostname = "a" # bind address
+			port_number = 80 # http
+			extra = 1
+			""";
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read(old, .() { MetadataMode = .PreserveStyle }) case .Ok);
+		let listener = scope SerListener();
+		Test.Assert(doc.Deserialize(listener) case .Ok);
+		Test.Assert(listener.Host == "a" && listener.Port == 80, "read through the table and field aliases");
+
+		// Writing renames the old table and keys in place: same position, comments kept
+		listener.Port = 8080;
+		Test.Assert(doc.Serialize(listener) case .Ok);
+		let text = scope String();
+		doc.Write(text);
+		Test.Assert(text == """
+			# app config
+			[listener] # the public listener
+			host = "a" # bind address
+			port = 8080 # http
+			extra = 1
+
+			""", text);
+
+		// Aliases are tried in order after the current name, and the current name wins over them
+		let later = scope SerListener();
+		Test.Assert(TomlSerializer.Read("host_name = \"b\"\nport = 1\nport_number = 2", later) case .Ok);
+		Test.Assert(later.Host == "b" && later.Port == 1);
+
+		// A table whose new home has another parent is moved there
+		let moved = scope TomlDocument();
+		Test.Assert(moved.Read("[server]\nPort = 3\n[other]\nx = 1") case .Ok);
+		let movedListener = scope SerMovedListener();
+		Test.Assert(moved.Deserialize(movedListener) case .Ok && movedListener.Port == 3);
+		Test.Assert(moved.Serialize(movedListener) case .Ok);
+		Test.Assert(!moved.RootTable.ContainsKey("server") && moved.GetInteger("net.listener.Port", 0) == 3 && moved.GetInteger("other.x", 0) == 1);
+		text.Clear();
+		moved.Write(text);
+		let reread = scope TomlDocument();
+		Test.Assert(reread.Read(text) case .Ok && reread.GetInteger("net.listener.Port", 0) == 3, text);
 	}
 
 	[Test]

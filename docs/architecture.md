@@ -703,6 +703,14 @@ text through `Compiler.EmitTypeBody`.
   `@ConfigurationProperties(prefix)`, .NET `GetSection`, Viper `UnmarshalKey`) bind sections, and the
   document API is closer to them. A type's key only places it at the top level: as a field of
   another `[TomlObject]`, the field's name decides.
+- *Renames.* `[TomlAlias("old")]` (repeatable, on fields and types) lists older names, the pattern
+  of Jackson's `@JsonAlias`, kotlinx `@JsonNames` and serde's `alias`: reading tries the current name
+  and then each alias (`TomlBind.FindKey`; for a type, `FindHome` over `TomlKeyAliases`), and writing
+  uses the current name. Those libraries never write into an existing document; here writing would
+  leave the old key beside the new one, so the old entry is renamed in place first
+  (`TomlBind.RenameAlias`, `TomlTable.RenameKey`: value, node ID, comments and position kept) and a
+  document migrates on its next save. A type's table under a different parent is moved instead
+  (removed and re-inserted under the new parent).
 - *Writing updates in place.* Scalars go through `Set`, which leaves an unchanged value (and its
   PreserveStyle token and comments) untouched; existing sub-tables and arrays are reused
   (`TomlTable.WriteTableAt`/`WriteArrayAt`), so keys the type does not know and their comments stay;

@@ -294,6 +294,40 @@ public static class TomlBind
 		return Try!(Element(array, index, "table")).AsTable;
 	}
 
+	/// @brief The key a field with [TomlAlias] names is stored under: `key` when present, else the first
+	/// alias present, else `key` (so a missing required field reports its current name).
+	/// @param table The table.
+	/// @param key The field's current key.
+	/// @param aliases Its older keys, in order.
+	/// @return The key to read.
+	public static StringView FindKey(TomlTable table, StringView key, params Span<StringView> aliases)
+	{
+		if (table.ContainsKey(key))
+			return key;
+		for (let alias in aliases)
+		{
+			if (table.ContainsKey(alias))
+				return alias;
+		}
+		return key;
+	}
+
+	/// @brief Before a field with [TomlAlias] is written: when `key` is absent but an alias is present,
+	/// rename that entry to `key` in place, so its position and comments stay and no stale copy is left.
+	/// @param table The table.
+	/// @param key The field's current key.
+	/// @param aliases Its older keys, in order.
+	public static void RenameAlias(TomlTable table, StringView key, params Span<StringView> aliases)
+	{
+		if (table.ContainsKey(key))
+			return;
+		for (let alias in aliases)
+		{
+			if (table.RenameKey(alias, key))
+				return;
+		}
+	}
+
 	/// @brief The table to write a [TomlObject] field into: the existing one under `key`, or a new one.
 	/// @param table The table.
 	/// @param key The key.

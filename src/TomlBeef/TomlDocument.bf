@@ -1087,7 +1087,47 @@ public class TomlDocument
 	{
 		if (root)
 			return target.TomlRead(mRootTable, allocator);
-		return target.TomlRead(Try!(RequireTable(T.TomlKey)), allocator);
+		return target.TomlRead(Try!(RequireTable(FindHome<T>())), allocator);
+	}
+
+	/// The path of T's table: TomlKey when it exists, else the first [TomlAlias] path that does, else
+	/// TomlKey (so a missing table is reported under its current name).
+	private StringView FindHome<T>() where T : ITomlSerializable
+	{
+		if (TryGetTable(T.TomlKey, ?))
+			return T.TomlKey;
+		for (let alias in T.TomlKeyAliases)
+		{
+			if (TryGetTable(alias, ?))
+				return alias;
+		}
+		return T.TomlKey;
+	}
+
+	/// Before T is written to its table: when TomlKey is absent but an alias path holds a table, rename it
+	/// to TomlKey in place (same parent), or move it under the new parent, so no stale copy remains.
+	private void MoveHome<T>() where T : ITomlSerializable
+	{
+		if (TryGetTable(T.TomlKey, ?))
+			return;
+		for (let alias in T.TomlKeyAliases)
+		{
+			if (!ResolvePath(alias, false, let fromParent, let fromKey))
+				continue;
+			TomlTable moving = null;
+			if (!fromParent.TryGetTable(fromKey, out moving))
+				continue;
+			if (!ResolvePath(T.TomlKey, true, let toParent, let toKey))
+				return;
+			if (toParent == fromParent)
+				fromParent.RenameKey(fromKey, toKey);
+			else
+			{
+				fromParent.Remove(fromKey);
+				toParent.Insert(toKey, .Table(moving));
+			}
+			return;
+		}
 	}
 
 	/// @brief Fill a [TomlObject] class from the table at a dotted path: `doc.Deserialize("server", server)`.
@@ -1111,7 +1151,7 @@ public class TomlDocument
 	{
 		if (root)
 			return target.TomlRead(mRootTable, allocator);
-		return target.TomlRead(Try!(RequireTable(T.TomlKey)), allocator);
+		return target.TomlRead(Try!(RequireTable(FindHome<T>())), allocator);
 	}
 
 	/// @brief Fill a [TomlObject] struct from the table at a dotted path.
@@ -1134,6 +1174,7 @@ public class TomlDocument
 	{
 		if (root)
 			return source.TomlWrite(mRootTable);
+		MoveHome<T>();
 		return Serialize(T.TomlKey, source);
 	}
 

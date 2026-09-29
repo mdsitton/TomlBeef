@@ -323,6 +323,16 @@ public class TomlTable
 		return arr;
 	}
 
+	/// Renames the entry `oldKey` to `newKey` in place (value, node ID, comments and position kept).
+	/// @return False, changing nothing, if `oldKey` is missing or `newKey` already exists.
+	internal bool RenameKey(StringView oldKey, StringView newKey)
+	{
+		let index = mEntries.IndexOf(oldKey);
+		if (index < 0 || ContainsKey(newKey))
+			return false;
+		return RenameAt(index, newKey) case .Ok;
+	}
+
 	/// Puts a new container in the entry at `index`, keeping its key and position.
 	private void ReplaceAt(int index, TomlValue value)
 	{

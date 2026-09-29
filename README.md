@@ -457,6 +457,16 @@ Try!(doc.WriteFile("app.toml"));            // comments and layout kept
 
 Without a path, the document API uses the type's `Key` (a dotted path such as `"tool.poetry"` works too), or the type's name through its `Naming` policy when `Key` is not set (`ServerSection` → `[ServerSection]`, or `[server_section]` in snake case). Pass a path to choose another table (`doc.Deserialize("mirror.server", server)`), or `root: true` for the whole document (`doc.Deserialize(appConfig, root: true)`). A field of such a type inside another `[TomlObject]` is still named by the field.
 
+**Renames.** `[TomlAlias("old")]` keeps older files readable after a field or type is renamed. Reading tries the current name, then each alias in order; writing uses the current name and renames an old key or table in place (position and comments kept), so the file migrates when it is next saved:
+
+```bf
+[TomlObject(Key = "listener"), TomlAlias("server")]   // formerly [server]
+class ListenerSection
+{
+    [TomlAlias("port_number")] public int32 Port;      // formerly port_number
+}
+```
+
 **Converters** handle types the serializer does not know, typically ones you cannot annotate (a `Vector3` from another library). A field whose type is itself `[TomlObject]` needs no converter: it is read and written as a nested table through that type's own generated code. Register a converter once and every field or list item of that type uses it; `[TomlUseConverter(typeof(...))]` picks a different one for a single field.
 
 For each field, the first match wins: `[TomlUseConverter]` on the field, then a registered `[TomlConverter]` for its type, then the type's own `[TomlObject]` handling. So a converter can also give a `[TomlObject]` type a different TOML form (a `Point` written as `"3,4"` instead of a table), everywhere or per field. The TOML scalar types (bool, numbers, String, dates) always use the built-in handling.

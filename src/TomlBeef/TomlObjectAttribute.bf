@@ -82,6 +82,27 @@ public struct TomlNameAttribute : Attribute
 	}
 }
 
+/// @brief An older name, so files written before a rename still read. Repeatable; on a field it is a key,
+/// on a [TomlObject] type a dotted path for its table (see TomlObjectAttribute.Key).
+///
+/// Reading takes the current name first, then each alias in order. Writing always uses the current name:
+/// a value found under an alias is renamed in place (same position, comments kept), so a document
+/// migrates to the new names when it is next saved. A type's table under a different parent (`server`
+/// to `net.listener`) is moved there instead.
+[AttributeUsage(.Field | .Class | .Struct)]
+public struct TomlAliasAttribute : Attribute
+{
+	/// @brief The older name.
+	public String mName;
+
+	/// @brief Also accept `name`.
+	/// @param name The older key (on a field) or dotted table path (on a type).
+	public this(String name)
+	{
+		mName = name;
+	}
+}
+
 /// @brief Leaves a field out of the generated reading and writing.
 [AttributeUsage(.Field)]
 public struct TomlIgnoreAttribute : Attribute
