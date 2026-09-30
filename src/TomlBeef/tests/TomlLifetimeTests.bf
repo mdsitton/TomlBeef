@@ -50,6 +50,30 @@ static class TomlLifetimeTests
 	}
 
 	[Test]
+	public static void ReleaseCachedMemory_KeepsCurrentContent()
+	{
+		// Large enough for several arena pools
+		let big = scope String();
+		for (int i < 20000)
+			big.AppendF("k{} = \"value number {}\"\n", i, i);
+		let doc = scope TomlDocument();
+		ReadOrFail(doc, big);
+		ReadOrFail(doc, "a = \"still here\"\n");
+		Test.Assert(doc.[Friend]mStore.CachedPoolCount > 0, "The first read's pools are cached for reuse");
+		Test.Assert(doc.TryGetString("a", var before));
+
+		doc.ReleaseCachedMemory();
+		Test.Assert(doc.[Friend]mStore.CachedPoolCount == 0);
+		Test.Assert(doc.TryGetString("a", var after) && after == "still here" && after.Ptr == before.Ptr, "Current content does not move");
+
+		// Clear, release, then read again: everything works from fresh memory
+		doc.Clear();
+		doc.ReleaseCachedMemory();
+		ReadOrFail(doc, big);
+		Test.Assert(doc.TryGetString("k19999", var last) && last == "value number 19999");
+	}
+
+	[Test]
 	public static void RepeatedParseAndClearCycles()
 	{
 		var doc = scope TomlDocument();

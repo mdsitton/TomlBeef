@@ -277,8 +277,8 @@ static class TomlRegressionTests
 			"v = [{x=1,y=2,}]\n", "v = [{x=1,y=2}]\n",
 			"v = [{ x = 1 }, {y=2}]\n", "v = [{ x = 1 }, {y=2}]\n",
 			"v = [[{a=1}]]\n", "v = [[{a=1}]]\n",
-			// Multi-line, it stays multi-line (nested closing brackets are not re-indented yet)
-			"v = [{\n  a=1,\n}]\n", "v = [\n  {\n  a=1,\n}\n]\n");
+			// A multi-line element does not make its array multi-line
+			"v = [{\n  a=1,\n}]\n", "v = [{\n  a=1,\n}]\n");
 		for (int i = 0; i < cases.Count; i += 2)
 		{
 			let input = cases[i];
@@ -295,6 +295,55 @@ static class TomlRegressionTests
 		let output = doc.Write(.. scope String(), .() { Version = .V1_0 });
 		let reread = scope TomlDocument();
 		Test.Assert(reread.Read(output, .() { Version = .V1_0 }) case .Ok, output);
+	}
+
+	// Nested multi-line layouts (status.md O15): read from the container's own separators, written with
+	// every level indented under the line it opens on
+
+	[Test]
+	public static void NestedMultilineContainersKeepTheirIndentation()
+	{
+		const String nested = """
+			w = [
+			  1,
+			  [
+			    2,
+			  ],
+			  { a = "x, y = z", b = [
+			    3,
+			  ] },
+			]
+			t = {
+			  a = [
+			    1,
+			  ],
+			  b = { c = 1 },
+			}
+
+			""";
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read(nested, .() { MetadataMode = .PreserveStyle }) case .Ok);
+		let output = doc.Write(.. scope String());
+		Test.Assert(output == nested, output);
+
+		// Punctuation inside strings and nested values does not change the table's own layout
+		let formats = scope TomlDocument();
+		Test.Assert(formats.Read("t = {a=\"x = y, z\",b=[1, 2]}\n", .() { MetadataMode = .PreserveStyle }) case .Ok);
+		output.Clear();
+		formats.Write(output);
+		Test.Assert(output == "t = {a=\"x = y, z\",b=[1, 2]}\n", output);
+
+		// A new array nested in one read from the source is written like its siblings, and reads back
+		Test.Assert(doc.TryGetArray("w", var w));
+		let added = w.AddArray();
+		added.Add(4);
+		added.Add(5);
+		output.Clear();
+		doc.Write(output);
+		let reread = scope TomlDocument();
+		Test.Assert(reread.Read(output) case .Ok, output);
+		Test.Assert(reread.TryGetArray("w", var rw) && rw.Count == 4, output);
+		Test.Assert(output.Contains("\n  [\n    4,\n    5,\n  ],\n"), output);
 	}
 
 	// B10: changing the sign of zero is a change

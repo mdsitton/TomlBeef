@@ -16,10 +16,14 @@ public static class TomlBind
 	/// The value at `key` if it has type `typeName`; false if the key is missing and not required.
 	static Result<bool, TomlParseError> Lookup(TomlTable table, StringView key, bool required, StringView typeName, out TomlValue value)
 	{
-		value = default;
-		if (!required && !table.ContainsKey(key))
-			return false;
-		value = Try!(table.RequireValue(key, key, typeName));
+		// One lookup: a present value only needs its type checked
+		if (!table.TryGetValue(key, out value))
+		{
+			if (!required)
+				return false;
+			Try!(table.RequireValue(key, key, typeName)); // the located MissingKey error
+		}
+		value = Try!(table.CheckValueType(key, key, value, typeName));
 		return true;
 	}
 
@@ -51,14 +55,17 @@ public static class TomlBind
 	public static Result<bool, TomlParseError> ReadFloat(TomlTable table, StringView key, bool required, out double value)
 	{
 		value = 0;
-		if (table.TryGetValue(key, let raw) && raw case .Integer(let asInteger))
+		TomlValue found;
+		if (!table.TryGetValue(key, out found))
 		{
-			value = asInteger;
-			return true;
+			if (!required)
+				return false;
+			Try!(table.RequireValue(key, key, "float")); // the located MissingKey error
 		}
-		if (!Try!(Lookup(table, key, required, "float", let found)))
-			return false;
-		value = found.AsFloat;
+		if (found case .Integer(let asInteger))
+			value = asInteger;
+		else
+			value = Try!(table.CheckValueType(key, key, found, "float")).AsFloat;
 		return true;
 	}
 

@@ -11,8 +11,6 @@ public class TomlTable
 {
 	private TomlTableOrigin mOrigin;
 	private bool mIsInlineSealed;
-	/// @brief Set by parser after detecting a trailing comma before the closing brace.
-	internal bool mHasTrailingComma;
 	/// Entries in insertion order; keys are owned by the store (see TomlEntryMap).
 	private TomlEntryMap mEntries;
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
@@ -1151,6 +1149,13 @@ public class TomlTable
 	{
 		if (!TryGetValue(key, let value))
 			return .Err(TomlParseError.Located(.MissingKey, scope $"{path}: missing required {typeName}", ProblemLocation()));
+		return CheckValueType(key, path, value, typeName);
+	}
+
+	/// `value` (the value at `key`, already looked up) if it has type `typeName`; otherwise RequireValue's
+	/// located WrongType error.
+	internal Result<TomlValue, TomlParseError> CheckValueType(StringView key, StringView path, TomlValue value, StringView typeName)
+	{
 		if (value.TypeName != typeName)
 			return .Err(TomlParseError.Located(.WrongType, scope $"{path}: expected {typeName}, found {value.TypeName}", ProblemLocation(key)));
 		return value;

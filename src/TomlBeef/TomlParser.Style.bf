@@ -38,10 +38,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 		else if (value.IsInteger || value.IsFloat)
 			CaptureNumericFormat(nodeId, rawToken);
-		else if (value.IsArray)
-			CaptureArrayFormat(nodeId, rawToken, value.AsArray?.mHasTrailingComma ?? false);
-		else if (value.IsTable)
-			CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
+		else if (value.IsArray || value.IsTable)
+			RecordContainerFormat(nodeId, value);
 		else if (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime)
 			CaptureDateTimeFormat(nodeId, rawToken);
 	}
@@ -474,168 +472,80 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			style.mValueFormatRef = fmtRef;
 	}
 
-	/// Detect array format metadata from a raw token.
-	/// Scan backward from a closing bracket (`]` or `}`) to determine if a trailing comma exists,
-	/// accounting for any trailing comment text between the comma and the bracket.
-	private void CaptureArrayFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
+	// Container layout. ParseArray and ParseInlineTable record it at their own separators while they
+	// parse: whether a newline separates them, the column of the first entry that starts a line, the
+	// spacing around braces, '=' and ','. Reading it back from the container's text instead needed that
+	// whole text (retained across stream refills) and could not tell the container's own newlines and
+	// indentation from those of nested values or of punctuation inside strings.
+
+	/// Whether a value starting with `b` is an array or inline table (whose layout is recorded while it
+	/// is parsed, so no mark is needed for its text).
+	[Inline]
+	private static bool IsContainerStart(char8 b) => b == '[' || b == '{';
+
+	/// Records a container's entry indent: `count` is the column (from 0) of its first entry that starts
+	/// a line. The first such indent in the document also becomes its indent size.
+	private void NoteContainerIndent(ref uint8 indent, int count)
 	{
-		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null)
 			return;
-
-		var fmt = TomlArrayFormat();
-		fmt.mStyle = .Inline;
-		for (int i = 0; i < rawToken.Length; i++)
-		{
-			if (rawToken[i] == '\n' || rawToken[i] == '\r')
-			{
-				fmt.mStyle = .Multiline;
-				break;
-			}
-		}
-
-		// Trailing comma state captured during forward parsing (not from raw token scanning).
-		fmt.mTrailingComma = hasTrailingComma;
-
-		// Detect indentation from the first element after opening bracket
-		fmt.mIndentSize = 0;
-		if (fmt.mStyle == .Multiline)
-		{
-			int indentCount = 0;
-			bool foundNewline = false;
-			for (int i = 1; i < rawToken.Length; i++)
-			{
-				char8 c = rawToken[i];
-				if (c == '\n' || c == '\r')
-				{
-					foundNewline = true;
-					indentCount = 0;
-				}
-				else if (foundNewline && (c == ' ' || c == '\t'))
-				{
-					if (indentCount == 0)
-						NoteIndentChar(c);
-					indentCount++;
-				}
-				else if (foundNewline && c != ' ' && c != '\t')
-				{
-					// Found first non-whitespace after newline
-					if (indentCount > 0 && indentCount <= 255)
-						fmt.mIndentSize = (uint8)indentCount;
-					NoteIndentSize(indentCount);
-					break;
-				}
-			}
-		}
-		if (fmt.mIndentSize == 0)
-			fmt.mIndentSize = mStyle.mDocumentStyle.mIndentSize;
-
-		let fmtRef = mStyle.AddValueFormat(.Array(fmt));
-		let style = mStyle.GetNodeStyle(nodeId);
-		if (style != null)
-			style.mValueFormatRef = fmtRef;
+		if (count > 0 && count <= 255)
+			indent = (uint8)count;
+		NoteIndentSize(count);
 	}
 
-	/// Detect inline table format metadata from a raw token.
-	private void CaptureTableFormat(TomlNodeId nodeId, StringView rawToken, bool hasTrailingComma)
+	/// Completes the layout of the array whose ']' was just consumed (PreserveStyle): counts it for the
+	/// document's dominant array style, and leaves it in mLastArrayFormat, which the caller records
+	/// against the array's node right after ParseValue returns (nested arrays finished earlier).
+	private void FinishArrayLayout(TomlArray arr, ref TomlArrayFormat layout, int lastLine)
 	{
-		if (mStyle == null || !nodeId.IsValid || rawToken.Length == 0)
+		if (mStyle == null)
 			return;
+		if (mCursor.Line != lastLine)
+			layout.mStyle = .Multiline;
+		if (layout.mStyle == .Multiline)
+		{
+			mArrayStyleCount_Multiline++;
+			if (arr.Count > 0)
+			{
+				if (layout.mTrailingComma)
+					mArrayTrailingCommaCount++;
+				else
+					mArrayNoTrailingCommaCount++;
+			}
+		}
+		else
+			mArrayStyleCount_Inline++;
+		if (layout.mIndentSize == 0)
+			layout.mIndentSize = mStyle.mDocumentStyle.mIndentSize;
+		mLastArrayFormat = layout;
+	}
 
-		if (rawToken[0] != '{')
+	/// Completes the layout of the inline table whose '}' is next (PreserveStyle) and leaves it in
+	/// mLastTableFormat, as FinishArrayLayout does. `lastEnd` is where the last value or ',' ended.
+	private void FinishTableLayout(ref TomlTableFormat layout, int lastLine, int lastEnd)
+	{
+		if (mStyle == null)
 			return;
+		if (mCursor.Line != lastLine)
+			layout.mMultiline = true;
+		else if (mCursor.Offset > lastEnd)
+			layout.mCloseBraceSpacing = 1;
+		mLastTableFormat = layout;
+	}
 
-		var fmt = TomlTableFormat();
-		fmt.mInline = true;
-
-		// Detect multiline inline table
-		for (int i = 0; i < rawToken.Length; i++)
-		{
-			if (rawToken[i] == '\n' || rawToken[i] == '\r')
-			{
-				fmt.mMultiline = true;
-				break;
-			}
-		}
-
-		// Trailing comma state captured during forward parsing.
-		fmt.mTrailingComma = hasTrailingComma;
-
-		// Detect spacing after opening brace
-		if (rawToken.Length >= 2)
-		{
-			if (rawToken[1] == ' ') fmt.mOpenBraceSpacing = 1;
-			else if (rawToken[1] == '\n' || rawToken[1] == '\r') fmt.mOpenBraceSpacing = 1;
-		}
-
-		// Detect spacing before closing brace
-		if (rawToken.Length >= 2 && rawToken[rawToken.Length - 2] == ' ')
-			fmt.mCloseBraceSpacing = 1;
-
-		// Detect equals spacing and comma spacing by scanning forward
-		// through the raw token. Track entry indentation for multiline.
-		fmt.mEqualsSpacing = 0; // default to no-space style
-		fmt.mCommaSpacing = 0;
-		int maxIndent = 0;
-		bool inValue = false;
-		int lastEqualsEnd = -1;
-		int lastCommaEnd = -1;
-		for (int i = 0; i < rawToken.Length; i++)
-		{
-			char8 c = rawToken[i];
-			if (c == '=' && !inValue)
-			{
-				// Check for spaces before =
-				int beforeEquals = 0;
-				if (i > 0 && rawToken[i - 1] == ' ') beforeEquals = 1;
-				// Check for spaces after =
-				int afterEquals = 0;
-				if (i + 1 < rawToken.Length && rawToken[i + 1] == ' ') afterEquals = 1;
-				// Use min of before/after to determine style
-				if (beforeEquals > 0 || afterEquals > 0)
-					fmt.mEqualsSpacing = 1;
-				lastEqualsEnd = i + afterEquals;
-				inValue = true;
-			}
-			else if (c == ',')
-			{
-				inValue = false;
-				// Check for space after comma
-				if (i + 1 < rawToken.Length && rawToken[i + 1] == ' ')
-					fmt.mCommaSpacing = 1;
-				lastCommaEnd = i;
-			}
-			else if (c == '\n' || c == '\r')
-			{
-				// Count indent on next line for multiline detection
-				int indentCount = 0;
-				for (int j = i + 1; j < rawToken.Length; j++)
-				{
-					char8 nc = rawToken[j];
-					if (nc == ' ' || nc == '\t')
-					{
-						if (indentCount == 0)
-							NoteIndentChar(nc);
-						indentCount++;
-					}
-					else if (nc == '#' || nc == '}' || TomlChar.IsBareKeyChar(nc)) break;
-					else break;
-				}
-				if (indentCount > maxIndent) maxIndent = indentCount;
-			}
-		}
-		if (maxIndent > 0 && maxIndent <= 255)
-			fmt.mEntryIndent = (uint8)maxIndent;
-		NoteIndentSize(maxIndent);
-
-		let fmtRef = mStyle.AddValueFormat(.Table(fmt));
+	/// Records the layout the container just parsed left (see FinishArrayLayout) as `nodeId`'s format.
+	private void RecordContainerFormat(TomlNodeId nodeId, TomlValue value)
+	{
+		let fmtRef = mStyle.AddValueFormat(value.IsArray ? .Array(mLastArrayFormat) : .Table(mLastTableFormat));
 		let style = mStyle.GetNodeStyle(nodeId);
 		if (style != null)
 			style.mValueFormatRef = fmtRef;
 	}
 
 	/// Give the element just added to `arr` a node ID and, in PreserveStyle, capture its token and format.
-	/// `elemStart` is only marked (and must only be sliced or released) when style is captured.
-	private void CaptureArrayElement(TomlArray arr, TomlValue val, TomlCursorMark elemStart)
+	/// `elemStart` is only marked (and must then be sliced or released) when `marked`.
+	private void CaptureArrayElement(TomlArray arr, TomlValue val, TomlCursorMark elemStart, bool marked)
 	{
 		if (mMetadata == null)
 			return;
@@ -663,6 +573,11 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mStyle == null)
 			return;
 
+		if (!marked)
+		{
+			CaptureValueFormat(nodeId, val, default);
+			return;
+		}
 		if (val.IsBool)
 		{
 			// No format to capture, but the mark must be released
@@ -686,27 +601,6 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		case .MultilineBasic: mStringStyleCount_MultilineBasic++;
 		case .MultilineLiteral: mStringStyleCount_MultilineLiteral++;
 		}
-	}
-
-	/// Count array style (inline vs multiline, and for multi-line arrays the trailing comma) for
-	/// document-level inference.
-	private void CountArrayStyle(TomlArray arr, int startLine, int endLine)
-	{
-		if (mStyle == null)
-			return;
-		if (endLine > startLine)
-		{
-			mArrayStyleCount_Multiline++;
-			if (arr.Count > 0)
-			{
-				if (arr.mHasTrailingComma)
-					mArrayTrailingCommaCount++;
-				else
-					mArrayNoTrailingCommaCount++;
-			}
-		}
-		else
-			mArrayStyleCount_Inline++;
 	}
 
 	// ================================================================

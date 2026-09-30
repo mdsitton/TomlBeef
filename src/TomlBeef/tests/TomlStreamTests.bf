@@ -537,17 +537,25 @@ static class TomlStreamTests
 	[Test]
 	public static void Stream_MaxTokenBytesCoversPreserveStyleValues()
 	{
-		// PreserveStyle keeps a value's whole source text, so a long inline array is one span
-		let input = scope String("a = [");
-		for (int i = 0; i < 20; i++)
-			input.AppendF("{}, ", i);
-		input.Append("20]\n");
+		// PreserveStyle keeps a scalar's source text (its token), so a long string is one span...
+		let longString = scope String("s = \"");
+		longString.Append('x', 60);
+		longString.Append("\"\n");
 		var plain = scope TomlDocument();
-		Test.Assert(ReadStreamedWith(plain, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 32 }) case .Ok);
-
+		Test.Assert(ReadStreamedWith(plain, longString, .() { StreamBufferBytes = 16, MaxTokenBytes = 32 }) case .Ok);
 		var styled = scope TomlDocument();
-		let result = ReadStreamedWith(styled, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 32, MetadataMode = .PreserveStyle });
+		let result = ReadStreamedWith(styled, longString, .() { StreamBufferBytes = 16, MaxTokenBytes = 32, MetadataMode = .PreserveStyle });
 		Test.Assert(result case .Err(let err) && err.mKind == .ResourceLimitExceeded);
-		Test.Assert(ReadStreamedWith(styled, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 128, MetadataMode = .PreserveStyle }) case .Ok);
+		Test.Assert(ReadStreamedWith(styled, longString, .() { StreamBufferBytes = 16, MaxTokenBytes = 128, MetadataMode = .PreserveStyle }) case .Ok);
+
+		// ...but not a container's: arrays and inline tables record their layout as they are parsed, so
+		// a long one is never held whole
+		let longArray = scope String("a = [");
+		for (int i = 0; i < 20; i++)
+			longArray.AppendF("{}, ", i);
+		longArray.Append("{ x = 1, y = [2, 3] }]\n");
+		Test.Assert(ReadStreamedWith(styled, longArray, .() { StreamBufferBytes = 16, MaxTokenBytes = 32, MetadataMode = .PreserveStyle }) case .Ok);
+		let output = styled.Write(.. scope String());
+		Test.Assert(output == longArray, output);
 	}
 }

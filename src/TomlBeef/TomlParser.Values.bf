@@ -37,6 +37,17 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
+	/// Where the value ParseValue just read ended: a bare value's scan also takes the spaces after its
+	/// token (see ParseBareValue), every other value ends at the cursor. `first` is the value's first byte.
+	private int ValueEnd(char8 first)
+	{
+		switch (first)
+		{
+		case '"', '\'', '[', '{', 't', 'f': return mCursor.Offset;
+		default: return mValueEnd;
+		}
+	}
+
 	// ================================================================
 	// String parsing
 	// ================================================================
@@ -67,48 +78,49 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		String result = mStringScratch..Clear();
-		let limit = StringByteLimit;
+		if (DecodeBasicString(result, false) case .Err(let err))
+		{
+			result.Clear();
+			return .Err(err);
+		}
+		return FinishStringValue(result);
+	}
 
+	/// Decodes a single-line basic string, from after its opening quote through its closing quote, into
+	/// `result`. Values and quoted keys share it, so both follow one set of rules; only values count
+	/// toward MaxStringBytes (checked as the string grows).
+	/// @param isKey Whether this is a key (no size limit; errors name a string key).
+	[Inline]
+	private Result<void, TomlParseError> DecodeBasicString(String result, bool isKey)
+	{
+		let limit = isKey ? int.MaxValue : StringByteLimit;
 		while (true)
 		{
 			// Copy the plain text up to the next quote, backslash, newline or control character
 			mCursor.ScanRun(TomlChar.StopBasicString, result, limit);
-			Try!(CheckStringLength(result.Length));
+			if (result.Length > limit)
+				Try!(CheckStringLength(result.Length));
 			if (mCursor.IsEOF)
 				break;
 			char8 b = mCursor.PeekByte();
 			if (b == '"')
 			{
 				mCursor.AdvanceByte();
-				return Try!(FinishStringValue(result));
+				return .Ok;
 			}
 			if (b == '\\')
 			{
 				mCursor.AdvanceByte();
-				switch (ParseEscapeSequence(result))
-				{
-				case .Err(let err):
-					result.Clear();
-					return .Err(err);
-				default:
-				}
+				Try!(ParseEscapeSequence(result));
 				continue;
 			}
 			if (b == '\r' || b == '\n')
-			{
-				result.Clear();
-				return .Err(Error(.UnterminatedString, "Unterminated basic string"));
-			}
+				break;
 			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-			{
-				result.Clear();
-				return .Err(Error(.ControlCharInString, "Control character in basic string"));
-			}
+				return .Err(Error(.ControlCharInString, isKey ? "Control character in string key" : "Control character in basic string"));
 			result.Append(mCursor.Advance());
 		}
-
-		result.Clear();
-		return .Err(Error(.UnterminatedString, "Unterminated basic string"));
+		return .Err(Error(.UnterminatedString, isKey ? "Unterminated string key" : "Unterminated basic string"));
 	}
 
 	private Result<TomlValue, TomlParseError> ParseMultiLineBasicString()
@@ -484,6 +496,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// or other delimiter ends the scan). Other characters stay and make the value invalid.
 		while (token.Length > 0 && (token[token.Length - 1] == ' ' || token[token.Length - 1] == '\t'))
 			token.Length--;
+		mValueEnd = mark.mOffset + token.Length;
 		return ParseBareToken(token);
 	}
 

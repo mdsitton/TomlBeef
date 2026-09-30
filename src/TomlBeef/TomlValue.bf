@@ -17,7 +17,10 @@ internal enum TomlTableOrigin : uint8
 /// A TOML value — a tagged union supporting all TOML types.
 public enum TomlValue
 {
-	case String(String s);
+	/// The text is document-owned and read-only: a view into the document's arena, valid until the
+	/// document is cleared or deleted. Change it through the table or array setters, which record the
+	/// change for the writer.
+	case String(StringView s);
 	case Integer(int64 v);
 	case Float(double v);
 	case Bool(bool v);
@@ -66,7 +69,7 @@ public enum TomlValue
 		get
 		{
 			if (this case .String(let s))
-				return StringView(s);
+				return s;
 			Runtime.FatalError("TomlValue is not a String");
 		}
 	}
@@ -168,7 +171,7 @@ public enum TomlValue
 	{
 		if (this case .String(let s))
 		{
-			value = StringView(s);
+			value = s;
 			return true;
 		}
 		value = default;

@@ -67,9 +67,10 @@ public struct TomlReadConfig
 
 	/// @brief Streamed reads only (Read(Stream), and ReadFile with StreamBufferBytes set): the longest
 	/// span of input the reader may hold in memory at once. That is a bare value (number, date, bool),
-	/// or with PreserveStyle metadata a whole value's source text, including an inline array
-	/// or table. Spans longer than the buffer are otherwise kept in a growing copy, bounded only by
-	/// MaxInputBytes and MaxStringBytes. 0 = unlimited. In-memory input needs no such copy and ignores it.
+	/// or with PreserveStyle metadata a scalar value's source text (arrays and inline tables record
+	/// their layout as they are read, so they are never held whole). Spans longer than the buffer are
+	/// otherwise kept in a growing copy, bounded only by MaxInputBytes and MaxStringBytes. 0 = unlimited.
+	/// In-memory input needs no such copy and ignores it.
 	public int MaxTokenBytes = 0;
 }
 
@@ -123,6 +124,16 @@ public class TomlDocument
 		ClearMetadata();
 		mStore.Reset();
 		mRootTable = mStore.RootTable;
+	}
+
+	/// @brief Give back the memory the document keeps for reuse. Reading again (or Clear) keeps the
+	/// previous content's memory to fill the next read, since reusing it is faster than asking the
+	/// system again; that cache is as large as the largest document read into this one. This frees it.
+	/// Current content is untouched: its values and views stay valid. Call it after Clear() to release
+	/// everything a large read used while keeping the document object.
+	public void ReleaseCachedMemory()
+	{
+		mStore.ReleasePoolCache();
 	}
 
 	/// Deletes the sidecar. Only called right before the store reset, whose destructors free every
@@ -684,27 +695,33 @@ public class TomlDocument
 	{
 		parent = null;
 		finalKey = default;
-		var segments = scope List<StringView>();
-		if (!ParseDottedPath(dottedPath, segments) || segments.IsEmpty)
+		// A malformed path must not leave parents created on the way
+		if (createParents && !IsValidPath(dottedPath))
 			return false;
 
 		TomlTable current = mRootTable;
-		for (int i = 0; i < segments.Count - 1; i++)
+		int pos = 0;
+		while (true)
 		{
-			if (current.TryGetValue(segments[i], let val))
+			if (!NextPathSegment(dottedPath, ref pos, let segment))
+				return false;
+			if (pos >= dottedPath.Length)
+			{
+				parent = current;
+				finalKey = segment;
+				return true;
+			}
+			if (current.TryGetValue(segment, let val))
 			{
 				if (!val.IsTable)
 					return false;
 				current = val.AsTable;
 			}
 			else if (createParents)
-				current = current.AddTable(segments[i]);
+				current = current.AddTable(segment);
 			else
 				return false;
 		}
-		parent = current;
-		finalKey = segments.Back;
-		return true;
 	}
 
 	/// @brief Navigate a bracket-aware dotted path and return the value at that path, regardless of type.
@@ -718,10 +735,22 @@ public class TomlDocument
 	/// @return The value on success, or .Err if any segment is not found or the path is malformed.
 	public Result<TomlValue> Get(StringView dottedPath)
 	{
-		var segments = scope List<StringView>();
-		if (!ParseDottedPath(dottedPath, segments))
-			return .Err;
-		return GetPath(segments);
+		// Walks the segments as it reads them: no segment list. A path that is malformed past a missing
+		// segment fails either way.
+		TomlTable current = mRootTable;
+		int pos = 0;
+		while (true)
+		{
+			if (!NextPathSegment(dottedPath, ref pos, let segment))
+				return .Err;
+			if (!current.TryGetValue(segment, let val))
+				return .Err;
+			if (pos >= dottedPath.Length)
+				return val;
+			if (!val.IsTable)
+				return .Err;
+			current = val.AsTable;
+		}
 	}
 
 	/// @brief Indexer over dotted paths, the same as Get: `Try!(doc["server.port"])` or
@@ -783,62 +812,67 @@ public class TomlDocument
 	/// @return False if the path is malformed (empty segments, unmatched brackets).
 	internal static bool ParseDottedPath(StringView path, List<StringView> segments)
 	{
-		if (path.IsEmpty)
-			return false;
-
-		int i = 0;
-		while (i < path.Length)
+		int pos = 0;
+		while (pos < path.Length)
 		{
-			// Skip the leading dot between segments (not on first iteration)
-			if (i > 0 && path[i] == '.')
-			{
-				i++;
-				// Consecutive dots mean empty segment
-				if (i >= path.Length || path[i] == '.')
-					return false;
-			}
-
-			if (path[i] == '[')
-			{
-				i++; // skip '['
-				int segStart = i;
-				// Scan for matching ']'
-				while (i < path.Length && path[i] != ']')
-					i++;
-				if (i >= path.Length)
-					return false; // unmatched '['
-				int segLen = i - segStart;
-				i++; // skip ']'
-				if (segLen == 0)
-					return false; // empty bracketed segment
-				segments.Add(path.Substring(segStart, segLen));
-
-				// After a bracketed segment, next char must be '.' or end
-				if (i < path.Length && path[i] != '.')
-					return false;
-			}
-			else if (path[i] == ']')
-			{
-				return false; // unmatched ']'
-			}
-			else
-			{
-				// Bare (unbracketed) segment — scan until '.' or end
-				int segStart = i;
-				while (i < path.Length && path[i] != '.' && path[i] != '[' && path[i] != ']')
-					i++;
-				int segLen = i - segStart;
-				if (segLen == 0)
-					return false; // empty segment
-				segments.Add(path.Substring(segStart, segLen));
-
-				// After a bare segment, next char must be '.' or end
-				if (i < path.Length && path[i] != '.')
-					return false;
-			}
+			if (!NextPathSegment(path, ref pos, let segment))
+				return false;
+			segments.Add(segment);
 		}
-
 		return segments.Count > 0;
+	}
+
+	/// Reads the path segment starting at `pos` (bare, or `[bracketed]`) and moves `pos` past it and the
+	/// `.` after it; `pos == path.Length` afterwards means it was the last segment. Walking a path this
+	/// way needs no segment list.
+	/// @param path The path string.
+	/// @param pos The segment's start; on return, the next segment's start or path.Length.
+	/// @param segment The segment (borrowing from `path`).
+	/// @return False if the path is malformed here (empty segment, unmatched bracket, trailing dot).
+	internal static bool NextPathSegment(StringView path, ref int pos, out StringView segment)
+	{
+		segment = default;
+		if (pos >= path.Length)
+			return false;
+		int start = pos;
+		if (path[pos] == '[')
+		{
+			start = ++pos;
+			while (pos < path.Length && path[pos] != ']')
+				pos++;
+			if (pos >= path.Length || pos == start)
+				return false; // unmatched '[' or empty bracketed segment
+			segment = path.Substring(start, pos - start);
+			pos++;
+		}
+		else
+		{
+			while (pos < path.Length && path[pos] != '.' && path[pos] != '[' && path[pos] != ']')
+				pos++;
+			if (pos == start)
+				return false; // empty segment or unmatched ']'
+			segment = path.Substring(start, pos - start);
+		}
+		if (pos < path.Length)
+		{
+			// A segment is followed by '.' and another segment, or by the end
+			if (path[pos] != '.' || pos + 1 >= path.Length)
+				return false;
+			pos++;
+		}
+		return true;
+	}
+
+	/// Whether `path` is well formed (see NextPathSegment), without collecting its segments.
+	internal static bool IsValidPath(StringView path)
+	{
+		int pos = 0;
+		while (pos < path.Length)
+		{
+			if (!NextPathSegment(path, ref pos, ?))
+				return false;
+		}
+		return !path.IsEmpty;
 	}
 
 	/// @brief Navigate a dotted path and extract a String value in a single call.
@@ -1211,21 +1245,25 @@ public class TomlDocument
 	{
 		parent = mRootTable;
 		key = default;
-		var segments = scope List<StringView>();
-		if (!ParseDottedPath(dottedPath, segments) || segments.IsEmpty)
+		if (!IsValidPath(dottedPath))
 			return false;
-		for (int i = 0; i < segments.Count - 1; i++)
+		int pos = 0;
+		while (true)
 		{
-			TomlValue value;
-			if (!parent.TryGetValue(segments[i], out value) || !value.IsTable)
+			NextPathSegment(dottedPath, ref pos, let segment);
+			if (pos >= dottedPath.Length)
 			{
-				key = segments[i];
+				key = segment;
+				return true;
+			}
+			TomlValue value;
+			if (!parent.TryGetValue(segment, out value) || !value.IsTable)
+			{
+				key = segment;
 				return false;
 			}
 			parent = value.AsTable;
 		}
-		key = segments.Back;
-		return true;
 	}
 
 	/// @brief Parse a TOML file into this document. Convenience wrapper around Read().

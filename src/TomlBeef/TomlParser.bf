@@ -23,6 +23,13 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// depth of the table tree, which sealing, writing and merging walk recursively
 	private int mKeyDepth = 0;
 	private TomlResourceLimitState mLimits;
+	// Offset just past the last key segment ParseKeyPath read (before any whitespace), for '=' spacing
+	private int mLastKeyEnd;
+	// Offset just past the last bare value's token, excluding the spaces its scan takes (see ValueEnd)
+	private int mValueEnd;
+	// Layout of the array or inline table ParseValue last finished (PreserveStyle; see FinishArrayLayout)
+	private TomlArrayFormat mLastArrayFormat;
+	private TomlTableFormat mLastTableFormat;
 
 	// Pending leading comments waiting to be attached to the next node. Comment text is stored in the
 	// sidecar's text arena as soon as it is read (see CaptureComment), so these are plain views.
@@ -81,11 +88,17 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mMetadata = metadata;
 		mStyle = (metadata != null && metadata.CapturesStyle) ? metadata : null;
 		mSourceIndex = (metadata != null) ? metadata.AddSource(config.SourceName) : -1;
-		mPendingComments = new List<StringView>();
+		// Comment buffers only exist when style is captured (every use is behind mStyle != null). The
+		// string scratch keeps its capacity: starting empty made every parse regrow it (-14% on strings).
+		// The slice scratch is only filled when a stream read spills, so it starts without a buffer.
+		if (mStyle != null)
+		{
+			mPendingComments = new List<StringView>();
+			mCommentScratch = new String(128);
+		}
 		mTrailingCommentText = default;
-		mCommentScratch = new String(128);
 		mStringScratch = new String(64);
-		mSliceScratch = new String(64);
+		mSliceScratch = new String();
 		mKeyPathPool = new List<TomlKeyPathBuffer>();
 		mKeyPathDepth = 0;
 		mSeenContent = false;
@@ -399,15 +412,16 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		mCursor.SkipWhitespace();
 
-		// Mark value start for raw token capture
-		var valueStart = TomlCursorMark();
-		bool capturingToken = mStyle != null;
-		if (capturingToken)
-			valueStart = mCursor.Mark();
-
 		// A full table fails before its new value is parsed (dotted keys are checked as they insert)
 		if (keyPath.Count == 1)
 			Try!(mPathResolver.CheckCurrentTableRoom(keyPath[0]));
+
+		// Mark value start for raw token capture. Containers record their layout while they are parsed,
+		// so only scalars need (and retain) their text.
+		var valueStart = TomlCursorMark();
+		bool capturingToken = mStyle != null && !IsContainerStart(mCursor.PeekByte());
+		if (capturingToken)
+			valueStart = mCursor.Mark();
 
 		TomlValue value = ?;
 		mKeyDepth += keyPath.Count - 1;
@@ -430,10 +444,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, valueEnd);
 
 		// Capture raw value token and format metadata. Slicing always releases the value mark.
-		if (capturingToken)
+		if (mStyle != null)
 		{
 			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(valueStart, scratch);
+			StringView rawToken = capturingToken ? mCursor.Slice(valueStart, scratch) : default;
 			CaptureValueMetadata(nodeId, value, rawToken, keyStyle, keyPath.Count > 1);
 		}
 
@@ -480,6 +494,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mLimits != null && mKeyDepth + mDepth + count > mLimits.mMaxDepth)
 				return mLimits.CheckDepth(mLimits.mMaxDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
 			Try!(ParseSimpleKey(parts.Add()));
+			mLastKeyEnd = mCursor.Offset;
 
 			mCursor.SkipWhitespace();
 			if (mCursor.IsEOF || mCursor.PeekByte() != '.')
@@ -513,33 +528,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private Result<void, TomlParseError> ParseBasicStringKey(String result)
 	{
 		mCursor.AdvanceByte();
-
-		while (true)
-		{
-			// Copy the plain text up to the next quote, backslash, newline or control character
-			mCursor.ScanRun(TomlChar.StopBasicString, result);
-			if (mCursor.IsEOF)
-				break;
-			char8 b = mCursor.PeekByte();
-			if (b == '"')
-			{
-				mCursor.AdvanceByte();
-				return .Ok;
-			}
-			if (b == '\\')
-			{
-				mCursor.AdvanceByte();
-				Try!(ParseEscapeSequence(result));
-				continue;
-			}
-			if (b == '\r' || b == '\n')
-				return .Err(Error(.UnterminatedString, "Unterminated string key"));
-			if (((uint8)b < 0x20 && b != '\t') || (uint8)b == 0x7F)
-				return .Err(Error(.ControlCharInString, "Control character in string key"));
-			result.Append(mCursor.Advance());
-		}
-
-		return .Err(Error(.UnterminatedString, "Unterminated string key"));
+		return DecodeBasicString(result, true);
 	}
 
 	private Result<void, TomlParseError> ParseLiteralStringKey(String key)
@@ -615,6 +604,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				// Track blank lines
 				Try!(CountAndSkipNewline());
+				// The first indented container line tells the document's indent character
+				if (mStyle != null && !mIndentCharKnown && (mCursor.PeekByte() == ' ' || mCursor.PeekByte() == '\t'))
+					NoteIndentChar(mCursor.PeekByte());
 				if (outComments != null && mStyle != null)
 				{
 					// Check for additional newlines = blank line

@@ -118,8 +118,6 @@ public class TomlArray
 	private TomlContainerMetadataContext mMetadataContext ~ delete _;
 	/// @brief The owning document store. Its mSuppressAutoDirty is set while the parser fills it.
 	internal TomlDocumentStore mStore;
-	/// @brief Set by parser after detecting a trailing comma before the closing bracket.
-	internal bool mHasTrailingComma;
 
 
 	/// @brief Whether this is an array of tables (written as `[[header]]` blocks) rather than an ordinary

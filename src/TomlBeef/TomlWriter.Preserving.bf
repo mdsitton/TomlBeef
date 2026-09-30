@@ -249,8 +249,9 @@ extension TomlWriterImpl
 		WriteNewline(outStr, metadata);
 	}
 
-	/// Write a value, reusing the original token if available and clean.
-	private static void WriteValuePreserving(TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, StringView key, TomlDocumentMetadata metadata)
+	/// Write a value, reusing the original token if available and clean. `baseIndent` is the indent of the
+	/// line the value starts on, which a multi-line array or inline table nests its lines under.
+	private static void WriteValuePreserving(TomlValue val, String outStr, TomlVersion version, TomlTable parentTable, StringView key, TomlDocumentMetadata metadata, int baseIndent = 0)
 	{
 		// Look up node ID for this entry
 		TomlNodeId nodeId = .Invalid;
@@ -273,7 +274,7 @@ extension TomlWriterImpl
 		}
 
 		// Fall back to style-aware generation using document defaults and node format
-		WriteValueWithDocumentStyle(val, outStr, version, metadata, nodeId);
+		WriteValueWithDocumentStyle(val, outStr, version, metadata, nodeId, baseIndent);
 	}
 
 	/// Emit document-configured newline.
@@ -312,7 +313,7 @@ extension TomlWriterImpl
 	}
 
 	/// Write a value using document-level style defaults when available.
-	private static void WriteValueWithDocumentStyle(TomlValue val, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlNodeId nodeId)
+	private static void WriteValueWithDocumentStyle(TomlValue val, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlNodeId nodeId, int baseIndent = 0)
 	{
 		if (val.IsString && metadata != null)
 		{
@@ -398,7 +399,7 @@ extension TomlWriterImpl
 					arrayFmt.mTrailingComma = metadata.mDocumentStyle.mDefaultArrayTrailingComma;
 					hasArrayFmt = true;
 				}
-				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt);
+				WriteArrayPreserving(arr, outStr, version, metadata, arrayFmt, hasArrayFmt, baseIndent);
 				return;
 			}
 		}
@@ -423,7 +424,7 @@ extension TomlWriterImpl
 						}
 					}
 				}
-				WriteInlineTablePreserving(tbl, outStr, version, metadata, tableFmt, hasTableFmt);
+				WriteInlineTablePreserving(tbl, outStr, version, metadata, tableFmt, hasTableFmt, baseIndent);
 				return;
 			}
 		}
@@ -473,12 +474,12 @@ extension TomlWriterImpl
 	}
 
 	/// Write an array preserving element tokens where possible.
-	private static void WriteArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt, bool hasFormat)
+	private static void WriteArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt, bool hasFormat, int baseIndent)
 	{
 		let ctx = arr.MetadataContext;
 		if (hasFormat && fmt.mStyle == .Multiline)
 		{
-			WriteMultilineArrayPreserving(arr, outStr, version, metadata, fmt);
+			WriteMultilineArrayPreserving(arr, outStr, version, metadata, fmt, baseIndent);
 			return;
 		}
 		// Comments (e.g. added through TomlArray.SetComment) need their own lines
@@ -487,7 +488,7 @@ extension TomlWriterImpl
 			var multilineFmt = hasFormat ? fmt : TomlArrayFormat();
 			multilineFmt.mStyle = .Multiline;
 			multilineFmt.mTrailingComma = metadata.mDocumentStyle.mDefaultArrayTrailingComma;
-			WriteMultilineArrayPreserving(arr, outStr, version, metadata, multilineFmt);
+			WriteMultilineArrayPreserving(arr, outStr, version, metadata, multilineFmt, baseIndent);
 			return;
 		}
 
@@ -500,15 +501,26 @@ extension TomlWriterImpl
 			if (ctx != null)
 				ctx.TryGetItemNodeId(i, out elemNodeId);
 
-			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
+			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata, baseIndent);
 		}
 		outStr.Append(']');
 	}
 
-	private static void WriteMultilineArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt)
+	/// The indent of a multi-line container's entries: its own (captured from the source, where it is a
+	/// column, or the document's), but deeper than `baseIndent`, the line the container opens on, when
+	/// it is nested in another multi-line container.
+	private static int EntryIndent(int own, int baseIndent, TomlDocumentMetadata metadata)
+	{
+		if (baseIndent == 0 || own > baseIndent)
+			return own;
+		int step = metadata.mDocumentStyle.mIndentSize;
+		return baseIndent + ((step > 0) ? step : 2);
+	}
+
+	private static void WriteMultilineArrayPreserving(TomlArray arr, String outStr, TomlVersion version, TomlDocumentMetadata metadata, TomlArrayFormat fmt, int baseIndent)
 	{
 		let ctx = arr.MetadataContext;
-		int indentSize = fmt.mIndentSize > 0 ? fmt.mIndentSize : metadata.mDocumentStyle.mIndentSize;
+		int indentSize = EntryIndent(fmt.mIndentSize > 0 ? fmt.mIndentSize : metadata.mDocumentStyle.mIndentSize, baseIndent, metadata);
 		outStr.Append('[');
 		WriteNewline(outStr, metadata);
 
@@ -541,7 +553,7 @@ extension TomlWriterImpl
 
 			AppendIndent(outStr, indentSize, metadata);
 			TomlValue elem = arr.GetValueAt(i);
-			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata);
+			WriteArrayElementPreserving(elem, elemNodeId, outStr, version, metadata, indentSize);
 
 			// Emit comma BEFORE trailing comment (correct TOML: `1, # trail`)
 			if (i < arr.Count - 1 || fmt.mTrailingComma)
@@ -553,10 +565,11 @@ extension TomlWriterImpl
 
 			WriteNewline(outStr, metadata);
 		}
+		AppendIndent(outStr, baseIndent, metadata);
 		outStr.Append(']');
 	}
 
-	private static void WriteArrayElementPreserving(TomlValue elem, TomlNodeId elemNodeId, String outStr, TomlVersion version, TomlDocumentMetadata metadata)
+	private static void WriteArrayElementPreserving(TomlValue elem, TomlNodeId elemNodeId, String outStr, TomlVersion version, TomlDocumentMetadata metadata, int baseIndent)
 	{
 		if (elem.IsString && elemNodeId.IsValid)
 		{
@@ -571,7 +584,7 @@ extension TomlWriterImpl
 				}
 			}
 		}
-		WriteValueWithDocumentStyle(elem, outStr, version, metadata, elemNodeId);
+		WriteValueWithDocumentStyle(elem, outStr, version, metadata, elemNodeId, baseIndent);
 	}
 
 	/// Returns false when an original string token uses syntax the target version lacks, so it must be
@@ -631,11 +644,11 @@ extension TomlWriterImpl
 	}
 
 	private static void WriteInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
-		TomlDocumentMetadata metadata, TomlTableFormat fmt, bool hasFormat)
+		TomlDocumentMetadata metadata, TomlTableFormat fmt, bool hasFormat, int baseIndent)
 	{
 		if (hasFormat && fmt.mMultiline && fmt.mInline && version != .V1_0)
 		{
-			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, fmt);
+			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, fmt, baseIndent);
 			return;
 		}
 		// Comments (e.g. added through SetComment) only fit in the multi-line layout, which needs 1.1
@@ -646,7 +659,7 @@ extension TomlWriterImpl
 			multilineFmt.mInline = true;
 			if (multilineFmt.mEntryIndent == 0 && metadata.mDocumentStyle.mIndentSize == 0)
 				multilineFmt.mEntryIndent = 2;
-			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, multilineFmt);
+			WriteMultilineInlineTablePreserving(tbl, outStr, version, metadata, multilineFmt, baseIndent);
 			return;
 		}
 
@@ -673,7 +686,7 @@ extension TomlWriterImpl
 				outStr.Append(" = ");
 			else
 				outStr.Append('=');
-			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
+			WriteValuePreserving(val, outStr, version, tbl, key, metadata, baseIndent);
 		}
 
 		if (hasFormat && fmt.mCloseBraceSpacing > 0)
@@ -683,14 +696,12 @@ extension TomlWriterImpl
 
 	/// Write a multiline inline table (v1.1).
 	private static void WriteMultilineInlineTablePreserving(TomlTable tbl, String outStr, TomlVersion version,
-		TomlDocumentMetadata metadata, TomlTableFormat fmt)
+		TomlDocumentMetadata metadata, TomlTableFormat fmt, int baseIndent)
 	{
 		outStr.Append('{');
 		WriteNewline(outStr, metadata);
 
-		int entryIndent = fmt.mEntryIndent > 0
-			? fmt.mEntryIndent
-			: metadata.mDocumentStyle.mIndentSize;
+		int entryIndent = EntryIndent(fmt.mEntryIndent > 0 ? fmt.mEntryIndent : metadata.mDocumentStyle.mIndentSize, baseIndent, metadata);
 
 		for (int i = 0; i < tbl.Count; i++)
 		{
@@ -708,7 +719,7 @@ extension TomlWriterImpl
 				outStr.Append(" = ");
 			else
 				outStr.Append('=');
-			WriteValuePreserving(val, outStr, version, tbl, key, metadata);
+			WriteValuePreserving(val, outStr, version, tbl, key, metadata, entryIndent);
 			if (i < tbl.Count - 1 || fmt.mTrailingComma)
 				outStr.Append(',');
 			if (fieldId.IsValid)
@@ -719,6 +730,7 @@ extension TomlWriterImpl
 		// Comments that sat after the last field, before the closing brace
 		if (tbl.MetadataContext != null && tbl.MetadataContext.mNodeId.IsValid)
 			EmitIndentedCommentSet(metadata.GetCommentSet(tbl.MetadataContext.mNodeId), entryIndent, outStr, metadata);
+		AppendIndent(outStr, baseIndent, metadata);
 		outStr.Append('}');
 	}
 

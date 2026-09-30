@@ -5,16 +5,18 @@ live in [architecture.md](architecture.md). Keep this file current: when an item
 row (git history is the record), and update the baseline when test counts change.
 
 Last reviewed: 2026-09-30. The [parser review](review.md) found B1–B11; all are fixed, each with a
-regression test in `src/TomlBeef/tests/TomlRegressionTests.bf`. Its architectural and performance
-suggestions are open items O10–O14 below.
+regression test in `src/TomlBeef/tests/TomlRegressionTests.bf`. Its follow-ups (O10–O15) are done
+too: layout captured at the containers' own separators (no container text retained), nested
+multi-line indentation, read-only `StringView` string payloads, shared key/value string decoding,
+one insertion guard in the resolver, allocation-free path walking, `ReleaseCachedMemory`.
 
 ## Verification baseline
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 320/320 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 320/320 pass |
-| `./test-leaks.sh` | 320/320 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 322/322 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 322/322 pass |
+| `./test-leaks.sh` | 322/322 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -63,19 +65,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found. (
 | ID | Idea | Size |
 |----|------|------|
 | O8 | *Optional, perf.* In the 20-library comparison (`bench/compare/`, architecture.md "TomlTester") only Rust's toml-spanner parses faster: 1.09× on average, ahead on 6 of 10 inputs, most on small arrays (1.8×), headers and the mixed config (1.4×) (2026-09-29, after the float/date/array fast paths, `TomlEntryMap` tables and arena pool reuse, which took it down from 1.48×). TomlBeef is the fastest style-preserving parser. Lookups (~70 ns) still trail zig-toml (~45) and go-toml (~55): a lookup goes `TomlTable` → entry array → index, where fingerprint bytes or keeping the index inline in the table might save a miss. From the toml-spanner study: resolve header and dotted-key segments as they are read with one find-or-add per segment (today a missing segment hashes twice), copy each string once straight into the store, smaller values (`TomlValue` is ~40 bytes because date/times are 8 × `int32`). Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), multi-line strings through `ScanRun`, keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M–L |
-| O9 | *Serialization follow-ups.* `[TomlObject]` covers the common field types (architecture.md 8a) and is documented in the README. Still open: `Nullable<T>` (absent = null, not written when null), nested lists, sized arrays, full dotted paths in error messages (`server.db.port`, not `port`), a decision on whether unknown keys can be reported (a strict mode), and whether writing should skip fields whose keys were absent when read (today it adds them with the field's value; skipping needs per-object "seen" tracking or an omit-defaults option). Speed: typed reads trail glaze and toml-spanner (34–40 ms vs 16–21 on `typed.sh`); ~11 ms is binding, and an arena only saves ~6%, so profile the per-field lookups and `TomlBind` calls next. Possibly a direct text writer later if writing through `TomlTable` shows up in profiles | M |
-
-Additional review opportunities (existing stream scanning and serialization ideas remain under
-O8/O9; chunked output remains I3):
-
-| ID | Idea | Size |
-|----|------|------|
-| O10 | Share parser validation/decoding paths, centralize context rules and structural insertion guards, and capture layout at actual separators rather than rescanning raw syntax | M–L |
-| O11 | Review the public mutable `TomlValue.String(String)` payload: pattern matching permits mutation outside dirty tracking and can invalidate borrowed views | M |
-| O12 | Remove repeated `TomlBind.Lookup` searches and temporary list allocation in dotted document getters; profile before claiming gains | S–M |
-| O13 | Lazily allocate parser scratch/comment buffers; capture layout without retaining complete container source spans where possible | M |
-| O14 | Consider explicit release of recycled arena pools; keep compaction separate because borrowed values/views constrain it | M |
-| O15 | *PreserveStyle presentation.* Nested multi-line containers (a multi-line array or inline table inside a multi-line array) keep one level of indentation: inner lines and closing brackets are not indented by nesting depth. The output is valid and reads back the same | S–M |
+| O9 | *Serialization follow-ups.* `[TomlObject]` covers the common field types (architecture.md 8a) and is documented in the README. Still open: `Nullable<T>` (absent = null, not written when null), nested lists, sized arrays, full dotted paths in error messages (`server.db.port`, not `port`), a decision on whether unknown keys can be reported (a strict mode), and whether writing should skip fields whose keys were absent when read (today it adds them with the field's value; skipping needs per-object "seen" tracking or an omit-defaults option). Speed: typed reads trail glaze and toml-spanner (34–40 ms vs 16–21 on `typed.sh`); ~11 ms is binding, and an arena only saves ~6%, so profile the per-field lookups and `TomlBind` calls next (removing `Lookup`'s second search for present keys made no measurable difference, 2026-09-30). Possibly a direct text writer later if writing through `TomlTable` shows up in profiles | M |
 
 ## Suggested order
 

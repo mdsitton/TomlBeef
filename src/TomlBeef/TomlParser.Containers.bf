@@ -22,6 +22,12 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		// Array-local pending comment list for PreserveStyle mode (its buffer is only allocated by a comment)
 		List<StringView> arrayPendingComments = (mStyle != null) ? scope:: List<StringView>() : null;
+		// Layout, recorded at the array's own separators rather than read back from its text: a newline
+		// between them makes it multi-line (one inside an element does not), and the first element that
+		// starts a line gives the indent. lastLine is where the previous separator or element ended.
+		var layout = TomlArrayFormat();
+		bool indentKnown = false;
+		int lastLine = startLine;
 		// Tracks whether the preceding comma was followed by a blank line
 		bool arraySawBlankLine = false;
 
@@ -35,7 +41,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mCursor.PeekByte() == ']')
 		{
 			mCursor.AdvanceByte();
-			CountArrayStyle(arr, startLine, mCursor.Line);
+			FinishArrayLayout(arr, ref layout, lastLine);
 			// Empty array: flush comments to the array node itself
 			if (arrayPendingComments != null && arrayPendingComments.Count > 0)
 			{
@@ -81,19 +87,30 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						}
 					}
 				}
-				CountArrayStyle(arr, startLine, mCursor.Line);
+				FinishArrayLayout(arr, ref layout, lastLine);
 				return TomlValue.Array(arr);
 			}
 
 			// Check the item count before parsing another item, not after building it
 			Try!(CheckArrayItem(arr));
-			// Mark value start for raw token capture
+			// Mark value start for raw token capture. Containers record their layout while they are parsed
+			// (mLastArrayFormat, mLastTableFormat), so their text is not needed or retained.
 			var elemStart = TomlCursorMark();
-			if (mStyle != null)
+			bool elemMarked = mStyle != null && !IsContainerStart(mCursor.PeekByte());
+			if (elemMarked)
 				elemStart = mCursor.Mark();
 			let elemLine = mCursor.Line;
 			let elemColumn = mCursor.Column;
 			let elemOffset = mCursor.Offset;
+			if (elemLine != lastLine)
+			{
+				layout.mStyle = .Multiline;
+				if (!indentKnown)
+				{
+					indentKnown = true;
+					NoteContainerIndent(ref layout.mIndentSize, elemColumn - 1);
+				}
+			}
 
 			int elemEnd = 0;
 			switch (ParseValue())
@@ -106,8 +123,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				arr.Add(val);
 				// Give the element a node ID (and, in PreserveStyle, capture its token and format)
 				if (mMetadata != null)
-					CaptureArrayElement(arr, val, elemStart);
+					CaptureArrayElement(arr, val, elemStart, elemMarked);
 			}
+			lastLine = mCursor.Line;
 
 			// Get node ID for this element for comment attachment
 			TomlNodeId elemNodeId = .Invalid;
@@ -146,7 +164,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			char8 afterValB = mCursor.PeekByte();
 			if (afterValB == ',')
 			{
+				if (mCursor.Line != lastLine)
+					layout.mStyle = .Multiline;
 				mCursor.AdvanceByte();
+				lastLine = mCursor.Line;
 				// After comma, capture any trailing comment on same line
 				mCursor.SkipWhitespace();
 				if (!mCursor.IsEOF && mCursor.PeekByte() == '#')
@@ -177,7 +198,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					arraySawBlankLine = true;
 				if (mCursor.PeekByte() == ']')
 				{
-					arr.mHasTrailingComma = true;
+					layout.mTrailingComma = true;
 					mCursor.AdvanceByte();
 					// Flush pending comments to the last element
 					if (arrayPendingComments != null && arrayPendingComments.Count > 0 && arr.Count > 0)
@@ -196,7 +217,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 							}
 						}
 					}
-					CountArrayStyle(arr, startLine, mCursor.Line);
+					FinishArrayLayout(arr, ref layout, lastLine);
 					return TomlValue.Array(arr);
 				}
 				continue;
@@ -221,7 +242,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						}
 					}
 				}
-				CountArrayStyle(arr, startLine, mCursor.Line);
+				FinishArrayLayout(arr, ref layout, lastLine);
 				return TomlValue.Array(arr);
 			}
 			else
@@ -292,9 +313,24 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		// on the field's own line its trailing comment, and comments before `}` the table's closing comments.
 		List<StringView> pendingComments = (mStyle != null && mVersion != .V1_0) ? scope:: List<StringView>() : null;
 
+		// Layout (PreserveStyle), recorded at the table's own separators as for arrays (see ParseArray):
+		// spacing inside the braces, around '=' and after ',', multi-line and the entry indent. lastEnd is
+		// where the previous separator or value ended.
+		var layout = TomlTableFormat() { mInline = true, mEqualsSpacing = 0, mCommaSpacing = 0 };
+		bool indentKnown = false;
+		int lastLine = mCursor.Line;
+		int lastEnd = mCursor.Offset;
+		if (mStyle != null)
+		{
+			char8 afterBrace = mCursor.PeekByte();
+			if (afterBrace == ' ' || afterBrace == '\t' || afterBrace == '\r' || afterBrace == '\n')
+				layout.mOpenBraceSpacing = 1;
+		}
+
 		Try!(SkipInlineTableWs(pendingComments));
 		if (mCursor.PeekByte() == '}')
 		{
+			FinishTableLayout(ref layout, lastLine, lastEnd);
 			mCursor.AdvanceByte();
 			FlushCommentsToLeading(pendingComments, tbl.MetadataContext?.mNodeId ?? .Invalid);
 			tbl.SealInlineRecursively();
@@ -308,6 +344,15 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			let fieldLine = mCursor.Line;
 			let fieldColumn = mCursor.Column;
 			let fieldOffset = mCursor.Offset;
+			if (fieldLine != lastLine)
+			{
+				layout.mMultiline = true;
+				if (!indentKnown)
+				{
+					indentKnown = true;
+					NoteContainerIndent(ref layout.mEntryIndent, fieldColumn - 1);
+				}
+			}
 			// Key style only depends on the key's first byte
 			TomlKeyStyle keyStyle = .Bare;
 			if (mStyle != null)
@@ -328,16 +373,24 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mCursor.SkipWhitespace();
 			if (mCursor.PeekByte() != '=')
 				return .Err(Error(.UnexpectedToken, "Expected '=' in inline table"));
+			if (mCursor.Offset > mLastKeyEnd)
+				layout.mEqualsSpacing = 1;
 			mCursor.AdvanceByte();
+			if (mCursor.PeekByte() == ' ' || mCursor.PeekByte() == '\t')
+				layout.mEqualsSpacing = 1;
 
 			mCursor.SkipWhitespace();
-			var valueStart = TomlCursorMark();
-			if (mStyle != null)
-				valueStart = mCursor.Mark();
 
 			// A full table fails before its new value is parsed
 			if (keyPath.Count == 1)
 				Try!(CheckTableEntry(tbl));
+
+			// Only scalars need their token; containers record their layout as they are parsed
+			var valueStart = TomlCursorMark();
+			char8 valueFirst = mCursor.PeekByte();
+			bool valueMarked = mStyle != null && !IsContainerStart(valueFirst);
+			if (valueMarked)
+				valueStart = mCursor.Mark();
 
 			TomlValue val;
 			mKeyDepth += keyPath.Count - 1;
@@ -380,9 +433,11 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mStyle != null)
 			{
 				String scratch = scope String();
-				StringView rawToken = mCursor.Slice(valueStart, scratch);
+				StringView rawToken = valueMarked ? mCursor.Slice(valueStart, scratch) : default;
 				CaptureValueMetadata(fieldNodeId, val, rawToken, keyStyle, keyPath.Count > 1);
 			}
+			lastLine = mCursor.Line;
+			lastEnd = ValueEnd(valueFirst);
 			FlushCommentsToLeading(pendingComments, fieldNodeId);
 
 			// A comment on the field's own line, before any comma: `a = 1 # note`
@@ -392,7 +447,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			char8 b = mCursor.PeekByte();
 			if (b == ',')
 			{
+				if (mCursor.Line != lastLine)
+					layout.mMultiline = true;
 				mCursor.AdvanceByte();
+				if (mCursor.PeekByte() == ' ' || mCursor.PeekByte() == '\t')
+					layout.mCommaSpacing = 1;
+				lastLine = mCursor.Line;
+				lastEnd = mCursor.Offset;
 				mCursor.SkipWhitespace();
 				// Trailing comma: reject in v1.0
 				if (mVersion == .V1_0 && mCursor.PeekByte() == '}')
@@ -405,7 +466,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				Try!(SkipInlineTableWs(pendingComments));
 				if (mCursor.PeekByte() == '}')
 				{
-					tbl.mHasTrailingComma = true;
+					layout.mTrailingComma = true;
+					FinishTableLayout(ref layout, lastLine, lastEnd);
 					mCursor.AdvanceByte();
 					break;
 				}
@@ -413,6 +475,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			else if (b == '}')
 			{
+				FinishTableLayout(ref layout, lastLine, lastEnd);
 				mCursor.AdvanceByte();
 				break;
 			}

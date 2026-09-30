@@ -43,6 +43,18 @@ internal class TomlPathResolver
 		return CheckTableEntry(mCurrentTable, mCurrentOffset);
 	}
 
+	/// @brief The one guard for adding an entry to the current table, whichever statement adds it (a
+	/// key, a dotted key's table, a `[header]` or a `[[header]]`): an inline table is complete where it
+	/// is written, and the table must have room under MaxTableEntries.
+	/// @param what What would be added, for the message.
+	/// @return InlineTableSealed or the entry-limit error, or Ok.
+	private Result<void, TomlParseError> CheckCanAddEntry(StringView what)
+	{
+		if (mCurrentTable.IsInlineSealed)
+			return .Err(MakeError(.InlineTableSealed, scope $"Cannot add {what} to a sealed inline table", mCurrentOffset));
+		return CheckTableEntry(mCurrentTable, mCurrentOffset);
+	}
+
 	private Result<void, TomlParseError> CheckNodeCount()
 	{
 		if (mLimits != null)
@@ -215,14 +227,11 @@ internal class TomlPathResolver
 
 		if (create)
 		{
-			if (mCurrentTable.IsInlineSealed)
-				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
-
+			Try!(CheckCanAddEntry("keys"));
 			Try!(CheckNodeCount());
-			TomlTable newTable = 
+			TomlTable newTable =
 				mStore.NewTable(implicitOrigin);
 			TomlValue tableVal = TomlValue.Table(newTable);
-			Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 			mCurrentTable.Insert(key, tableVal);
 			mCurrentTable = newTable;
 			return .Ok;
@@ -288,15 +297,11 @@ internal class TomlPathResolver
 			}
 		}
 
-		// Cannot add sub-tables to sealed inline tables
-		if (mCurrentTable.IsInlineSealed)
-			return .Err(MakeError(.InlineTableSealed, "Cannot add sub-table to sealed inline table", mCurrentOffset));
-
+		Try!(CheckCanAddEntry("a sub-table"));
 		Try!(CheckNodeCount());
 		TomlTable newTable =
 			mStore.NewTable(origin);
 		TomlValue tableVal = TomlValue.Table(newTable);
-		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 
 		// A header table is one node: its ID is both the table's own and the parent's entry. The context is
 		// set before inserting so Insert does not bind a second one, and Insert registers the entry ID.
@@ -357,18 +362,14 @@ internal class TomlPathResolver
 			}
 		}
 
-		// Cannot add an array of tables to a sealed inline table
-		if (mCurrentTable.IsInlineSealed)
-			return .Err(MakeError(.InlineTableSealed, "Cannot add array-of-tables to sealed inline table", mCurrentOffset));
-
+		Try!(CheckCanAddEntry("an array of tables"));
 		Try!(CheckNodeCount()); // the array itself
 		TomlArray newArray =
 			mStore.NewArray();
 		Try!(CheckNodeCount()); // first element
-		TomlTable firstElement = 
+		TomlTable firstElement =
 			mStore.NewTable(.ArrayElement);
 		newArray.Add(.Table(firstElement));
-		Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
 		mCurrentTable.Insert(key, TomlValue.Array(newArray));
 		mCurrentTable = firstElement;
 
@@ -394,9 +395,7 @@ internal class TomlPathResolver
 		{
 			if (mCurrentTable.ContainsKey(key))
 				return .Err(MakeError(.DuplicateKey, scope $"Duplicate key '{key}'" , mCurrentOffset));
-			if (mCurrentTable.IsInlineSealed)
-				return .Err(MakeError(.InlineTableSealed, "Cannot add keys to a sealed inline table", mCurrentOffset));
-			Try!(CheckTableEntry(mCurrentTable, mCurrentOffset));
+			Try!(CheckCanAddEntry("keys"));
 		}
 
 		TomlNodeId nodeId = .Invalid;

@@ -60,12 +60,13 @@ internal class TomlDocumentStore
 	/// @brief The store-owned root table. Borrowed reference — do not delete.
 	internal TomlTable RootTable => mRootTable;
 
-	/// @brief Allocate a String in the store arena, copying from source.
+	/// @brief Copy a string value's text into the store arena as plain bytes, as NewKey does: no String
+	/// object, and the value stays read-only.
 	/// @param source The string data to copy.
-	/// @return A store-owned String.
-	internal String NewString(StringView source)
+	/// @return A view of the store-owned copy.
+	internal StringView NewString(StringView source)
 	{
-		return new:mAlloc String(source);
+		return NewKey(source);
 	}
 
 	/// @brief Copy a table key into the store arena as plain bytes (no String object or destructor).
@@ -108,6 +109,18 @@ internal class TomlDocumentStore
 		arr.mStore = this;
 		return arr;
 	}
+
+	/// @brief Free the cached pools (memory of content already reset away). Pools in use stay, so
+	/// current payloads and views into them are unaffected.
+	internal void ReleasePoolCache()
+	{
+		for (let pool in mPoolCache)
+			delete pool.Ptr;
+		mPoolCache.Clear();
+	}
+
+	/// @brief Number of cached pools (for tests).
+	internal int CachedPoolCount => mPoolCache.Count;
 
 	/// @brief Reset the store, releasing all arena-allocated payloads and creating a new root table.
 	internal void Reset()

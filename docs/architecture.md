@@ -193,10 +193,15 @@ empty key (`"" = 1`), which a path string cannot express. Segments borrow from t
   next arena takes them from there: reading into the same document again reuses the memory, where
   freeing it let glibc trim the heap and every page fault back in on the next parse (296,000 page
   faults against 7,000 over a `strings` benchmark run, 40% of parse time). The cache never holds
-  more than the pools of the largest document read, and is freed with the document.
+  more than the pools of the largest document read, and is freed with the document (or earlier
+  through `ReleaseCachedMemory`, which frees only the cached pools, so live values never move).
 - **`TomlValue` is a non-owning tagged union.** Scalars and date/times are stored inline;
-  `.String(String)`, `.Array(TomlArray)` and `.Table(TomlTable)` are borrowed references into the
-  arena. `TomlValue` has no `Dispose`, and copying one is always safe.
+  `.String(StringView)`, `.Array(TomlArray)` and `.Table(TomlTable)` are borrowed references into
+  the arena. `TomlValue` has no `Dispose`, and copying one is always safe.
+  - String text is plain arena bytes (like keys), exposed as a `StringView`. An earlier `String`
+    payload let callers mutate document text through pattern matching, bypassing the setters' dirty
+    tracking (the writer then reused the stale original token) and reallocating under views others
+    held; it also cost a `String` object per value. Text changes go through `Set`, which copies.
   - *Why:* an earlier design made `TomlValue` own its payload and have `Dispose()`/`Clone()`, and
     later added parallel `TomlValueView`/`TomlTableView` types. Because Beef structs copy freely
     and have no destructors, any accessor that returned a `TomlValue` gave callers a way to
@@ -307,8 +312,10 @@ Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Ref
     buffer. The buffer never grows.
   - `Slice` returns a direct buffer view when the mark is still buffered. Otherwise it joins the
     spill suffix and the buffered prefix into `scratch`. Releasing the last mark clears the spill.
-  - Nesting matters because PreserveStyle marks a whole value (for example an inline table)
-    while inner string, key and number parsing take their own marks.
+  - Nesting matters because PreserveStyle marks a scalar value's whole token while inner string,
+    key and number parsing take their own marks. Arrays and inline tables are never marked: they
+    record their layout at their own separators as they are parsed (see
+    [PreserveStyle layout](#preservestyle-layout)), so a long container is not retained.
   - `MaxTokenBytes` bounds the retained span (`CheckRetainedBytes`). It is checked before a refill,
     against the outermost mark, which is the only time the spill grows, so the spill never exceeds
     the limit. It is also checked in `Slice`, which catches spans shorter than the buffer. A breach
@@ -559,6 +566,22 @@ merging with a more capable mode raises it, a lesser one never lowers it.
   2026-09-28), with preserving output byte-identical across the corpus.
 - Pools of key formats and value formats. `TomlValueFormat` is a union of the string, integer,
   float, date/time, array and table formats.
+  - <a id="preservestyle-layout"></a>*PreserveStyle layout.* Scalar formats come from the value's
+    token. Array and inline-table formats are recorded by `ParseArray`/`ParseInlineTable` at their
+    own separators while they parse (`FinishArrayLayout`, `FinishTableLayout`, handed to the caller
+    in `mLastArrayFormat`/`mLastTableFormat`): a newline between the container's own separators
+    makes it multi-line, the column of its first entry that starts a line is its indent, and the
+    spacing inside the braces and around `=` and `,` is seen where those bytes are. Reading the
+    layout back from the container's text instead needed that whole text (retained across stream
+    refills) and could not tell the container's own newlines, indentation and punctuation from those
+    of nested values or strings: `[{` + newline + `a=1}]` became a multi-line array, and a table's
+    indent was its deepest nested line's.
+  - Captured indents are columns. The preserving writer passes each value the indent of the line
+    it starts on (`baseIndent`): a nested multi-line container indents its entries deeper than that
+    (its captured column, or one document indent step further when the column is not deeper) and
+    puts its closing bracket at that line's indent.
+  - The parser keeps separate array loops with and without metadata (`ParsePlainArray`): the plain
+    one is the common case and carries none of the comment, range and layout bookkeeping.
 - Comment sets per node (leading comments, trailing comment, blank-line separation), plus root
   (file header) and footer comments. Lines are views into `mText`. A view with a null pointer means
   absent: a blank-line marker among the leading lines, or no trailing comment

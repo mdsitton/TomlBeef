@@ -94,7 +94,7 @@ if (doc.Read(input, config) case .Err(let err)) { /* ... */ }
 | `MaxTableEntries` | `0` | Keys in any single table: root, `[header]`, inline, and dotted-key implicit tables |
 | `MaxPathSegments` | `0` | Segments in a dotted key or `[table]` / `[[array]]` header path |
 | `MaxNodes` | `0` | Total value nodes: every scalar, array, and table (explicit, implicit, inline, or array element); the root table is not counted. `a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3 nodes |
-| `MaxTokenBytes` | `0` | Streamed reads only (`Read(Stream)`, or `ReadFile` with `StreamBufferBytes`): the longest span the reader keeps in memory at once. That is a bare value such as a number or date, or with `PreserveStyle` a whole value's source text, including inline arrays and tables |
+| `MaxTokenBytes` | `0` | Streamed reads only (`Read(Stream)`, or `ReadFile` with `StreamBufferBytes`): the longest span the reader keeps in memory at once. That is a bare value such as a number or date, or with `PreserveStyle` a scalar value's source text (arrays and inline tables are never held whole) |
 
 A value of `0` means unlimited for every field, including `MaxDepth`. Limits apply only to the document being parsed: in `Merge` mode they count the incoming content, not the existing document. They do not apply to programmatic mutation through `Set`/`Add`.
 
@@ -586,11 +586,12 @@ if (doc.ReadFile(path) case .Err(let err))
 ### Memory Management
 
 - `TomlDocument` owns the entire parsed tree via an internal arena (`TomlDocumentStore`). `delete doc` frees everything.
-- `TomlValue` is a non-owning tagged union — it holds borrowed references to document-owned `String`, `TomlArray`, and `TomlTable` objects.
+- `TomlValue` is a non-owning tagged union — it holds borrowed references to document-owned text (a read-only `StringView`), `TomlArray`, and `TomlTable` objects.
 - Tables and arrays created via `AddTable`/`AddArray` are store-backed and freed when the document is cleared or destroyed.
 - `StringView` returned by `TryGetString` is borrowed from document-owned strings. Do not use after the document is cleared.
 - Mutate documents through `Set`, `AddTable`, `AddArray`, `TomlArray.Add`, etc.; raw `TomlValue` insertion is not public API.
 - Replaced or removed values are not freed individually; their payloads stay in the document arena until `Clear()` or `delete`. This keeps borrowed `TomlValue`/`StringView` copies valid, but memory grows under heavy repeated mutation of one document.
+- Reading into the same document again reuses the previous content's memory (faster than asking the system again), so a document keeps as much as the largest read it held. `doc.ReleaseCachedMemory()` gives that cache back; call it after `Clear()` to release everything a large read used while keeping the document. Current content is never moved.
 
 ## Supported TOML Features
 
