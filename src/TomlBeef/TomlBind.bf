@@ -374,6 +374,19 @@ public static class TomlBind
 		return array.SetTable(index);
 	}
 
+	/// @brief Before a Dictionary field is written into its table: remove the table's keys the dictionary
+	/// does not have, so the table ends up with exactly the dictionary's entries.
+	/// @param table The dictionary's table.
+	/// @param map The dictionary.
+	public static void RemoveMissing<TValue>(TomlTable table, Dictionary<String, TValue> map)
+	{
+		for (int i = table.Count - 1; i >= 0; i--)
+		{
+			if (!map.ContainsKeyAlt(table.GetKeyAt(i)))
+				table.RemoveAt(i);
+		}
+	}
+
 	/// @brief Remove the items past the first `count`, after a list was written.
 	/// @param array The array.
 	/// @param count The list's length.

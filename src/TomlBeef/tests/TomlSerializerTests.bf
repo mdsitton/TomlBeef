@@ -374,6 +374,48 @@ class SerMovedListener
 	public int32 Port;
 }
 
+// Dictionary<String, T> fields: tables whose keys are the dictionary's
+
+[TomlObject(Naming = .SnakeCase)]
+struct SerPortRange
+{
+	public int32 Min;
+	public int32 Max;
+}
+
+[TomlObject(Naming = .SnakeCase)]
+class SerTheme
+{
+	public Dictionary<String, String> Colors ~ DeleteDictionaryAndKeysAndValues!(_);
+	public Dictionary<String, int32> Sizes ~ DeleteDictionaryAndKeys!(_);
+	public Dictionary<String, SerLogLevel> Levels ~ DeleteDictionaryAndKeys!(_);
+	public Dictionary<String, SerDatabase> Databases ~ DeleteDictionaryAndKeysAndValues!(_);
+	public Dictionary<String, SerPortRange> Ranges ~ DeleteDictionaryAndKeys!(_);
+	public Dictionary<String, List<String>> Groups;
+	public Dictionary<String, TomlLocalDate> Dates ~ DeleteDictionaryAndKeys!(_);
+	public Dictionary<String, SerVec3> Points ~ DeleteDictionaryAndKeys!(_);
+
+	public ~this()
+	{
+		if (Groups != null)
+		{
+			for (let group in Groups)
+			{
+				delete group.key;
+				DeleteContainerAndItems!(group.value);
+			}
+			delete Groups;
+		}
+	}
+}
+
+[TomlObject]
+class SerArenaTheme
+{
+	public Dictionary<String, String> Colors;
+	public Dictionary<String, List<String>> Groups;
+}
+
 static class TomlSerializerTests
 {
 	const String cConfig = """
@@ -805,6 +847,114 @@ static class TomlSerializerTests
 		moved.Write(text);
 		let reread = scope TomlDocument();
 		Test.Assert(reread.Read(text) case .Ok && reread.GetInteger("net.listener.Port", 0) == 3, text);
+	}
+
+	const String cTheme = """
+		[colors]
+		primary = "#3366ff"
+		danger = "#cc2222"
+
+		[sizes]
+		small = 8
+		large = 24
+
+		[levels]
+		app = "Info"
+		db = "Warn"
+
+		[databases.main]
+		url = "postgres://a"
+		pool_size = 8
+
+		[databases.replica]
+		url = "postgres://b"
+
+		[ranges]
+		http = { min = 80, max = 89 }
+
+		[groups]
+		admins = ["ann", "bob"]
+		users = []
+
+		[dates]
+		launch = 2024-05-01
+
+		[points]
+		origin = [0, 0, 0]
+		""";
+
+	[Test]
+	public static void Dictionary_ReadsTablesWithFreeKeys()
+	{
+		let theme = scope SerTheme();
+		ReadOk(cTheme, theme);
+		Test.Assert(theme.Colors.Count == 2 && theme.Colors["primary"] == "#3366ff" && theme.Colors["danger"] == "#cc2222");
+		Test.Assert(theme.Sizes.Count == 2 && theme.Sizes["small"] == 8 && theme.Sizes["large"] == 24);
+		Test.Assert(theme.Levels["app"] == .Info && theme.Levels["db"] == .Warn);
+		Test.Assert(theme.Databases.Count == 2 && theme.Databases["main"].Url == "postgres://a" && theme.Databases["main"].PoolSize == 8);
+		Test.Assert(theme.Databases["replica"].Url == "postgres://b" && theme.Databases["replica"].PoolSize == 4, "Absent keys keep the type's defaults");
+		Test.Assert(theme.Ranges["http"].Min == 80 && theme.Ranges["http"].Max == 89);
+		Test.Assert(theme.Groups["admins"].Count == 2 && theme.Groups["admins"][1] == "bob" && theme.Groups["users"].Count == 0);
+		Test.Assert(theme.Dates["launch"] == TomlLocalDate(2024, 5, 1));
+		Test.Assert(theme.Points["origin"].Z == 0 && theme.Points.Count == 1, "Values through a registered converter");
+
+		// Reading again replaces the entries (the old keys and values are freed: see test-leaks.sh)
+		ReadOk("[colors]\naccent = \"#00aa00\"\n[groups]\nops = [\"cy\"]", theme);
+		Test.Assert(theme.Colors.Count == 1 && theme.Colors["accent"] == "#00aa00");
+		Test.Assert(theme.Groups.Count == 1 && theme.Groups["ops"][0] == "cy");
+
+		// A value of the wrong type is a located error naming its key
+		let bad = scope SerTheme();
+		switch (TomlSerializer.Read("[sizes]\nsmall = \"x\"", bad))
+		{
+		case .Ok: Test.Assert(false);
+		case .Err(let err): Test.Assert(err.mKind == .WrongType && err.mLine == 2 && err.mMessage == "small: expected integer, found string", scope String(err.mMessage));
+		}
+	}
+
+	[Test]
+	public static void Dictionary_WritesAndUpdatesInPlace()
+	{
+		let theme = scope SerTheme();
+		ReadOk(cTheme, theme);
+		let text = scope String();
+		Test.Assert(TomlSerializer.Write(theme, text) case .Ok);
+		let copy = scope SerTheme();
+		ReadOk(text, copy);
+		Test.Assert(copy.Colors["danger"] == "#cc2222" && copy.Databases["replica"].Url == "postgres://b" && copy.Groups["admins"][0] == "ann", text);
+		Test.Assert(copy.Ranges["http"].Max == 89 && copy.Points.ContainsKey("origin") && copy.Levels["db"] == .Warn, text);
+
+		// Updating a PreserveStyle document: kept entries keep their comments and position, removed keys
+		// disappear, new ones are added
+		const String input = """
+			[colors] # the palette
+			primary = "#3366ff" # brand
+			danger = "#cc2222" # errors
+			""";
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read(input, .() { MetadataMode = .PreserveStyle }) case .Ok);
+		let palette = scope SerTheme();
+		Test.Assert(doc.Deserialize(palette, root: true) case .Ok);
+		let removed = palette.Colors.GetAndRemove("danger").Value;
+		delete removed.key;
+		delete removed.value;
+		palette.Colors.Add(new String("accent"), new String("#00aa00"));
+		palette.Colors["primary"].Set("#2255ee");
+		Test.Assert(doc.Serialize(palette, root: true) case .Ok);
+		text.Clear();
+		doc.Write(text);
+		Test.Assert(text.StartsWith("[colors] # the palette\nprimary = \"#2255ee\" # brand\naccent = \"#00aa00\"\n"), text);
+		Test.Assert(!text.Contains("danger"), text);
+	}
+
+	[Test]
+	public static void Dictionary_ThroughAnAllocator()
+	{
+		// The arena owns the dictionary, its keys, its String values and its lists (see test-leaks.sh)
+		let arena = scope BumpAllocator();
+		let theme = scope SerArenaTheme();
+		Test.Assert(TomlSerializer.Read("[Colors]\na = \"1\"\nb = \"2\"\n[Groups]\ng = [\"x\", \"y\"]", theme, .(), arena) case .Ok);
+		Test.Assert(theme.Colors.Count == 2 && theme.Colors["b"] == "2" && theme.Groups["g"][1] == "y");
 	}
 
 	[Test]

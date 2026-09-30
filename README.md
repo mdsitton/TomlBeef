@@ -432,7 +432,7 @@ Try!(TomlSerializer.ReadFile("app.toml", config));   // errors are located: app.
 Try!(TomlSerializer.WriteFile(config, "out.toml"));
 ```
 
-Supported fields: bool, integers, float/double, String, enums, the TOML date/time types, other `[TomlObject]` types and `List<T>` of those (a list of objects is an array of tables). Anything else stops the build with a message naming the field, unless it has a converter or `[TomlIgnore]`.
+Supported fields: bool, integers, float/double, String, enums, the TOML date/time types, other `[TomlObject]` types, `List<T>` of those (a list of objects is an array of tables) and `Dictionary<String, T>` of those (a table with free keys; writing removes keys the dictionary no longer has). Anything else stops the build with a message naming the field, unless it has a converter or `[TomlIgnore]`.
 
 **Typed sections in a live document.** `TomlSerializer` reads and writes whole files. The document API binds objects to sections and mixes them with ordinary reads and writes. Writing updates in place: unchanged values keep their formatting and comments, keys the type does not know stay, and list items are updated by position.
 

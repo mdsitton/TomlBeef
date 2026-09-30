@@ -10,9 +10,9 @@ Last reviewed: 2026-09-27.
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 306/306 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 306/306 pass |
-| `./test-leaks.sh` | 306/306 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 309/309 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 309/309 pass |
+| `./test-leaks.sh` | 309/309 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -60,7 +60,7 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 | ID | Idea | Size |
 |----|------|------|
 | O8 | *Optional, perf.* In the 20-library comparison (`bench/compare/`, architecture.md "TomlTester") only Rust's toml-spanner parses faster: 1.09× on average, ahead on 6 of 10 inputs, most on small arrays (1.8×), headers and the mixed config (1.4×) (2026-09-29, after the float/date/array fast paths, `TomlEntryMap` tables and arena pool reuse, which took it down from 1.48×). TomlBeef is the fastest style-preserving parser. Lookups (~70 ns) still trail zig-toml (~45) and go-toml (~55): a lookup goes `TomlTable` → entry array → index, where fingerprint bytes or keeping the index inline in the table might save a miss. From the toml-spanner study: resolve header and dotted-key segments as they are read with one find-or-add per segment (today a missing segment hashes twice), copy each string once straight into the store, smaller values (`TomlValue` is ~40 bytes because date/times are 8 × `int32`). Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), multi-line strings through `ScanRun`, keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M–L |
-| O9 | *Serialization follow-ups.* `[TomlObject]` covers the common field types (architecture.md 8a) and is documented in the README. Still open: `Dictionary<String, T>` fields (tables with free keys), `Nullable<T>` (absent = null, not written when null), nested lists, sized arrays, full dotted paths in error messages (`server.db.port`, not `port`), a decision on whether unknown keys can be reported (a strict mode), and whether writing should skip fields whose keys were absent when read (today it adds them with the field's value; skipping needs per-object "seen" tracking or an omit-defaults option). Speed: typed reads trail glaze and toml-spanner (34–40 ms vs 16–21 on `typed.sh`); ~11 ms is binding, and an arena only saves ~6%, so profile the per-field lookups and `TomlBind` calls next. Possibly a direct text writer later if writing through `TomlTable` shows up in profiles | M |
+| O9 | *Serialization follow-ups.* `[TomlObject]` covers the common field types (architecture.md 8a) and is documented in the README. Still open: `Nullable<T>` (absent = null, not written when null), nested lists, sized arrays, full dotted paths in error messages (`server.db.port`, not `port`), a decision on whether unknown keys can be reported (a strict mode), and whether writing should skip fields whose keys were absent when read (today it adds them with the field's value; skipping needs per-object "seen" tracking or an omit-defaults option). Speed: typed reads trail glaze and toml-spanner (34–40 ms vs 16–21 on `typed.sh`); ~11 ms is binding, and an arena only saves ~6%, so profile the per-field lookups and `TomlBind` calls next. Possibly a direct text writer later if writing through `TomlTable` shows up in profiles | M |
 
 ## Suggested order
 

@@ -738,8 +738,20 @@ text through `Compiler.EmitTypeBody`.
   the Go libraries on write); renames are per field or opt-in per type. Keys match exactly: the
   Go libraries' case-insensitive fallback on read was not adopted. Supported: bool, integers (range-checked both ways; 64-bit unsigned up to
   `int64.MaxValue`), float/double (integers accepted), String, simple enums, the four date/time
-  types, `[TomlObject]` types (tables) and `List<T>` of those (a list of objects is an array of
-  tables). Anything else stops the build with a message naming the field.
+  types, `[TomlObject]` types (tables), `List<T>` of those (a list of objects is an array of
+  tables) and `Dictionary<String, T>` of those or of such a list. Anything else stops the build
+  with a message naming the field (so do `Dictionary<int, T>`, nested dictionaries and lists of
+  dictionaries).
+- *Dictionaries.* A `Dictionary<String, T>` field is a table whose keys are free: the dictionary
+  owns that whole table. Reading creates the dictionary if it is null, otherwise deletes its keys
+  and reference-type values (heap reads only) and clears it, then adds one entry per table key; each
+  value is read by the same generated code as a field of type `T`, aimed at the dictionary slot
+  (`Dictionary.this[key]` returns `ref T`) and at the sub-table. Writing updates the table in place:
+  keys the dictionary no longer has are removed, kept keys keep their comments and position, and new
+  keys are appended in dictionary iteration order (Beef's `Dictionary` is unordered, so a fresh
+  write's key order is not the insertion order). A null dictionary removes the key. Struct values
+  holding Strings leak those Strings on re-read, as for any struct field (structs have no
+  destructor).
 - *Converters for other types.* An `ITomlConverter<T>` (static `Read(TomlValue, TomlConvertContext,
   ref T)` and `Write(T, TomlConvertContext)`) handles a type the serializer does not know.
   `[TomlConverter(typeof(T))]` on the converter registers it: when the generator meets a field or

@@ -28,6 +28,8 @@ public static class TomlSerializerCodeGen
 		LocalTime,
 		Object,
 		List,
+		/// Dictionary<String, T>: a table whose keys are the dictionary's
+		Dictionary,
 		/// An ITomlConverter<T>: from [TomlUseConverter] on the field, or registered with [TomlConverter]
 		Converter
 	}
@@ -97,15 +99,12 @@ public static class TomlSerializerCodeGen
 				converter = use.mConverter;
 			else
 				kind = Classify(fieldType, out converter);
-			var elementKind = Kind.Bool;
-			if (kind == .List)
-				elementKind = Classify(ListElement(fieldType), ?);
-			// Lists of lists are left for later
-			if (kind == .Unsupported || elementKind == .Unsupported || elementKind == .List)
+			// Lists of lists, and dictionaries inside lists or dictionaries, are left for later
+			if (!IsSupported(kind, fieldType))
 			{
 				let typeName = fieldType.GetFullName(.. scope .());
 				let ownerName = type.GetFullName(.. scope .());
-				Runtime.FatalError(scope $"[TomlObject] {ownerName}.{field.Name}: TOML serialization does not support fields of type {typeName}. Supported: bool, integers, float, double, String, enums, the TOML date/time types, [TomlObject] types, List<T> of those, and types with a converter ([TomlConverter] registration or [TomlUseConverter] on the field). Mark the field [TomlIgnore] to leave it out.");
+				Runtime.FatalError(scope $"[TomlObject] {ownerName}.{field.Name}: TOML serialization does not support fields of type {typeName}. Supported: bool, integers, float, double, String, enums, the TOML date/time types, [TomlObject] types, List<T> of those, Dictionary<String, T> of those (a table with free keys), and types with a converter ([TomlConverter] registration or [TomlUseConverter] on the field). Mark the field [TomlIgnore] to leave it out.");
 			}
 
 			// Older names from [TomlAlias], as `, "a", "b"` to append to a call's arguments
@@ -113,10 +112,11 @@ public static class TomlSerializerCodeGen
 			for (let alias in field.GetCustomAttributes<TomlAliasAttribute>())
 				AppendLiteral(aliases..Append(", "), alias.mName);
 
-			EmitRead(read, field.Name, key, aliases, required, fieldType, kind, converter);
+			let target = scope $"this.{field.Name}";
+			EmitRead(read, target, key, aliases, required, fieldType, kind, converter);
 			if (!aliases.IsEmpty)
 				write.AppendF("\tTomlBeef.TomlBind.RenameAlias(_table, {}{});\n", key, aliases);
-			EmitWrite(write, field.Name, key, fieldType, kind, converter);
+			EmitWrite(write, target, key, fieldType, kind, converter);
 		}
 
 		read.Append("\treturn .Ok;\n}\n");
@@ -161,7 +161,39 @@ public static class TomlSerializerCodeGen
 			return .Object;
 		if (ListElement(type) != null)
 			return .List;
+		if (DictionaryValue(type) != null)
+			return .Dictionary;
 		return .Unsupported;
+	}
+
+	/// Whether a field (or a dictionary value) of `kind` can be generated: its list items or dictionary
+	/// values must be supported, and not themselves lists or dictionaries.
+	[Comptime]
+	static bool IsSupported(Kind kind, Type type)
+	{
+		Kind inner = .Bool;
+		if (kind == .List)
+			inner = Classify(ListElement(type), ?);
+		else if (kind == .Dictionary)
+		{
+			inner = Classify(DictionaryValue(type), ?);
+			// A dictionary of lists is fine (each value an array); of lists of lists or dictionaries not
+			if (inner == .List)
+				return IsSupported(inner, DictionaryValue(type));
+		}
+		return kind != .Unsupported && inner != .Unsupported && inner != .Dictionary && (kind != .List || inner != .List);
+	}
+
+	/// The T of a Dictionary<String, T>, or null (other key types are not supported: TOML keys are text).
+	[Comptime]
+	static Type DictionaryValue(Type type)
+	{
+		if (let specialized = type as SpecializedGenericType)
+		{
+			if (specialized.UnspecializedType == typeof(Dictionary<,>) && specialized.GetGenericArg(0) == typeof(String))
+				return specialized.GetGenericArg(1);
+		}
+		return null;
 	}
 
 	/// The converter registered with [TomlConverter(typeof(target))] that the type being compiled can see
@@ -307,6 +339,8 @@ public static class TomlSerializerCodeGen
 		code.AppendF("{}default: return .Err({});\n{}}}\n", indent, error, indent);
 	}
 
+	/// Appends the reading of one value into `name`, an assignable expression (`this.Port`, or a
+	/// dictionary slot `this.Colors[_dkey]`), from key `literalKey` (a literal or an expression) of `_table`.
 	[Comptime]
 	static void EmitRead(String code, StringView name, StringView literalKey, StringView aliases, bool required, Type type, Kind kind, Type converter)
 	{
@@ -325,45 +359,77 @@ public static class TomlSerializerCodeGen
 			let min = scope String();
 			let max = scope String();
 			IntegerRange(type, min, max);
-			code.AppendF("\t\tint64 _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadInteger(_table, {}, {}, {}, {}, out _v)))\n\t\t\tthis.{} = (.)_v;\n", key, req, min, max, name);
+			code.AppendF("\t\tint64 _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadInteger(_table, {}, {}, {}, {}, out _v)))\n\t\t\t{} = (.)_v;\n", key, req, min, max, name);
 		case .Float:
-			code.AppendF("\t\tdouble _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadFloat(_table, {}, {}, out _v)))\n\t\t\tthis.{} = (.)_v;\n", key, req, name);
+			code.AppendF("\t\tdouble _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadFloat(_table, {}, {}, out _v)))\n\t\t\t{} = (.)_v;\n", key, req, name);
 		case .Bool:
-			code.AppendF("\t\tbool _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadBool(_table, {}, {}, out _v)))\n\t\t\tthis.{} = _v;\n", key, req, name);
+			code.AppendF("\t\tbool _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadBool(_table, {}, {}, out _v)))\n\t\t\t{} = _v;\n", key, req, name);
 		case .String:
 			code.AppendF("\t\tStringView _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadString(_table, {}, {}, out _v)))\n\t\t{{\n", key, req);
-			code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n\t\t\telse\n\t\t\t\tthis.{0}.Set(_v);\n\t\t}}\n", name, NewExpr("String", "_v", .. scope .()));
+			code.AppendF("\t\t\tif ({0} == null)\n\t\t\t\t{0} = {1};\n\t\t\telse\n\t\t\t\t{0}.Set(_v);\n\t\t}}\n", name, NewExpr("String", "_v", .. scope .()));
 		case .Enum:
 			let cases = scope String();
 			CaseList(type, cases);
 			code.AppendF("\t\tStringView _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadString(_table, {}, {}, out _v)))\n", key, req);
 			let error = scope $"TomlBeef.TomlBind.UnknownCase(_table, {key}, _v, \"{cases}\")";
-			EmitCaseMatch(code, type, "\t\t", "_v", scope $"this.{name} = ", "", error);
+			EmitCaseMatch(code, type, "\t\t", "_v", scope $"{name} = ", "", error);
 		case .OffsetDateTime, .LocalDateTime, .LocalDate, .LocalTime:
-			code.AppendF("\t\tTry!(TomlBeef.TomlBind.ReadDateTime(_table, {}, {}, ref this.{}));\n", key, req, name);
+			code.AppendF("\t\tTry!(TomlBeef.TomlBind.ReadDateTime(_table, {}, {}, ref {}));\n", key, req, name);
 		case .Object:
 			code.AppendF("\t\tTomlBeef.TomlTable _t;\n\t\tif (Try!(TomlBeef.TomlBind.ReadTable(_table, {}, {}, out _t)))\n\t\t{{\n", key, req);
 			if (!type.IsValueType)
-				code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
-			code.AppendF("\t\t\tTry!(this.{}.TomlRead(_t, _alloc));\n\t\t}}\n", name);
+				code.AppendF("\t\t\tif ({0} == null)\n\t\t\t\t{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
+			code.AppendF("\t\t\tTry!({}.TomlRead(_t, _alloc));\n\t\t}}\n", name);
 		case .List:
 			let element = ListElement(type);
 			let elementKind = Classify(element, let elementConverter);
 			code.AppendF("\t\tTomlBeef.TomlArray _a;\n\t\tif (Try!(TomlBeef.TomlBind.ReadArray(_table, {}, {}, out _a)))\n\t\t{{\n", key, req);
-			code.AppendF("\t\t\tif (this.{0} == null)\n\t\t\t\tthis.{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
+			code.AppendF("\t\t\tif ({0} == null)\n\t\t\t\t{0} = {1};\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
 			// Without an allocator the list owns its object items (Strings, objects, converted classes):
 			// delete them before replacing. With one, the allocator owns what reads create.
 			if (!element.IsValueType)
-				code.AppendF("\t\t\tif (_alloc == null)\n\t\t\t{{\n\t\t\t\tfor (let _old in this.{})\n\t\t\t\t\tdelete _old;\n\t\t\t}}\n", name);
-			code.AppendF("\t\t\tthis.{}.Clear();\n\t\t\tfor (int _i < _a.Count)\n\t\t\t{{\n", name);
+				code.AppendF("\t\t\tif (_alloc == null)\n\t\t\t{{\n\t\t\t\tfor (let _old in {})\n\t\t\t\t\tdelete _old;\n\t\t\t}}\n", name);
+			code.AppendF("\t\t\t{}.Clear();\n\t\t\tfor (int _i < _a.Count)\n\t\t\t{{\n", name);
 			EmitReadElement(code, name, element, elementKind, elementConverter);
 			code.Append("\t\t\t}\n\t\t}\n");
+		case .Dictionary:
+			let valueType = DictionaryValue(type);
+			let valueKind = Classify(valueType, let valueConverter);
+			code.AppendF("\t\tTomlBeef.TomlTable _d;\n\t\tif (Try!(TomlBeef.TomlBind.ReadTable(_table, {}, {}, out _d)))\n\t\t{{\n", key, req);
+			code.AppendF("\t\t\tif ({0} == null)\n\t\t\t\t{0} = {1};\n\t\t\telse\n\t\t\t{{\n", name, NewExpr(type.GetFullName(.. scope .()), "", .. scope .()));
+			// The dictionary owns its keys and its object values; with an allocator, the allocator does
+			code.AppendF("\t\t\t\tif (_alloc == null)\n\t\t\t\t{{\n\t\t\t\t\tfor (let _old in {})\n\t\t\t\t\t{{\n\t\t\t\t\t\tdelete _old.key;\n", name);
+			EmitDeleteValue(code, "_old.value", valueType, valueKind, "\t\t\t\t\t\t");
+			code.AppendF("\t\t\t\t\t}}\n\t\t\t\t}}\n\t\t\t\t{}.Clear();\n\t\t\t}}\n", name);
+			// Each entry is added first (so the dictionary owns it if reading its value fails), then read
+			// in place through the dictionary's ref indexer, by the same code as a field of that type
+			StringView initial = (valueKind == .Object && valueType.IsValueType) ? ".()" : "default";
+			code.AppendF("\t\t\tfor (int _j < _d.Count)\n\t\t\t{{\n\t\t\t\tlet _dk = _d.GetKeyAt(_j);\n\t\t\t\tlet _dkey = {0};\n\t\t\t\t{1}.Add(_dkey, {2});\n",
+				NewExpr("String", "_dk", .. scope .()), name, initial);
+			let valueCode = scope String();
+			EmitRead(valueCode, scope $"{name}[_dkey]", "_dk", "", true, valueType, valueKind, valueConverter);
+			// Read from the dictionary's table: the value code names the table `_table`
+			valueCode.Replace("_table", "_d");
+			code.Append(valueCode);
+			code.Append("\t\t\t}\n\t\t}\n");
 		case .Converter:
-			code.AppendF("\t\tTomlBeef.TomlValue _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadValue(_table, {0}, {1}, out _v)))\n\t\t\tTry!({2}.Read(_v, .(_table, {0}, _alloc), ref this.{3}));\n",
+			code.AppendF("\t\tTomlBeef.TomlValue _v;\n\t\tif (Try!(TomlBeef.TomlBind.ReadValue(_table, {0}, {1}, out _v)))\n\t\t\tTry!({2}.Read(_v, .(_table, {0}, _alloc), ref {3}));\n",
 				key, req, converter.GetFullName(.. scope .()), name);
 		default:
 		}
 		code.Append("\t}\n");
+	}
+
+	/// Appends the deletion of an owned value `expr` of `type` (a dictionary value being replaced): Strings,
+	/// class objects and lists are deleted, a list's object items first; value types need nothing.
+	[Comptime]
+	static void EmitDeleteValue(String code, StringView expr, Type type, Kind kind, StringView indent)
+	{
+		if (type.IsValueType)
+			return;
+		if (kind == .List && !ListElement(type).IsValueType)
+			code.AppendF("{0}for (let _item in {1})\n{0}\tdelete _item;\n", indent, expr);
+		code.AppendF("{}delete {};\n", indent, expr);
 	}
 
 	/// An allocation of `typeName(args)` from the read's allocator when there is one, else from the heap.
@@ -384,37 +450,37 @@ public static class TomlSerializerCodeGen
 			let min = scope String();
 			let max = scope String();
 			IntegerRange(type, min, max);
-			code.AppendF("{}this.{}.Add((.)Try!(TomlBeef.TomlBind.ElementInteger(_a, _i, {}, {})));\n", indent, name, min, max);
+			code.AppendF("{}{}.Add((.)Try!(TomlBeef.TomlBind.ElementInteger(_a, _i, {}, {})));\n", indent, name, min, max);
 		case .Float:
-			code.AppendF("{}this.{}.Add((.)Try!(TomlBeef.TomlBind.ElementFloat(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add((.)Try!(TomlBeef.TomlBind.ElementFloat(_a, _i)));\n", indent, name);
 		case .Bool:
-			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementBool(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add(Try!(TomlBeef.TomlBind.ElementBool(_a, _i)));\n", indent, name);
 		case .String:
-			code.AppendF("{0}let _s = Try!(TomlBeef.TomlBind.ElementString(_a, _i));\n{0}this.{1}.Add({2});\n", indent, name, NewExpr("String", "_s", .. scope .()));
+			code.AppendF("{0}let _s = Try!(TomlBeef.TomlBind.ElementString(_a, _i));\n{0}{1}.Add({2});\n", indent, name, NewExpr("String", "_s", .. scope .()));
 		case .Enum:
 			let cases = scope String();
 			CaseList(type, cases);
 			code.AppendF("{}let _v = Try!(TomlBeef.TomlBind.ElementString(_a, _i));\n", indent);
 			let error = scope $"TomlBeef.TomlBind.UnknownCase(_a, _i, _v, \"{cases}\")";
-			EmitCaseMatch(code, type, indent, "_v", scope $"this.{name}.Add(", ")", error);
+			EmitCaseMatch(code, type, indent, "_v", scope $"{name}.Add(", ")", error);
 		case .OffsetDateTime:
-			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementOffsetDateTime(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add(Try!(TomlBeef.TomlBind.ElementOffsetDateTime(_a, _i)));\n", indent, name);
 		case .LocalDateTime:
-			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementLocalDateTime(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add(Try!(TomlBeef.TomlBind.ElementLocalDateTime(_a, _i)));\n", indent, name);
 		case .LocalDate:
-			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementLocalDate(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add(Try!(TomlBeef.TomlBind.ElementLocalDate(_a, _i)));\n", indent, name);
 		case .LocalTime:
-			code.AppendF("{}this.{}.Add(Try!(TomlBeef.TomlBind.ElementLocalTime(_a, _i)));\n", indent, name);
+			code.AppendF("{}{}.Add(Try!(TomlBeef.TomlBind.ElementLocalTime(_a, _i)));\n", indent, name);
 		case .Object:
 			let typeName = type.GetFullName(.. scope .());
 			code.AppendF("{}let _t = Try!(TomlBeef.TomlBind.ElementTable(_a, _i));\n", indent);
 			if (type.IsValueType)
-				code.AppendF("{0}{1} _o = .();\n{0}Try!(_o.TomlRead(_t, _alloc));\n{0}this.{2}.Add(_o);\n", indent, typeName, name);
+				code.AppendF("{0}{1} _o = .();\n{0}Try!(_o.TomlRead(_t, _alloc));\n{0}{2}.Add(_o);\n", indent, typeName, name);
 			else // added before reading, so the list owns it even if reading fails
-				code.AppendF("{0}let _o = {1};\n{0}this.{2}.Add(_o);\n{0}Try!(_o.TomlRead(_t, _alloc));\n", indent, NewExpr(typeName, "", .. scope .()), name);
+				code.AppendF("{0}let _o = {1};\n{0}{2}.Add(_o);\n{0}Try!(_o.TomlRead(_t, _alloc));\n", indent, NewExpr(typeName, "", .. scope .()), name);
 		case .Converter:
 			// Read in place into a new default item, which the list already owns if reading fails
-			code.AppendF("{0}this.{1}.Add(default);\n{0}Try!({2}.Read(_a.GetValueAt(_i), .(_a, _i, _alloc), ref this.{1}[this.{1}.Count - 1]));\n",
+			code.AppendF("{0}{1}.Add(default);\n{0}Try!({2}.Read(_a.GetValueAt(_i), .(_a, _i, _alloc), ref {1}[{1}.Count - 1]));\n",
 				indent, name, converter.GetFullName(.. scope .()));
 		default:
 		}
@@ -427,16 +493,16 @@ public static class TomlSerializerCodeGen
 		{
 		case .Integer:
 			if (type.Size == 8 && !type.IsSigned)
-				code.AppendF("\tTry!(TomlBeef.TomlBind.CheckWritable({}, (uint64)this.{}));\n", key, name);
-			code.AppendF("\t_table.Set({}, (int64)this.{});\n", key, name);
+				code.AppendF("\tTry!(TomlBeef.TomlBind.CheckWritable({}, (uint64){}));\n", key, name);
+			code.AppendF("\t_table.Set({}, (int64){});\n", key, name);
 		case .Float:
-			code.AppendF("\t_table.Set({}, (double)this.{});\n", key, name);
+			code.AppendF("\t_table.Set({}, (double){});\n", key, name);
 		case .Bool, .OffsetDateTime, .LocalDateTime, .LocalDate, .LocalTime:
-			code.AppendF("\t_table.Set({}, this.{});\n", key, name);
+			code.AppendF("\t_table.Set({}, {});\n", key, name);
 		case .String:
-			code.AppendF("\tif (this.{0} != null)\n\t\t_table.Set({1}, (StringView)this.{0});\n\telse\n\t\t_table.Remove({1});\n", name, key);
+			code.AppendF("\tif ({0} != null)\n\t\t_table.Set({1}, (StringView){0});\n\telse\n\t\t_table.Remove({1});\n", name, key);
 		case .Enum:
-			code.AppendF("\tswitch (this.{})\n\t{{\n", name);
+			code.AppendF("\tswitch ({})\n\t{{\n", name);
 			for (let field in type.GetFields())
 			{
 				if (!field.IsEnumCase)
@@ -449,21 +515,34 @@ public static class TomlSerializerCodeGen
 		case .Object:
 			// Into the existing table when there is one, so its other keys and comments stay
 			if (type.IsValueType)
-				code.AppendF("\tTry!(this.{}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {})));\n", name, key);
+				code.AppendF("\tTry!({}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {})));\n", name, key);
 			else
-				code.AppendF("\tif (this.{0} != null)\n\t\tTry!(this.{0}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {1})));\n\telse\n\t\t_table.Remove({1});\n", name, key);
+				code.AppendF("\tif ({0} != null)\n\t\tTry!({0}.TomlWrite(TomlBeef.TomlBind.WriteTable(_table, {1})));\n\telse\n\t\t_table.Remove({1});\n", name, key);
 		case .List:
 			let element = ListElement(type);
 			let elementKind = Classify(element, let elementConverter);
 			// Items are written by position into the existing array, then any extra items removed. A new
 			// list of objects is an array of tables, written as [[key]] sections.
 			StringView ofTables = (elementKind == .Object) ? "true" : "false";
-			code.AppendF("\tif (this.{0} != null)\n\t{{\n\t\tlet _a = TomlBeef.TomlBind.WriteArray(_table, {1}, {2});\n\t\tint _i = 0;\n\t\tfor (let _e in this.{0})\n\t\t{{\n",
+			code.AppendF("\tif ({0} != null)\n\t{{\n\t\tlet _a = TomlBeef.TomlBind.WriteArray(_table, {1}, {2});\n\t\tint _i = 0;\n\t\tfor (let _e in {0})\n\t\t{{\n",
 				name, key, ofTables);
 			EmitWriteElement(code, element, elementKind, elementConverter);
 			code.AppendF("\t\t\t_i++;\n\t\t}}\n\t\tTomlBeef.TomlBind.TrimArray(_a, _i);\n\t}}\n\telse\n\t\t_table.Remove({});\n", key);
+		case .Dictionary:
+			// The dictionary is the whole table: written into the existing one in place (entries that stay
+			// keep their position and comments), and keys it no longer has are removed
+			let valueType = DictionaryValue(type);
+			let valueKind = Classify(valueType, let valueConverter);
+			code.AppendF("\tif ({0} != null)\n\t{{\n\t\tlet _d = TomlBeef.TomlBind.WriteTable(_table, {1});\n\t\tTomlBeef.TomlBind.RemoveMissing(_d, {0});\n\t\tfor (let _kv in {0})\n\t\t{{\n",
+				name, key);
+			let valueCode = scope String();
+			EmitWrite(valueCode, "_kv.value", "_kv.key", valueType, valueKind, valueConverter);
+			// Write into the dictionary's table: the value code names the table `_table`
+			valueCode.Replace("_table", "_d");
+			code.Append(valueCode);
+			code.AppendF("\t\t}}\n\t}}\n\telse\n\t\t_table.Remove({});\n", key);
 		case .Converter:
-			code.AppendF("\tTry!({}.Write(this.{}, .(_table, {})));\n", converter.GetFullName(.. scope .()), name, key);
+			code.AppendF("\tTry!({}.Write({}, .(_table, {})));\n", converter.GetFullName(.. scope .()), name, key);
 		default:
 		}
 	}
