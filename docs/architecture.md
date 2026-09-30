@@ -441,10 +441,10 @@ programmatic mutation. The user-facing table is in `README.md`.
 | Limit | Counted | Enforced in |
 |---|---|---|
 | `MaxInputBytes` | raw bytes, including the BOM | `Read`/`ReadBytes` before validation. `ReadFile` after loading the file. The stream path in `Refill` through `TomlStreamState` |
-| `MaxDepth` | nesting depth of values (arrays and inline tables) plus the table levels key paths build: the current header's segments (one more for `[[...]]`), the parent segments of enclosing dotted keys, and the key's own segments | `ParseValue` → `CheckDepth`, and `ParseKeyPath` per segment against `mKeyDepth + mDepth` (fails with `MaxDepthExceeded`) |
+| `MaxDepth` | depth of every container (table or array) counted from the root, whatever built it; scalars do not count | the resolver's `Descend` as a header walks (one level per table segment, two per array of tables: the array and its element), `ParseKeyPath` per segment (a dotted key's parent tables below `mTableDepth`), and `ParseArray`/`ParseInlineTable` → `CheckDepth` at `mValueDepth` (fails with `MaxDepthExceeded`) |
 | `MaxStringBytes` | bytes of a decoded string value (keys excluded) | string loops as the string grows (`ScanRun` stops one byte past the limit), and `FinishStringValue` as a backstop |
 | `MaxArrayItems` | elements of one array, including `[[...]]` elements | array parser before each element is parsed, `DefineArrayOfTables` |
-| `MaxTableEntries` | keys of one table: root, header, inline, dotted-implicit | before the value of a new single-segment key (`CheckCurrentTableRoom`, inline tables), and `InsertKeyValue`, `NavigateSegment`, `DefineTable`, `InsertDottedKeyIntoTable` |
+| `MaxTableEntries` | keys of one table: root, header, inline, dotted-implicit | before any key's value is parsed, on the table that would take the new entry (`TomlTable.TableForNewEntry`: the current table, or a parent along a dotted path), and `CheckCanAddEntry` as the resolver inserts |
 | `MaxPathSegments` | segments of a dotted key or header | `ParseKeyPath`, before each segment |
 | `MaxNodes` | every value node: scalars, arrays, tables (explicit, implicit, inline, array elements); the root is not counted | `ParseValue` plus each table or array the resolver or inline parser creates (`a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3) |
 
@@ -453,10 +453,14 @@ normal Replace/Merge failure guarantees apply.
 
 Limits are checked before the work they bound, so an oversized input fails where it crosses the
 limit rather than after building the oversized part (a megabyte string under `MaxStringBytes = 8`
-stops after nine bytes). `MaxDepth` covers key paths because sealing, writing, cloning and merging
-walk the table tree recursively: without it, `v = {a.a.a…=1}` or a long header built a tree deep
-enough to overflow the stack in those walks while value nesting stayed shallow. With `MaxDepth = 0`
-the depth is the caller's responsibility.
+stops after nine bytes). `MaxDepth` counts the resulting tree, not the syntax, because sealing,
+writing, cloning and merging walk it recursively: counting only value nesting let `v = {a.a.a…=1}`
+or a long header build a tree deep enough to overflow the stack in those walks, and counting key
+segments separately still missed arrays below headers (`[a]` then `v = [[]]`) and the element level
+of arrays of tables. So there is one measure: the parser tracks the depth of the table receiving keys
+(`mTableDepth`, from the resolver for headers) and the depth a value would take as a container
+(`mValueDepth`), and every container is checked before it is built. With `MaxDepth = 0` the depth
+is the caller's responsibility.
 
 ## 7. TOML 1.0 vs 1.1 as implemented
 

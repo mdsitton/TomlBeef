@@ -13,10 +13,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<TomlValue, TomlParseError> ParseValue()
 	{
-		Try!(CheckDepth());
 		Try!(CheckNodeCount());
-		mDepth++;
-		defer { mDepth--; }
 
 		char8 b = mCursor.PeekByte();
 

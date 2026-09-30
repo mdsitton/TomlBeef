@@ -31,16 +31,33 @@ internal class TomlPathResolver
 		return .Ok;
 	}
 
-	/// @brief Fails when `key` is new and the current table is already at MaxTableEntries, so the
-	/// parser can stop before building its value. An existing key (a merge overwrite, or a duplicate
-	/// reported on insertion) needs no room.
-	/// @param key The single-segment key about to be set.
+	/// @brief Fails when setting `keyPath` would add an entry to a table already at MaxTableEntries (the
+	/// current table, or a parent along a dotted path), so the parser can stop before building the
+	/// value. Existing entries (a merge overwrite, or a duplicate reported on insertion) need no room.
+	/// @param keyPath The key about to be set, relative to the current table.
 	/// @return MaxTableEntries' error, or Ok.
-	public Result<void, TomlParseError> CheckCurrentTableRoom(StringView key)
+	public Result<void, TomlParseError> CheckRoomForKeyPath(List<String> keyPath)
 	{
-		if (mLimits == null || mLimits.mMaxTableEntries <= 0 || mCurrentTable.ContainsKey(key))
+		if (mLimits == null || mLimits.mMaxTableEntries <= 0)
 			return .Ok;
-		return CheckTableEntry(mCurrentTable, mCurrentOffset);
+		let receiving = TomlTable.TableForNewEntry(mCurrentTable, keyPath);
+		if (receiving == null)
+			return .Ok;
+		return CheckTableEntry(receiving, mCurrentOffset);
+	}
+
+	/// @brief Depth (in containers from the root) of the table the last EnterTable/EnterArrayOfTables
+	/// entered: a segment is one level, an array of tables two (the array and its element table).
+	public int mTableDepth;
+
+	/// Moves `levels` deeper along a header path, failing with MaxDepthExceeded before anything is
+	/// created there.
+	private Result<void, TomlParseError> Descend(int levels)
+	{
+		mTableDepth += levels;
+		if (mLimits != null && mTableDepth > mLimits.mMaxDepth)
+			return mLimits.CheckDepth(mTableDepth, mCurrentLine, mCurrentColumn, mCurrentOffset);
+		return .Ok;
 	}
 
 	/// @brief The one guard for adding an entry to the current table, whichever statement adds it (a
@@ -94,6 +111,7 @@ internal class TomlPathResolver
 	public Result<void, TomlParseError> EnterTable(List<String> path, TomlNodeId* outNodeId)
 	{
 		mCurrentTable = mRootTable;
+		mTableDepth = 0;
 
 		if (path.Count == 0)
 			return .Ok;
@@ -122,6 +140,7 @@ internal class TomlPathResolver
 	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path, TomlNodeId* outNodeId)
 	{
 		mCurrentTable = mRootTable;
+		mTableDepth = 0;
 
 		if (path.Count == 0)
 			return .Err(MakeError(.UnexpectedToken, "Empty array-of-tables header", mCurrentOffset));
@@ -150,30 +169,20 @@ internal class TomlPathResolver
 		if (keyPath.Count == 0)
 			return .Err(MakeError(.EmptyBareKey, "Empty key", mCurrentOffset));
 
+		// Navigation below is relative to the header's table and must leave it (and its depth) as it was
 		TomlTable savedTable = mCurrentTable;
+		int savedDepth = mTableDepth;
+		defer
+		{
+			mCurrentTable = savedTable;
+			mTableDepth = savedDepth;
+		}
 
 		for (int i = 0; i < keyPath.Count - 1; i++)
-		{
-			switch (NavigateSegment(keyPath[i], true, .Implicit))
-			{
-			case .Err(let err):
-				mCurrentTable = savedTable;
-				return .Err(err);
-			default:
-			}
-		}
+			Try!(NavigateSegment(keyPath[i], true, .Implicit));
 
 		StringView finalKey = keyPath[keyPath.Count - 1];
-		switch (InsertKeyValue(finalKey, value, outNodeId))
-		{
-		case .Err(let err):
-			mCurrentTable = savedTable;
-			return .Err(err);
-		default:
-		}
-
-		mCurrentTable = savedTable;
-		return .Ok;
+		return InsertKeyValue(finalKey, value, outNodeId);
 	}
 
 	// ========================================================================
@@ -194,6 +203,7 @@ internal class TomlPathResolver
 				if (implicitOrigin == .Implicit && existingTable.Origin == .ExplicitHeader)
 					return .Err(MakeError(.TypeConflict, scope $"Key '{key}' references a table defined by a [table] header - cannot extend with dotted keys" , mCurrentOffset));
 
+				Try!(Descend(1));
 				mCurrentTable = existingTable;
 				return .Ok;
 			}
@@ -211,7 +221,11 @@ internal class TomlPathResolver
 						"Cannot access child of empty array-of-tables; define an [[array]] element first", mCurrentOffset));
 				TomlValue lastVal = arr.GetValueAt(arr.Count - 1);
 				TomlTable lastTable = null; if (lastVal case .Table(ref lastTable))
+				{
+					// The array and its element table
+					Try!(Descend(2));
 					mCurrentTable = lastTable;
+				}
 				else
 					return .Err(MakeError(.TypeConflict, "Expected table in array-of-tables element", mCurrentOffset));
 				return .Ok;
@@ -228,6 +242,7 @@ internal class TomlPathResolver
 		if (create)
 		{
 			Try!(CheckCanAddEntry("keys"));
+			Try!(Descend(1));
 			Try!(CheckNodeCount());
 			TomlTable newTable =
 				mStore.NewTable(implicitOrigin);
@@ -244,6 +259,7 @@ internal class TomlPathResolver
 	/// an existing table after conflict checks.
 	private Result<void, TomlParseError> DefineTable(StringView key, TomlTableOrigin origin, TomlNodeId* outNodeId = null)
 	{
+		Try!(Descend(1));
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
 			TomlTable existingTable = null; if (existing case .Table(ref existingTable))
@@ -321,6 +337,8 @@ internal class TomlPathResolver
 
 	private Result<void, TomlParseError> DefineArrayOfTables(StringView key, TomlNodeId* outNodeId = null)
 	{
+		// The array and the element table this header adds
+		Try!(Descend(2));
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
 			TomlArray arr = null; if (existing case .Array(ref arr))
@@ -427,6 +445,7 @@ internal class TomlPathResolver
 	public void Reset()
 	{
 		mCurrentTable = mRootTable;
+		mTableDepth = 0;
 	}
 
 }

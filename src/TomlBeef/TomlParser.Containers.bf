@@ -13,12 +13,15 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<TomlValue, TomlParseError> ParseArray()
 	{
+		Try!(CheckDepth());
+		// Elements that are containers sit one level below the array
+		let elementDepth = mValueDepth + 1;
 		mCursor.AdvanceByte();
 		int startLine = mCursor.Line;
 		TomlArray arr = mStore.NewArray();
 		arr.IsStatic = true;
 		if (mMetadata == null)
-			return ParsePlainArray(arr);
+			return ParsePlainArray(arr, elementDepth);
 
 		// Array-local pending comment list for PreserveStyle mode (its buffer is only allocated by a comment)
 		List<StringView> arrayPendingComments = (mStyle != null) ? scope:: List<StringView>() : null;
@@ -113,6 +116,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 
 			int elemEnd = 0;
+			mValueDepth = elementDepth;
 			switch (ParseValue())
 			{
 			case .Err(let valErr):
@@ -255,7 +259,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// ParseArray without metadata: no positions, comments or style to record, so each element is
 	/// just whitespace, value, whitespace, then ',' or ']'. The opening '[' is already consumed.
-	private Result<TomlValue, TomlParseError> ParsePlainArray(TomlArray arr)
+	/// @param elementDepth The depth an element gets if it is a container (see mValueDepth).
+	private Result<TomlValue, TomlParseError> ParsePlainArray(TomlArray arr, int elementDepth)
 	{
 		// The loop top is reached only after '[' or ',', the two places where ']' may follow
 		while (true)
@@ -268,6 +273,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			}
 			// Check the item count before parsing another item, not after building it
 			Try!(CheckArrayItem(arr));
+			mValueDepth = elementDepth;
 			let val = Try!(ParseValue());
 			arr.Add(val);
 
@@ -301,6 +307,11 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<TomlValue, TomlParseError> ParseInlineTable()
 	{
+		Try!(CheckDepth());
+		// Keys inside are resolved against this table, at its depth; restored for the enclosing keys
+		let outerTableDepth = mTableDepth;
+		mTableDepth = mValueDepth;
+		defer { mTableDepth = outerTableDepth; }
 		mCursor.AdvanceByte();
 		TomlTable tbl = mStore.NewTable(.InlineTable);
 		// With metadata, give the table a context up front so each field gets a node ID (and dotted
@@ -381,9 +392,11 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 			mCursor.SkipWhitespace();
 
-			// A full table fails before its new value is parsed
-			if (keyPath.Count == 1)
-				Try!(CheckTableEntry(tbl));
+			// A full table fails before the new value is parsed: whichever table along a dotted path
+			// would take the new entry
+			let receiving = TomlTable.TableForNewEntry(tbl, keyPath);
+			if (receiving != null)
+				Try!(CheckTableEntry(receiving));
 
 			// Only scalars need their token; containers record their layout as they are parsed
 			var valueStart = TomlCursorMark();
@@ -393,10 +406,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				valueStart = mCursor.Mark();
 
 			TomlValue val;
-			mKeyDepth += keyPath.Count - 1;
-			let parsedValue = ParseValue();
-			mKeyDepth -= keyPath.Count - 1;
-			switch (parsedValue)
+			mValueDepth = mTableDepth + keyPath.Count;
+			switch (ParseValue())
 			{
 			case .Err(let valErr):
 				return .Err(valErr);

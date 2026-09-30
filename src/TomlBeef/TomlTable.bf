@@ -1152,6 +1152,28 @@ public class TomlTable
 		return CheckValueType(key, path, value, typeName);
 	}
 
+	/// The table that setting `keyPath` below `start` would add a new entry to, found without changing
+	/// anything: the first table on the path missing its segment (the tables created below it start
+	/// empty), or null when every segment exists or the path is blocked by a non-table (a merge
+	/// overwrite, a duplicate or a conflict, which insertion reports). Lets the parser check
+	/// MaxTableEntries before it builds the value.
+	internal static TomlTable TableForNewEntry(TomlTable start, List<String> keyPath)
+	{
+		TomlTable table = start;
+		for (int i < keyPath.Count)
+		{
+			if (!table.TryGetValue(keyPath[i], let existing))
+				return table;
+			if (i == keyPath.Count - 1)
+				return null;
+			if (existing case .Table(let next))
+				table = next;
+			else
+				return null;
+		}
+		return null;
+	}
+
 	/// `value` (the value at `key`, already looked up) if it has type `typeName`; otherwise RequireValue's
 	/// located WrongType error.
 	internal Result<TomlValue, TomlParseError> CheckValueType(StringView key, StringView path, TomlValue value, StringView typeName)

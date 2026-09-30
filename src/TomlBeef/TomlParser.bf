@@ -17,11 +17,13 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// mMetadata's index for this input's SourceName (-1 if unnamed or without metadata)
 	private int32 mSourceIndex;
 	private TomlDocumentStore mStore;
-	private int mDepth = 0;
-	// Table levels above the keys being parsed that key paths built (the current header's segments,
-	// and the parent segments of dotted keys whose values are being parsed); with mDepth, bounds the
-	// depth of the table tree, which sealing, writing and merging walk recursively
-	private int mKeyDepth = 0;
+	// Structural depth for MaxDepth, counted in containers (tables and arrays; the root is 0, scalars
+	// never count). mTableDepth is the depth of the table receiving the keys being parsed (a header's
+	// table, from the resolver, or the inline table being parsed); mValueDepth is the depth the value
+	// being parsed gets if it is a container. Every container is checked before it is built, so the
+	// tree the recursive walks cover (sealing, writing, merging) stays within the limit.
+	private int mTableDepth = 0;
+	private int mValueDepth = 0;
 	private TomlResourceLimitState mLimits;
 	// Offset just past the last key segment ParseKeyPath read (before any whitespace), for '=' spacing
 	private int mLastKeyEnd;
@@ -127,8 +129,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mCursor = cursor;
 		mPathResolver = resolver;
 		mPathResolver.Reset();
-		mDepth = 0;
-		mKeyDepth = 0;
+		mTableDepth = 0;
+		mValueDepth = 0;
 
 		if (ParseDocument() case .Err(let e))
 			return .Err(e);
@@ -297,7 +299,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mCursor.SkipWhitespace();
 
 		// A header path starts from the root
-		mKeyDepth = 0;
+		mTableDepth = 0;
 		let pathBuffer = AcquireKeyPath();
 		defer ReleaseKeyPath();
 		let path = pathBuffer.mParts;
@@ -348,7 +350,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mPathResolver.EnterTable(path, &nodeId) case .Err(let tblErr))
 				return .Err(tblErr);
 		}
-		mKeyDepth = path.Count + (isArray ? 1 : 0);
+		// The resolver counted the levels it walked (two per array of tables: the array and its element)
+		mTableDepth = mPathResolver.mTableDepth;
 		// The header's position was synced to the resolver at the top of this method
 		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, headerEnd);
 
@@ -412,9 +415,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		mCursor.SkipWhitespace();
 
-		// A full table fails before its new value is parsed (dotted keys are checked as they insert)
-		if (keyPath.Count == 1)
-			Try!(mPathResolver.CheckCurrentTableRoom(keyPath[0]));
+		// A full table fails before the new value is parsed: whichever table along a dotted path would
+		// take the new entry
+		Try!(mPathResolver.CheckRoomForKeyPath(keyPath));
 
 		// Mark value start for raw token capture. Containers record their layout while they are parsed,
 		// so only scalars need (and retain) their text.
@@ -424,10 +427,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			valueStart = mCursor.Mark();
 
 		TomlValue value = ?;
-		mKeyDepth += keyPath.Count - 1;
-		let parsed = ParseValue();
-		mKeyDepth -= keyPath.Count - 1;
-		switch (parsed)
+		// Each parent segment is a table below the current one; a container value sits below those
+		mValueDepth = mTableDepth + keyPath.Count;
+		switch (ParseValue())
 		{
 		case .Err(let valErr): return .Err(valErr);
 		case .Ok(let val): value = val;
@@ -487,12 +489,12 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		while (true)
 		{
-			// Limits are checked before each segment, so a huge path stops where it crosses them. Each
-			// segment is one more table level below the one receiving the key.
+			// Limits are checked before each segment, so a huge path stops where it crosses them. Another
+			// segment makes the previous one a table, one level below the table receiving the key.
 			int count = parts.mParts.Count + 1;
 			Try!(CheckPathSegments(count));
-			if (mLimits != null && mKeyDepth + mDepth + count > mLimits.mMaxDepth)
-				return mLimits.CheckDepth(mLimits.mMaxDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
+			if (mLimits != null && mTableDepth + count - 1 > mLimits.mMaxDepth)
+				return mLimits.CheckDepth(mTableDepth + count - 1, mCursor.Line, mCursor.Column, mCursor.Offset);
 			Try!(ParseSimpleKey(parts.Add()));
 			mLastKeyEnd = mCursor.Offset;
 
@@ -655,11 +657,12 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Limit checks run for every value, key and container, so each compares inline and only calls into
 	// the limit state (which builds the error) when a limit is set and exceeded.
 
+	/// MaxDepth for the array or inline table about to be parsed, at mValueDepth.
 	[Inline]
 	private Result<void, TomlParseError> CheckDepth()
 	{
-		if (mLimits != null && mDepth >= mLimits.mMaxDepth)
-			return mLimits.CheckDepth(mDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
+		if (mLimits != null && mValueDepth > mLimits.mMaxDepth)
+			return mLimits.CheckDepth(mValueDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
 

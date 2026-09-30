@@ -4,8 +4,11 @@ The single source of truth for where the project stands and what is left to do. 
 live in [architecture.md](architecture.md). Keep this file current: when an item is finished, delete its
 row (git history is the record), and update the baseline when test counts change.
 
-Last reviewed: 2026-09-30. The [parser review](review.md) found B1–B11; all are fixed, each with a
-regression test in `src/TomlBeef/tests/TomlRegressionTests.bf`. Its follow-ups (O10–O15) are done
+Last reviewed: 2026-09-30. The [parser review](review.md) found B1–B11; their original examples are
+addressed, with regression tests in `src/TomlBeef/tests/TomlRegressionTests.bf`. Review of the
+actioned changes found resource-limit gaps B12/B13 and test-coverage follow-up O16, now fixed
+(`MaxDepth` counts every container from the root; dotted keys check table room before their value;
+`ReadBoth` compares the documents both reads produce). The architectural and performance follow-ups (O10–O15) are done
 too: layout captured at the containers' own separators (no container text retained), nested
 multi-line indentation, read-only `StringView` string payloads, shared key/value string decoding,
 one insertion guard in the resolver, allocation-free path walking, `ReleaseCachedMemory`.
@@ -14,9 +17,9 @@ one insertion guard in the resolver, allocation-free path walking, `ReleaseCache
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 322/322 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 322/322 pass |
-| `./test-leaks.sh` | 322/322 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 324/324 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 324/324 pass |
+| `./test-leaks.sh` | 324/324 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -39,7 +42,7 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Ownership model | Document-owned arena; non-owning `TomlValue`; `Set`/`Add` (taking `TomlInputValue`) and typed getters are the public API |
 | Public surface | Metadata sidecar, parser, cursors, path resolver and table origin/sealing (`TomlTableOrigin`, `Origin`, `IsInlineSealed`) are `internal`. Metadata is reached only through `doc.PreservesStyle`, `doc.HasSourcePositions` and the comment/style/source-range methods, with `TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange` as the public types |
 | Path access | Dotted and bracketed-segment paths for getters and setters; `GetPath` takes exact keys (including the empty key) |
-| Resource limits | All `TomlReadConfig` limits enforced on every input path (`MaxTokenBytes` is stream-only by design: only streams retain spans), and checked before the work they bound (a string stops growing, an array or table takes no further value, a key path no further segment). `MaxDepth` bounds table levels built by headers and dotted keys too, so the recursive tree walks stay within the stack; documented in README |
+| Resource limits | All `TomlReadConfig` limits enforced on every input path (`MaxTokenBytes` is stream-only by design), each checked before the work it bounds: strings stop growing, arrays and tables (dotted paths included) take no further value, key paths no further segment. `MaxDepth` counts every container from the root (header segments, both levels of an array of tables, dotted-key tables, arrays, inline tables), so the recursive tree walks stay within the stack |
 | Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments (keys, headers, array elements), string style, integer base, float notation, date-time style, array and inline-table layout, and key quoting, and to query source positions (also available alone through the cheaper `Positions` mode) |
 | Error reporting | Source name, line, column, and byte offset for lexical, UTF-8, semantic and merge errors; `TomlParseError` needs no cleanup (message in a per-thread buffer), works with `Try!`, and formats as `source:line:column: message` |
 | Validation | `Require*` getters (MissingKey/WrongType) and `MakeError` (InvalidValue) on documents, tables and arrays, located in the source with Positions/PreserveStyle; positions keep their source file across merges |
@@ -51,7 +54,7 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 ### Correctness bugs
 
-None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found. (B1–B11 from the
+None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found. (B1–B13 from the
 [review](review.md) are fixed.)
 
 ### Streaming and I/O

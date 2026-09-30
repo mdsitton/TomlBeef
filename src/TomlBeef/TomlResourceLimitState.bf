@@ -29,9 +29,10 @@ internal class TomlResourceLimitState
 		mNodeCount = 0;
 	}
 
+	/// @brief MaxDepth for a container at `depth` (containers from the root: the root is 0, `[a]` is 1).
 	public Result<void, TomlParseError> CheckDepth(int depth, int line, int column, int offset)
 	{
-		if (depth >= mMaxDepth)
+		if (depth > mMaxDepth)
 			return .Err(TomlParseError(.MaxDepthExceeded, "Maximum nesting depth exceeded", line, column, offset));
 		return .Ok;
 	}

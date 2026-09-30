@@ -11,10 +11,15 @@ static class TomlRegressionTests
 {
 	const TomlMetadataMode[3] cMetadataModes = .(.None, .Positions, .PreserveStyle);
 
-	/// Reads `input` from memory and through a 16-byte stream buffer; both must agree.
+	/// Reads `input` from memory and through a 16-byte stream buffer; both must agree: the same error
+	/// at the same place, or equal documents (and with PreserveStyle the same written text).
 	static Result<void, TomlParseError> ReadBoth(TomlDocument doc, StringView input, TomlReadConfig config)
 	{
 		let fromMemory = doc.Read(input, config);
+		// An error's message lives in a per-thread buffer the next read reuses
+		let memoryMessage = scope String();
+		if (fromMemory case .Err(let memoryErr))
+			memoryMessage.Append(memoryErr.mMessage);
 		var streamConfig = config;
 		streamConfig.StreamBufferBytes = 16;
 		let ms = scope MemoryStream();
@@ -25,10 +30,17 @@ static class TomlRegressionTests
 		switch ((fromMemory, fromStream))
 		{
 		case (.Ok, .Ok):
+			Test.Assert(TomlTestSupport.TomlDocumentEquals(doc, streamed), scope $"Memory and stream reads decode differently: {input}");
+			if (config.MetadataMode == .PreserveStyle)
+			{
+				let memoryText = doc.Write(.. scope String());
+				let streamText = streamed.Write(.. scope String());
+				Test.Assert(memoryText == streamText, scope $"Memory and stream reads write differently: {memoryText} vs {streamText}");
+			}
 			return .Ok;
 		case (.Err(let a), .Err(let b)):
 			Test.Assert(a.mKind == b.mKind && a.mLine == b.mLine && a.mColumn == b.mColumn && a.mOffset == b.mOffset,
-				scope $"Memory {a.mLine}:{a.mColumn}@{a.mOffset} vs stream {b.mLine}:{b.mColumn}@{b.mOffset}: {a.mMessage}");
+				scope $"Memory {a.mLine}:{a.mColumn}@{a.mOffset} ({memoryMessage}) vs stream {b.mLine}:{b.mColumn}@{b.mOffset} ({b.mMessage})");
 			return .Err(a);
 		default:
 			Test.Assert(false, scope $"Memory and stream reads disagree on: {input}");
@@ -114,8 +126,76 @@ static class TomlRegressionTests
 			header.Append(i == 0 ? "k" : ".k");
 		header.Append("]\n");
 		Test.Assert(doc.Read(header) case .Err(let headerErr) && headerErr.mKind == .MaxDepthExceeded);
-		Test.Assert(doc.Read("[a.b]\nc.d = { e.f = 1 }\n", .() { MaxDepth = 6 }) case .Ok);
-		Test.Assert(doc.Read("[a.b]\nc.d = { e.f = 1 }\n", .() { MaxDepth = 5 }) case .Err);
+		// Containers only: a, b, c, d (the inline table), e; f is a scalar
+		Test.Assert(doc.Read("[a.b]\nc.d = { e.f = 1 }\n", .() { MaxDepth = 5 }) case .Ok);
+		Test.Assert(doc.Read("[a.b]\nc.d = { e.f = 1 }\n", .() { MaxDepth = 4 }) case .Err);
+	}
+
+	// B12: MaxDepth counts every container from the root, whichever syntax built it: header segments,
+	// the array and element of each array of tables, dotted-key tables, arrays and inline tables
+
+	[Test]
+	public static void B12_MaxDepthCountsEveryContainer()
+	{
+		// (input, deepest container) pairs: accepted at that depth, rejected one below
+		let cases = StringView[](
+			"[a]\nv=[[]]\n", "3",
+			"a.b=[[]]\n", "3",
+			"[[a]]\n", "2",
+			"[[a]]\n[[a.b]]\n", "4",
+			"[[a]]\n[a.b]\n", "3",
+			"[[a]]\nb.c = [{ d = [] }]\n", "6",
+			"v = [1, 2]\n", "1",
+			"a.b.c = 1\n", "2",
+			"v = [[{ a.b = {} }]]\n", "5");
+		for (int i = 0; i < cases.Count; i += 2)
+		{
+			let input = cases[i];
+			let depth = int.Parse(cases[i + 1]).Value;
+			for (let mode in cMetadataModes)
+			{
+				Test.Assert(ReadBoth(scope TomlDocument(), input, .() { MaxDepth = depth, MetadataMode = mode }) case .Ok, scope $"Rejected at {depth}: {input}");
+				if (depth == 1)
+					continue; // MaxDepth = 0 means unlimited
+				switch (ReadBoth(scope TomlDocument(), input, .() { MaxDepth = depth - 1, MetadataMode = mode }))
+				{
+				case .Ok: Test.Assert(false, scope $"Accepted at {depth - 1}: {input}");
+				case .Err(let err): Test.Assert(err.mKind == .MaxDepthExceeded, scope $"{err.mKind} for {input}");
+				}
+			}
+		}
+	}
+
+	// B13: a dotted key checks the table it would add an entry to before its value is parsed
+
+	[Test]
+	public static void B13_DottedKeysCheckTableRoomFirst()
+	{
+		// The invalid escape shows whether the value was parsed: a full table must fail first
+		let inputs = StringView[](
+			"a=1\nb.c=\"\\q\"\n",
+			"a.b=1\na.c=\"\\q\"\n",
+			"v={a=1,b.c=\"\\q\"}\n",
+			"v={a.b=1,a.c=\"\\q\"}\n",
+			"[t]\na=1\nb.c.d=\"\\q\"\n");
+		for (let input in inputs)
+		{
+			for (let mode in cMetadataModes)
+			{
+				switch (ReadBoth(scope TomlDocument(), input, .() { MaxTableEntries = 1, MetadataMode = mode }))
+				{
+				case .Ok: Test.Assert(false, scope String(input));
+				case .Err(let err): Test.Assert(err.mKind == .ResourceLimitExceeded, scope $"{err.mKind} for {input}");
+				}
+			}
+		}
+
+		// Room below an existing full table's child is fine: `a` is full, but `a.b` has space
+		Test.Assert(scope TomlDocument().Read("a.b.x=1\na.b.y=2\n", .() { MaxTableEntries = 2 }) case .Ok);
+		// Existing keys need no room: a merge overwrite through a dotted path
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read("a.b=1\n") case .Ok);
+		Test.Assert(doc.Read("a.b=2\n", .() { Mode = .Merge, OnConflict = .Overwrite, MaxTableEntries = 1 }) case .Ok);
 	}
 
 	// B3: an array-of-tables header cannot extend an inline table or a static array

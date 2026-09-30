@@ -87,7 +87,7 @@ if (doc.Read(input, config) case .Err(let err)) { /* ... */ }
 
 | Field | Default | What it limits |
 |-------|---------|----------------|
-| `MaxDepth` | `256` | Nesting depth: arrays, inline tables, and the table levels a header or dotted key builds (`[a.b.c]` is 3 deep). Reading, writing and merging walk documents recursively, so leave it set for untrusted input |
+| `MaxDepth` | `256` | Nesting depth, counted in containers from the root whatever syntax builds them: `[a.b.c]` is 3 deep, `[[a]]` 2 (the array and its table), `[a]` then `v = [[1]]` 3; scalars do not count. Reading, writing and merging walk documents recursively, so leave it set for untrusted input |
 | `MaxInputBytes` | `0` | Raw input size in bytes, including any BOM. Enforced for `Read(StringView)`, `ReadBytes()`, and `ReadFile()` (checked after the file is loaded), and for `Read(Stream)` as bytes are consumed |
 | `MaxStringBytes` | `0` | Byte length of any single string value after escape decoding (keys are not counted) |
 | `MaxArrayItems` | `0` | Elements in any single array, including `[[array-of-tables]]` elements |

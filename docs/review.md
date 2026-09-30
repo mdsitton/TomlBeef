@@ -2,22 +2,31 @@
 
 Reviewed on 2026-09-30 at commit `d65e920c1013a3a9c65154d485f4b402afe57fac`.
 
-**Resolution (2026-09-30):** B1–B11 are fixed, each with a regression test in
-`src/TomlBeef/tests/TomlRegressionTests.bf` (in memory and through a 16-byte stream buffer, in all
-three metadata modes where they apply). Notes on the fixes:
-- B1 writes the round-trip digits in scientific form; the text may be a shorter spelling of the
-  same double. B2 made `MaxDepth` also count the table levels that headers and dotted keys build,
-  so it bounds every recursive walk, not only sealing.
-- B8 keeps the in-memory convention that a bad continuation byte is reported at itself.
-- B9 captures the layout; single-line layouts still drop a trailing comma, as they do for a key's
-  inline table. Nested multi-line indentation is open as status.md O15.
+**Follow-up review (2026-09-30):** Reviewed the actioned changes in `12b2797` and `3be1e71`.
+The original examples have implementations and regression coverage, and the architectural and
+performance follow-ups O10–O15 were actioned. Two resource-limit gaps remain (B12 and B13 below).
+The new test helper also needs stronger success comparisons (O16). These are tracked in
+[status.md](status.md).
 
-The architectural and performance suggestions remain open as status.md O10–O14; the stale
-architecture note is corrected.
+**Resolution of the follow-up (2026-09-30):** B12, B13 and O16 are fixed, with regressions in
+`TomlRegressionTests.bf` (`B12_MaxDepthCountsEveryContainer`, `B13_DottedKeysCheckTableRoomFirst`)
+across all three metadata modes, in memory and streamed. `MaxDepth` now has one measure: containers
+from the root (scalars never count), checked before each container is built, with the resolver
+counting the array and element levels of arrays of tables as it walks a header. Every key, dotted
+or not, checks the table that would take its new entry before the value is parsed. `ReadBoth`
+compares the two documents (and PreserveStyle output) when both reads succeed, and copies the first
+error message before the second read.
+
+B1 now writes scientific notation from round-trip digits; additional bitwise checks passed for
+1,500 boundary and randomly selected finite doubles in each build. The original deep dotted-key
+crash input is rejected early. B8 retains raw offsets and matches the byte-input convention for a
+bad continuation byte. B9 captures inline-table spacing and layout inside arrays; dropping a
+single-line trailing comma remains intentional normalization and is tested explicitly. Nested
+multiline indentation is implemented. The stale architecture note about setter parents is fixed.
 
 The parser has a sound foundation: lexical parsing and table conflict resolution are separate,
 values belong to a document arena, cursors specialize at compile time, and metadata is optional.
-The review nevertheless found silent numeric corruption, a parser crash, grammar errors, and
+The original review found silent numeric corruption, a parser crash, grammar errors, and
 weaker resource protection than the configuration suggests. The existing verification baseline
 passes despite these failures.
 
@@ -28,8 +37,9 @@ verification target; deferred Windows/macOS support was not treated as a defect.
 dependencies and `recovery/` were not changed.
 
 This document records review evidence and recommendations. [status.md](status.md) remains the
-current list of open work. Finding IDs below match its correctness rows. No implementation fixes
-or permanent regression tests were added during this review.
+current list of open work. Original findings below record the historical evidence; completed rows
+have been removed from status.md. Neither review pass changed implementation code or added
+permanent regression tests.
 
 ## Evidence and priorities
 
@@ -41,7 +51,93 @@ or permanent regression tests were added during this review.
 - **Static:** Established from the implementation, but not exercised with a dedicated API test.
 - **Opportunity:** A proposed improvement; no speedup or memory reduction has been measured.
 
-## Reproduced findings
+## Findings from the actioned changes
+
+### B12 Combined structural depth is still undercounted
+
+**P2, reproduced in Debug and Release, in all three metadata modes.** Key-derived depth is checked
+while parsing key paths, but recursive value parsing still checks only `mDepth`. As a result,
+arrays beneath headers or dotted keys can exceed the combined structural limit now documented
+for `MaxDepth`. Array-of-tables headers also add levels that are not checked when the header
+creates its element, and ancestor array elements are not represented by a simple segment count.
+
+| Input (LF shown as `\n`) | MaxDepth | Accepted container depth, root excluded |
+|---|---|---|
+| `[a]\nv=[[]]\n` | 2 | 3: table, array, nested array |
+| `a.b=[[]]\n` | 2 | 3: implicit table, array, nested array |
+| `[[a]]\n` | 1 | 2: array and table element |
+| `[[a]]\n[[a.b]]\n` | 2 | 4: two arrays and their table elements |
+
+All four inputs return success. These examples count containers alone, so the discrepancy does
+not depend on whether scalar leaves count toward depth.
+
+[CheckDepth:659](../src/TomlBeef/TomlParser.bf#L659) compares only `mDepth`, whereas
+[ParseKeyPath:494](../src/TomlBeef/TomlParser.bf#L494) combines it with `mKeyDepth`.
+[ParseHeader:351](../src/TomlBeef/TomlParser.bf#L351) sets the additional depth after resolving the
+header, without checking that extra array-element level or counting ancestor array elements.
+
+Use consistent effective-depth accounting before constructing values and header containers,
+including the actual array/table levels encountered during header navigation. Add boundary
+regressions for headers plus arrays, dotted keys plus arrays, empty arrays of tables and nested
+arrays of tables. The original B2 crash reproduction is fixed; this finding concerns the remaining
+limit contract, and no new default-limit crash was observed.
+
+### B13 Dotted keys still construct values before the table entry limit is checked
+
+**P2, reproduced in Debug and Release, in all three metadata modes.** The new pre-value table
+capacity checks apply only when the key path has one segment. A dotted key still parses its
+complete value before resolver insertion checks the table that must receive the new entry.
+
+With `MaxTableEntries = 1`, this input reports a reserved escape from the second value:
+
+```toml
+a=1
+b.c="\q"
+```
+
+The root is already full, so early capacity enforcement should reject the new `b` entry before
+parsing its value. The equivalent single-segment `b="\q"` correctly reports the table limit first.
+The same gap exists for `a.b=1` followed by `a.c="\q"`, and for an inline table containing
+`a=1,b.c="\q"`. The escape is a small probe of whether the value was entered; a large valid string
+in its place would still be decoded and copied before the eventual entry-limit failure.
+
+The one-segment gates are at
+[ParseKeyVal:415](../src/TomlBeef/TomlParser.bf#L415) and
+[ParseInlineTable:384](../src/TomlBeef/TomlParser.Containers.bf#L384). Resolve or preflight the full
+insertion path before calling `ParseValue`, checking both newly required parent entries and the
+final receiving table. Cover dotted keys at document and inline-table scope, including full
+existing parents. Keep the existing read/merge failure guarantees.
+
+### O16 Successful stream regressions do not compare decoded values
+
+**Test-coverage observation, not a reproduced parser failure.**
+[TomlRegressionTests.ReadBoth:27](../src/TomlBeef/tests/TomlRegressionTests.bf#L27) returns success
+whenever both reads return `.Ok`, without comparing their documents. `AssertString` then checks
+only the in-memory document; the streamed document was scoped inside the helper. A stream read
+that succeeds with the wrong decoded string would therefore pass these new continuation tests.
+
+Compare semantic trees in the successful branch and, for PreserveStyle, compare written output
+when formatting agreement is part of the test. Copy a first error message before a second failing
+read if it is needed for diagnostics: error messages borrow the per-thread buffer. Existing corpus
+tests provide broader parity checks, but do not replace checking the specific new examples.
+
+### Verification of the actioned changes
+
+| Check | Debug | Release |
+|---|---|---|
+| Beef tests | 322/322 | 322/322 with TestRelease |
+| Local parser corpus | 266 semantic matches; 503 invalid rejected | 266 semantic matches; 503 invalid rejected |
+| Canonical round trips | 266/266 | 266/266 |
+| Encoder round trips | 266/266 | 266/266 |
+| Scientific float bitwise round trips | 1,500/1,500 | 1,500/1,500 |
+
+`./test-leaks.sh` also passed: 322/322 under LeakSanitizer with no detected leaks. CLI binaries
+were rebuilt with `beefbuild` and `beefbuild -config=Release` before the acceptance scripts. The
+targeted B12/B13 reproductions were separate from the green test baseline. The upstream Go runner
+was not rerun in this follow-up. No implementation changes were made while reviewing; only this
+document and status.md were updated with the findings.
+
+## Original reproduced findings
 
 ### B1 Scientific float output changes values
 
@@ -216,7 +312,7 @@ supports table formats. Reuse that path for table elements and test nesting and 
 downgrade behavior. This finding concerns supported layout hints, rather than requiring
 PreserveStyle to reproduce every source byte.
 
-## Static API findings
+## Original static API findings
 
 ### B10 Changing the sign of zero can be treated as an unchanged assignment
 
