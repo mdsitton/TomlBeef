@@ -4,15 +4,17 @@ The single source of truth for where the project stands and what is left to do. 
 live in [architecture.md](architecture.md). Keep this file current: when an item is finished, delete its
 row (git history is the record), and update the baseline when test counts change.
 
-Last reviewed: 2026-09-27.
+Last reviewed: 2026-09-30. The [parser review](review.md) found B1–B11; all are fixed, each with a
+regression test in `src/TomlBeef/tests/TomlRegressionTests.bf`. Its architectural and performance
+suggestions are open items O10–O14 below.
 
 ## Verification baseline
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 309/309 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 309/309 pass |
-| `./test-leaks.sh` | 309/309 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 320/320 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 320/320 pass |
+| `./test-leaks.sh` | 320/320 under LeakSanitizer, no leaks, exit 0 |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
@@ -34,8 +36,8 @@ and `beefbuild -test -config=TestRelease`, and run the shell scripts against bot
 | Read modes | `Replace` and deep `Merge` (`Error`/`Skip`/`Overwrite` on conflicting leaves), transactional on failure; PreserveStyle metadata is kept and carried across merges |
 | Ownership model | Document-owned arena; non-owning `TomlValue`; `Set`/`Add` (taking `TomlInputValue`) and typed getters are the public API |
 | Public surface | Metadata sidecar, parser, cursors, path resolver and table origin/sealing (`TomlTableOrigin`, `Origin`, `IsInlineSealed`) are `internal`. Metadata is reached only through `doc.PreservesStyle`, `doc.HasSourcePositions` and the comment/style/source-range methods, with `TomlMetadataMode`, `TomlStringStyle`, `TomlIntegerBase` and `TomlSourceRange` as the public types |
-| Path access | Dotted and bracketed-segment paths for getters and setters |
-| Resource limits | All `TomlReadConfig` limits enforced on every input path (`MaxTokenBytes` is stream-only by design: only streams retain spans); documented in README |
+| Path access | Dotted and bracketed-segment paths for getters and setters; `GetPath` takes exact keys (including the empty key) |
+| Resource limits | All `TomlReadConfig` limits enforced on every input path (`MaxTokenBytes` is stream-only by design: only streams retain spans), and checked before the work they bound (a string stops growing, an array or table takes no further value, a key path no further segment). `MaxDepth` bounds table levels built by headers and dotted keys too, so the recursive tree walks stay within the stack; documented in README |
 | Writer | Canonical output; TOML 1.0 downgrade; `PreserveStyle` round-trip of comments, token text, numeric/date/array/inline-table formats, blank lines; public API to edit comments (keys, headers, array elements), string style, integer base, float notation, date-time style, array and inline-table layout, and key quoting, and to query source positions (also available alone through the cheaper `Positions` mode) |
 | Error reporting | Source name, line, column, and byte offset for lexical, UTF-8, semantic and merge errors; `TomlParseError` needs no cleanup (message in a per-thread buffer), works with `Try!`, and formats as `source:line:column: message` |
 | Validation | `Require*` getters (MissingKey/WrongType) and `MakeError` (InvalidValue) on documents, tables and arrays, located in the source with Positions/PreserveStyle; positions keep their source file across merges |
@@ -47,7 +49,8 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 
 ### Correctness bugs
 
-None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
+None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found. (B1–B11 from the
+[review](review.md) are fixed.)
 
 ### Streaming and I/O
 
@@ -61,6 +64,18 @@ None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found.
 |----|------|------|
 | O8 | *Optional, perf.* In the 20-library comparison (`bench/compare/`, architecture.md "TomlTester") only Rust's toml-spanner parses faster: 1.09× on average, ahead on 6 of 10 inputs, most on small arrays (1.8×), headers and the mixed config (1.4×) (2026-09-29, after the float/date/array fast paths, `TomlEntryMap` tables and arena pool reuse, which took it down from 1.48×). TomlBeef is the fastest style-preserving parser. Lookups (~70 ns) still trail zig-toml (~45) and go-toml (~55): a lookup goes `TomlTable` → entry array → index, where fingerprint bytes or keeping the index inline in the table might save a miss. From the toml-spanner study: resolve header and dotted-key segments as they are read with one find-or-add per segment (today a missing segment hashes twice), copy each string once straight into the store, smaller values (`TomlValue` is ~40 bytes because date/times are 8 × `int32`). Remaining ideas by profile: word-at-a-time scanning in the stream cursor (it still counts columns per byte), comment runs stored as source ranges in PreserveStyle (the `toml_edit` approach), multi-line strings through `ScanRun`, keeping parse errors out of `Result` payloads (return size matters: `int32` positions gave +20% on arrays) | M–L |
 | O9 | *Serialization follow-ups.* `[TomlObject]` covers the common field types (architecture.md 8a) and is documented in the README. Still open: `Nullable<T>` (absent = null, not written when null), nested lists, sized arrays, full dotted paths in error messages (`server.db.port`, not `port`), a decision on whether unknown keys can be reported (a strict mode), and whether writing should skip fields whose keys were absent when read (today it adds them with the field's value; skipping needs per-object "seen" tracking or an omit-defaults option). Speed: typed reads trail glaze and toml-spanner (34–40 ms vs 16–21 on `typed.sh`); ~11 ms is binding, and an arena only saves ~6%, so profile the per-field lookups and `TomlBind` calls next. Possibly a direct text writer later if writing through `TomlTable` shows up in profiles | M |
+
+Additional review opportunities (existing stream scanning and serialization ideas remain under
+O8/O9; chunked output remains I3):
+
+| ID | Idea | Size |
+|----|------|------|
+| O10 | Share parser validation/decoding paths, centralize context rules and structural insertion guards, and capture layout at actual separators rather than rescanning raw syntax | M–L |
+| O11 | Review the public mutable `TomlValue.String(String)` payload: pattern matching permits mutation outside dirty tracking and can invalidate borrowed views | M |
+| O12 | Remove repeated `TomlBind.Lookup` searches and temporary list allocation in dotted document getters; profile before claiming gains | S–M |
+| O13 | Lazily allocate parser scratch/comment buffers; capture layout without retaining complete container source spans where possible | M |
+| O14 | Consider explicit release of recycled arena pools; keep compaction separate because borrowed values/views constrain it | M |
+| O15 | *PreserveStyle presentation.* Nested multi-line containers (a multi-line array or inline table inside a multi-line array) keep one level of indentation: inner lines and closing brackets are not indented by nesting depth. The output is valid and reads back the same | S–M |
 
 ## Suggested order
 

@@ -21,6 +21,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		if (mStyle == null || !nodeId.IsValid)
 			return;
+		CaptureValueFormat(nodeId, value, rawToken);
+		CaptureKeyFormat(nodeId, keyStyle, isDotted);
+	}
+
+	/// Capture the value's own token and format (a key's value or an array element).
+	private void CaptureValueFormat(TomlNodeId nodeId, TomlValue value, StringView rawToken)
+	{
 		if (value.IsString)
 		{
 			let tokenRef = mStyle.AddOriginalToken(rawToken);
@@ -37,8 +44,6 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			CaptureTableFormat(nodeId, rawToken, value.AsTable?.mHasTrailingComma ?? false);
 		else if (value.IsOffsetDateTime || value.IsLocalDateTime || value.IsLocalDate || value.IsLocalTime)
 			CaptureDateTimeFormat(nodeId, rawToken);
-
-		CaptureKeyFormat(nodeId, keyStyle, isDotted);
 	}
 
 	/// Capture string format metadata for a parsed string value.
@@ -658,40 +663,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (mStyle == null)
 			return;
 
-		// Capture string token and format
-		if (val.IsString)
+		if (val.IsBool)
 		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			let tokenRef = mStyle.AddOriginalToken(rawToken);
-			let style = mStyle.GetNodeStyle(nodeId);
-			if (style != null)
-				style.mOriginalValueToken = tokenRef;
-			CaptureStringFormat(nodeId, rawToken);
-		}
-		else if (val.IsInteger || val.IsFloat)
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			CaptureNumericFormat(nodeId, rawToken);
-		}
-		else if (val.IsOffsetDateTime || val.IsLocalDateTime || val.IsLocalDate || val.IsLocalTime)
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			CaptureDateTimeFormat(nodeId, rawToken);
-		}
-		else if (val.IsArray)
-		{
-			String scratch = scope String();
-			StringView rawToken = mCursor.Slice(elemStart, scratch);
-			CaptureArrayFormat(nodeId, rawToken, val.AsArray?.mHasTrailingComma ?? false);
-		}
-		else
-		{
-			// Bool and table: no token to capture, but must release the mark
+			// No format to capture, but the mark must be released
 			mCursor.ReleaseMark(elemStart);
+			return;
 		}
+		String scratch = scope String();
+		CaptureValueFormat(nodeId, val, mCursor.Slice(elemStart, scratch));
 	}
 
 	/// Count a string style occurrence for document-level inference.

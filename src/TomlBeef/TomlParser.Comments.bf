@@ -161,8 +161,18 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			mPendingComments.PopBack();
 	}
 
+	/// Skips one line break (LF or CRLF) inside a multi-line string, where it is not counted for style.
+	/// @return An error for a CR not followed by LF.
+	private Result<void, TomlParseError> SkipStringNewline()
+	{
+		if (mCursor.PeekByte() == '\r' && mCursor.PeekByteAt(1) != '\n')
+			return .Err(Error(.ControlCharInString, "Bare CR not allowed in multi-line string"));
+		mCursor.SkipNewline();
+		return .Ok;
+	}
+
 	/// Skips one line break (LF or CRLF), counting it for document-level style inference.
-	/// Use for document-structure newlines; string parsing should use plain SkipNewline().
+	/// Use for document-structure newlines; string parsing uses SkipStringNewline().
 	/// @return An error for a CR not followed by LF: TOML has no bare-CR line break.
 	private Result<void, TomlParseError> CountAndSkipNewline()
 	{

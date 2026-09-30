@@ -307,7 +307,7 @@ internal static class TomlChar
 			if (i + seqLen > input.Length)
 				return .Err(TomlParseError(.InvalidUtf8, "Truncated UTF-8 sequence", line, column, i));
 
-			// Validate continuation bytes
+			// Validate continuation bytes (a bad one is reported at itself; TomlBufferedStreamCursor matches)
 			for (int j = 1; j < seqLen; j++)
 			{
 				if (((uint8)input[i + j] & 0xC0) != 0x80)

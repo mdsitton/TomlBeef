@@ -352,7 +352,8 @@ public enum TomlValue
 			if (other case .Float(let fb))
 			{
 				if (fa.IsNaN && fb.IsNaN) return true;
-				return fa == fb;
+				// 0.0 == -0.0, but the sign is written (-0.0), so a sign change is a change
+				return fa == fb && (fa != 0 || (1.0 / fa < 0) == (1.0 / fb < 0));
 			}
 			return false;
 		case .Bool(let ba):

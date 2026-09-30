@@ -99,13 +99,17 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		mEnd = remaining;
 		mLine = 1;
 		mColumn = 1;
-		// Reset validator after BOM
+		// The validator has already checked the buffered bytes, counting the BOM as one column of line 1.
+		// Keep its progress and raw offsets (the in-memory path reports raw offsets too) and only take that
+		// column back from positions on line 1.
 		if (mState != null)
 		{
-			mState.mValidateLine = 1;
-			mState.mValidateColumn = 1;
-			mState.mValidateOffset = 0;
-			mState.mUtf8Needed = 0;
+			if (mState.mValidateLine == 1)
+				mState.mValidateColumn--;
+			if (mState.mUtf8Needed > 0 && mState.mUtf8StartLine == 1)
+				mState.mUtf8StartColumn--;
+			if (mState.mUtf8Error && mState.mUtf8ErrorLine == 1)
+				mState.mUtf8ErrorColumn--;
 		}
 	}
 
@@ -229,7 +233,7 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		}
 	}
 
-	public int ScanRun(uint8 stopMask, String appendTo) mut
+	public int ScanRun(uint8 stopMask, String appendTo, int maxAppend = int.MaxValue) mut
 	{
 		int total = 0;
 		while (true)
@@ -242,6 +246,9 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 			int start = mPos;
 			int pos = start;
 			int end = mEnd;
+			// Scan no further than one byte past the caller's limit (as TomlByteCursor does)
+			if (appendTo != null && maxAppend - appendTo.Length < end - start)
+				end = start + Math.Max(maxAppend - appendTo.Length + 1, 0);
 			int columns = 0;
 			while (pos < end)
 			{
@@ -259,7 +266,8 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 			mPos = pos;
 			mColumn += columns;
 			total += count;
-			if (pos < end)
+			// Past the caller's limit (at most a buffer's worth over): stop before refilling
+			if (pos < end || (appendTo != null && appendTo.Length > maxAppend))
 				break;
 		}
 		return total;
@@ -475,10 +483,13 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 			}
 			else
 			{
-				// Expecting continuation byte
+				// Expecting continuation byte. A bad one is reported at itself, as the in-memory
+				// validator does (TomlChar.LocateUtf8Error): `mUtf8Seen` bytes past the sequence start.
 				if ((b & 0xC0) != 0x80)
 				{
 					SetValidateError(i);
+					mState.mUtf8ErrorColumn += mState.mUtf8Seen;
+					mState.mUtf8ErrorOffset += mState.mUtf8Seen;
 					return;
 				}
 

@@ -436,7 +436,8 @@ static class TomlMutationApiTests
 		for (let input in StringView[](deep, wide))
 		{
 			var doc = scope:: TomlDocument();
-			Test.Assert(doc.Read(input) case .Ok);
+			// 2000 table levels: past the default MaxDepth, which bounds key paths too
+			Test.Assert(doc.Read(input, .() { MaxDepth = 0 }) case .Ok);
 			String output = scope:: String();
 			doc.Write(output);
 			Test.Assert(output.Length <= input.Length + 2, scope $"{input.Length} bytes wrote {output.Length}");

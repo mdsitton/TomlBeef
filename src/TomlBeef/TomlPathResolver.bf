@@ -31,6 +31,18 @@ internal class TomlPathResolver
 		return .Ok;
 	}
 
+	/// @brief Fails when `key` is new and the current table is already at MaxTableEntries, so the
+	/// parser can stop before building its value. An existing key (a merge overwrite, or a duplicate
+	/// reported on insertion) needs no room.
+	/// @param key The single-segment key about to be set.
+	/// @return MaxTableEntries' error, or Ok.
+	public Result<void, TomlParseError> CheckCurrentTableRoom(StringView key)
+	{
+		if (mLimits == null || mLimits.mMaxTableEntries <= 0 || mCurrentTable.ContainsKey(key))
+			return .Ok;
+		return CheckTableEntry(mCurrentTable, mCurrentOffset);
+	}
+
 	private Result<void, TomlParseError> CheckNodeCount()
 	{
 		if (mLimits != null)
@@ -178,6 +190,9 @@ internal class TomlPathResolver
 				// Only header navigation can traverse into array-of-tables.
 				if (implicitOrigin == .Implicit)
 					return .Err(MakeError(.TypeConflict, scope $"Cannot use dotted key to access elements of array-of-tables '{key}'" , mCurrentOffset));
+				// A static array (`a = [...]`) is complete where it is written: a header cannot reach into it
+				if (arr.IsStatic)
+					return .Err(MakeError(.AppendToStaticArray, scope $"Cannot extend '{key}' with a header - it is a static array", mCurrentOffset));
 
 				if (arr.Count == 0)
 					return .Err(MakeError(.ArrayElementOrdering,
@@ -342,8 +357,12 @@ internal class TomlPathResolver
 			}
 		}
 
+		// Cannot add an array of tables to a sealed inline table
+		if (mCurrentTable.IsInlineSealed)
+			return .Err(MakeError(.InlineTableSealed, "Cannot add array-of-tables to sealed inline table", mCurrentOffset));
+
 		Try!(CheckNodeCount()); // the array itself
-		TomlArray newArray = 
+		TomlArray newArray =
 			mStore.NewArray();
 		Try!(CheckNodeCount()); // first element
 		TomlTable firstElement = 

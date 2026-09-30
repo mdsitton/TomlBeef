@@ -737,30 +737,31 @@ public class TomlDocument
 	}
 
 	/// @brief Navigate exact path segments and return the value (borrowed, like Get). Accepts individual
-	/// segment strings for ergonomic multi-segment lookups.
+	/// segment strings for ergonomic multi-segment lookups. Segments are keys as they are, so an empty
+	/// segment is the empty key (`"" = 1` is legal TOML).
 	/// @param segments The path segments to traverse, in order.
 	/// @return The value on success, or .Err if any segment is not found.
 	public Result<TomlValue> GetPath(params StringView[] segments)
 	{
-		var list = scope List<StringView>();
-		for (int i = 0; i < segments.Count; i++)
-			list.Add(segments[i]);
-		return GetPath(list);
+		return GetPath(Span<StringView>(segments));
 	}
 
 	/// @brief Navigate exact path segments from a list (value borrowed, like Get). Useful when segments are
-	/// already in a list (e.g., from ParseDottedPath).
+	/// already in a list (e.g., from ParseDottedPath). Segments are keys as they are, including empty ones.
 	/// @param segments The path segments to traverse, in order.
 	/// @return The value on success, or .Err if any segment is not found.
 	public Result<TomlValue> GetPath(List<StringView> segments)
 	{
+		return GetPath(Span<StringView>(segments.Ptr, segments.Count));
+	}
+
+	private Result<TomlValue> GetPath(Span<StringView> segments)
+	{
 		TomlTable current = mRootTable;
-		for (int i = 0; i < segments.Count; i++)
+		for (int i = 0; i < segments.Length; i++)
 		{
 			StringView segment = segments[i];
-			if (segment.IsEmpty)
-				return .Err;
-			if (i == segments.Count - 1)
+			if (i == segments.Length - 1)
 			{
 				// Final segment — return the value
 				if (current.TryGetValue(segment, let val))

@@ -88,9 +88,9 @@ material (see `AGENTS.md`).
   getter's `Result` type, and `Set` already writes), `TomlTable.Get`/`TryGetValue`/`GetValueAt`/`this[key]` and
   `TomlArray.GetValueAt` return a borrowed `TomlValue` of any type, for generic walking (the
   `TomlTester` serializer uses them). Typed `TryGet*` accessors are preferred when the type is known.
-- Document setters resolve every path segment except the last, and **require the intermediate
-  tables to already exist**. They do not create tables implicitly. Build nested content top-down
-  with `AddTable`.
+- Document setters (`Set`, `AddTable`, `AddArray`) resolve every path segment except the last and
+  create missing intermediate tables (as `AddTable` would: written as `[header]` tables). A segment
+  that exists but is not a table fails the call. `Remove` never creates tables.
 
 ### Configuration
 
@@ -179,7 +179,8 @@ itself contains dots must be wrapped in `[...]`.
 
 The path syntax deliberately has no escapes, no quoted-string segments and no nesting, so a key
 containing `]` cannot be reached with a path string. Use `GetPath(segments...)` or single-key
-`TomlTable` APIs for such keys. Segments borrow from the input path.
+`TomlTable` APIs for such keys; `GetPath` takes segments as exact keys, so it also reaches the
+empty key (`"" = 1`), which a path string cannot express. Segments borrow from the input path.
 
 ## 4. Ownership and lifetime model
 
@@ -433,15 +434,22 @@ programmatic mutation. The user-facing table is in `README.md`.
 | Limit | Counted | Enforced in |
 |---|---|---|
 | `MaxInputBytes` | raw bytes, including the BOM | `Read`/`ReadBytes` before validation. `ReadFile` after loading the file. The stream path in `Refill` through `TomlStreamState` |
-| `MaxDepth` | nesting depth of values (arrays and inline tables) | `ParseValue` → `CheckDepth` (fails with `MaxDepthExceeded`) |
-| `MaxStringBytes` | bytes of a decoded string value (keys excluded) | string parsers after decoding |
-| `MaxArrayItems` | elements of one array, including `[[...]]` elements | array parser, `DefineArrayOfTables` |
-| `MaxTableEntries` | keys of one table: root, header, inline, dotted-implicit | `InsertKeyValue`, `NavigateSegment`, `DefineTable`, inline-table insert, `InsertDottedKeyIntoTable` |
-| `MaxPathSegments` | segments of a dotted key or header | `ParseKeyPath` |
+| `MaxDepth` | nesting depth of values (arrays and inline tables) plus the table levels key paths build: the current header's segments (one more for `[[...]]`), the parent segments of enclosing dotted keys, and the key's own segments | `ParseValue` → `CheckDepth`, and `ParseKeyPath` per segment against `mKeyDepth + mDepth` (fails with `MaxDepthExceeded`) |
+| `MaxStringBytes` | bytes of a decoded string value (keys excluded) | string loops as the string grows (`ScanRun` stops one byte past the limit), and `FinishStringValue` as a backstop |
+| `MaxArrayItems` | elements of one array, including `[[...]]` elements | array parser before each element is parsed, `DefineArrayOfTables` |
+| `MaxTableEntries` | keys of one table: root, header, inline, dotted-implicit | before the value of a new single-segment key (`CheckCurrentTableRoom`, inline tables), and `InsertKeyValue`, `NavigateSegment`, `DefineTable`, `InsertDottedKeyIntoTable` |
+| `MaxPathSegments` | segments of a dotted key or header | `ParseKeyPath`, before each segment |
 | `MaxNodes` | every value node: scalars, arrays, tables (explicit, implicit, inline, array elements); the root is not counted | `ParseValue` plus each table or array the resolver or inline parser creates (`a = [1, 2]` is 3 nodes and `a.b.c = 1` is 3) |
 
 Every limit error is `ResourceLimitExceeded`, except depth, which is `MaxDepthExceeded`. The
 normal Replace/Merge failure guarantees apply.
+
+Limits are checked before the work they bound, so an oversized input fails where it crosses the
+limit rather than after building the oversized part (a megabyte string under `MaxStringBytes = 8`
+stops after nine bytes). `MaxDepth` covers key paths because sealing, writing, cloning and merging
+walk the table tree recursively: without it, `v = {a.a.a…=1}` or a long header built a tree deep
+enough to overflow the stack in those walks while value nesting stayed shallow. With `MaxDepth = 0`
+the depth is the caller's responsibility.
 
 ## 7. TOML 1.0 vs 1.1 as implemented
 

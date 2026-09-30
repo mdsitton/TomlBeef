@@ -18,6 +18,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int32 mSourceIndex;
 	private TomlDocumentStore mStore;
 	private int mDepth = 0;
+	// Table levels above the keys being parsed that key paths built (the current header's segments,
+	// and the parent segments of dotted keys whose values are being parsed); with mDepth, bounds the
+	// depth of the table tree, which sealing, writing and merging walk recursively
+	private int mKeyDepth = 0;
 	private TomlResourceLimitState mLimits;
 
 	// Pending leading comments waiting to be attached to the next node. Comment text is stored in the
@@ -111,6 +115,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mPathResolver = resolver;
 		mPathResolver.Reset();
 		mDepth = 0;
+		mKeyDepth = 0;
 
 		if (ParseDocument() case .Err(let e))
 			return .Err(e);
@@ -278,6 +283,8 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 		mCursor.SkipWhitespace();
 
+		// A header path starts from the root
+		mKeyDepth = 0;
 		let pathBuffer = AcquireKeyPath();
 		defer ReleaseKeyPath();
 		let path = pathBuffer.mParts;
@@ -328,6 +335,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mPathResolver.EnterTable(path, &nodeId) case .Err(let tblErr))
 				return .Err(tblErr);
 		}
+		mKeyDepth = path.Count + (isArray ? 1 : 0);
 		// The header's position was synced to the resolver at the top of this method
 		RecordSourceRange(nodeId, mPathResolver.mCurrentLine, mPathResolver.mCurrentColumn, mPathResolver.mCurrentOffset, headerEnd);
 
@@ -397,8 +405,15 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (capturingToken)
 			valueStart = mCursor.Mark();
 
+		// A full table fails before its new value is parsed (dotted keys are checked as they insert)
+		if (keyPath.Count == 1)
+			Try!(mPathResolver.CheckCurrentTableRoom(keyPath[0]));
+
 		TomlValue value = ?;
-		switch (ParseValue())
+		mKeyDepth += keyPath.Count - 1;
+		let parsed = ParseValue();
+		mKeyDepth -= keyPath.Count - 1;
+		switch (parsed)
 		{
 		case .Err(let valErr): return .Err(valErr);
 		case .Ok(let val): value = val;
@@ -456,21 +471,23 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<void, TomlParseError> ParseKeyPath(TomlKeyPathBuffer parts)
 	{
-		Try!(ParseSimpleKey(parts.Add()));
-
 		while (true)
 		{
+			// Limits are checked before each segment, so a huge path stops where it crosses them. Each
+			// segment is one more table level below the one receiving the key.
+			int count = parts.mParts.Count + 1;
+			Try!(CheckPathSegments(count));
+			if (mLimits != null && mKeyDepth + mDepth + count > mLimits.mMaxDepth)
+				return mLimits.CheckDepth(mLimits.mMaxDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
+			Try!(ParseSimpleKey(parts.Add()));
+
 			mCursor.SkipWhitespace();
 			if (mCursor.IsEOF || mCursor.PeekByte() != '.')
 				break;
 
 			mCursor.AdvanceByte();
 			mCursor.SkipWhitespace();
-
-			Try!(ParseSimpleKey(parts.Add()));
 		}
-
-		Try!(CheckPathSegments(parts.mParts.Count));
 		return .Ok;
 	}
 
@@ -557,6 +574,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			char8 b = mCursor.PeekByte();
 			if (b == '#')
 			{
+				// A comment runs to the end of the line, so it needs the newline this context forbids
+				if (!allowNewlines)
+					return .Err(Error(.UnexpectedToken, "Comments inside inline tables require TOML v1.1"));
 				if (SkipCommentText() case .Err(let e))
 					return .Err(e);
 				continue;
@@ -658,6 +678,10 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			return mLimits.CheckStringBytes(byteLength, mCursor.Line, mCursor.Column, mCursor.Offset);
 		return .Ok;
 	}
+
+	/// The longest decoded string MaxStringBytes allows (int.MaxValue without that limit). String loops
+	/// check against it as the string grows, so an oversized string stops where it crosses the limit.
+	private int StringByteLimit => (mLimits != null && mLimits.mMaxStringBytes > 0) ? mLimits.mMaxStringBytes : int.MaxValue;
 
 	[Inline]
 	private Result<void, TomlParseError> CheckNodeCount()

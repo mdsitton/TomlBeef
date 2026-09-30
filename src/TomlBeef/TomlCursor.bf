@@ -27,8 +27,10 @@ internal interface ITomlCursor
 	/// to `appendTo` unless it is null. Every stop class includes '\r' and '\n', so a run stays on one line
 	/// (TomlByteCursor then only moves its offset; the column is computed when read). This is the parser's
 	/// bulk path for keys, strings, comments and bare values, replacing a peek/advance call per byte.
-	/// @return The number of bytes consumed. The run ends at a stop byte or at EOF.
-	int ScanRun(uint8 stopMask, String appendTo) mut;
+	/// Once `appendTo` holds more than `maxAppend` bytes the run may stop early (the caller then reports
+	/// its size limit), so an oversized string is not copied whole first.
+	/// @return The number of bytes consumed. The run ends at a stop byte, at EOF, or past `maxAppend`.
+	int ScanRun(uint8 stopMask, String appendTo, int maxAppend = int.MaxValue) mut;
 
 	/// Marks nest: every Mark() must be released by exactly one Slice() or ReleaseMark(), innermost first.
 	/// Streaming cursors retain input from the outermost active mark until it is released.
@@ -224,12 +226,15 @@ internal struct TomlByteCursor : ITomlCursor
 		mOffset = pos;
 	}
 
-	public int ScanRun(uint8 stopMask, String appendTo) mut
+	public int ScanRun(uint8 stopMask, String appendTo, int maxAppend = int.MaxValue) mut
 	{
 		uint8* data = mData.Ptr;
 		int start = mOffset;
 		int pos = start;
 		int end = mData.Length;
+		// Scan no further than one byte past the caller's limit
+		if (appendTo != null && maxAppend - appendTo.Length < end - start)
+			end = start + Math.Max(maxAppend - appendTo.Length + 1, 0);
 		if (stopMask == TomlChar.StopComment || stopMask == TomlChar.StopBasicString || stopMask == TomlChar.StopLiteralString)
 			pos = ScanTextRun(data, pos, end, stopMask);
 		else

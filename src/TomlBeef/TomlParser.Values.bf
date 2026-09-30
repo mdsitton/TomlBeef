@@ -67,11 +67,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		String result = mStringScratch..Clear();
+		let limit = StringByteLimit;
 
 		while (true)
 		{
 			// Copy the plain text up to the next quote, backslash, newline or control character
-			mCursor.ScanRun(TomlChar.StopBasicString, result);
+			mCursor.ScanRun(TomlChar.StopBasicString, result, limit);
+			Try!(CheckStringLength(result.Length));
 			if (mCursor.IsEOF)
 				break;
 			char8 b = mCursor.PeekByte();
@@ -116,13 +118,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mCursor.AdvanceByte();
 
 		if (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n')
-			mCursor.SkipNewline();
+			Try!(SkipStringNewline());
 
 		String result = mStringScratch..Clear();
 
 		while (!mCursor.IsEOF)
 		{
-			if (mCursor.PeekByte() == '"' && mCursor.PeekByteAt(1) == '"' && mCursor.PeekByteAt(2) == '"')
+			Try!(CheckStringLength(result.Length));
+			if (mCursor.PeekByte() == '"' &&mCursor.PeekByteAt(1) == '"' && mCursor.PeekByteAt(2) == '"')
 			{
 				// Count consecutive quotes
 				int quoteCount = 3;
@@ -189,9 +192,24 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 						result.Clear();
 						return .Err(TomlParseError(.ReservedEscape, scope $"Reserved escape '\\{next}'", escLine, escColumn, escOffset));
 					}
-					while (!mCursor.IsEOF && (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n'))
-						mCursor.SkipNewline();
-					mCursor.SkipWhitespace();
+					// Everything up to the next content goes: newlines and indentation, including
+					// indented blank lines
+					while (true)
+					{
+						char8 ws = mCursor.PeekByte();
+						if (ws == ' ' || ws == '\t')
+							mCursor.SkipWhitespace();
+						else if (!mCursor.IsEOF && (ws == '\r' || ws == '\n'))
+						{
+							if (SkipStringNewline() case .Err(let nlErr))
+							{
+								result.Clear();
+								return .Err(nlErr);
+							}
+						}
+						else
+							break;
+					}
 					continue;
 				}
 
@@ -302,11 +320,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	{
 		mCursor.AdvanceByte();
 		String result = mStringScratch..Clear();
+		let limit = StringByteLimit;
 
 		while (true)
 		{
 			// Copy the text up to the closing quote, a newline or a control character
-			mCursor.ScanRun(TomlChar.StopLiteralString, result);
+			mCursor.ScanRun(TomlChar.StopLiteralString, result, limit);
+			Try!(CheckStringLength(result.Length));
 			if (mCursor.IsEOF)
 				break;
 			char8 b = mCursor.PeekByte();
@@ -339,13 +359,14 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mCursor.AdvanceByte();
 
 		if (mCursor.PeekByte() == '\r' || mCursor.PeekByte() == '\n')
-			mCursor.SkipNewline();
+			Try!(SkipStringNewline());
 
 		String result = mStringScratch..Clear();
 
 		while (!mCursor.IsEOF)
 		{
-			if (mCursor.PeekByte() == '\'' && mCursor.PeekByteAt(1) == '\'' && mCursor.PeekByteAt(2) == '\'')
+			Try!(CheckStringLength(result.Length));
+			if (mCursor.PeekByte() == '\'' &&mCursor.PeekByteAt(1) == '\'' && mCursor.PeekByteAt(2) == '\'')
 			{
 				int quoteCount = 3;
 				while (mCursor.PeekByteAt(quoteCount) == '\'')

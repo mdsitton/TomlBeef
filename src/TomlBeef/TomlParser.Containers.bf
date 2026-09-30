@@ -85,6 +85,8 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return TomlValue.Array(arr);
 			}
 
+			// Check the item count before parsing another item, not after building it
+			Try!(CheckArrayItem(arr));
 			// Mark value start for raw token capture
 			var elemStart = TomlCursorMark();
 			if (mStyle != null)
@@ -101,7 +103,6 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(valErr);
 			case .Ok(let val):
 				elemEnd = mCursor.Offset;
-				Try!(CheckArrayItem(arr));
 				arr.Add(val);
 				// Give the element a node ID (and, in PreserveStyle, capture its token and format)
 				if (mMetadata != null)
@@ -244,8 +245,9 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				mCursor.AdvanceByte();
 				return TomlValue.Array(arr);
 			}
-			let val = Try!(ParseValue());
+			// Check the item count before parsing another item, not after building it
 			Try!(CheckArrayItem(arr));
+			let val = Try!(ParseValue());
 			arr.Add(val);
 
 			Try!(SkipWsAndComments());
@@ -333,8 +335,15 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			if (mStyle != null)
 				valueStart = mCursor.Mark();
 
+			// A full table fails before its new value is parsed
+			if (keyPath.Count == 1)
+				Try!(CheckTableEntry(tbl));
+
 			TomlValue val;
-			switch (ParseValue())
+			mKeyDepth += keyPath.Count - 1;
+			let parsedValue = ParseValue();
+			mKeyDepth -= keyPath.Count - 1;
+			switch (parsedValue)
 			{
 			case .Err(let valErr):
 				return .Err(valErr);
@@ -347,7 +356,6 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 			{
 				if (tbl.ContainsKey(keyPath[0]))
 					return .Err(Error(.DuplicateKey, "Duplicate key in inline table"));
-				Try!(CheckTableEntry(tbl));
 				tbl.Insert(keyPath[0], val);
 			}
 			else

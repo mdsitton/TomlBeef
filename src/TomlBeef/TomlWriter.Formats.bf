@@ -179,10 +179,9 @@ extension TomlWriterImpl
 		}
 
 		// Scientific notation.
-		// Do NOT use fmt.mPrecision for the format string — it controls significant digits
-		// and would round the value to match the original source's precision instead of
-		// preserving the actual numeric value. Use a roundtrip format and let
-		// ReformatExponent handle only the exponent style (case, sign, digit width).
+		// Do NOT use fmt.mPrecision, nor the formatter's "e" (six fractional digits): both round
+		// the value. Start from the round-trip digits and let ReformatExponent handle only the
+		// exponent style (case, sign, digit width).
 		if (fmt.mStyle == .Scientific)
 		{
 			if (val == 0.0 && (1.0 / val) < 0.0)
@@ -190,17 +189,59 @@ extension TomlWriterImpl
 				outStr.Append("-0.0");
 				return;
 			}
-			// Choose the exponent character for case preservation; roundtrip precision for value fidelity.
-			String format = scope String();
-			format.Append(fmt.mUppercaseExponent ? 'E' : 'e');
 			String formatted = scope String();
-			val.ToString(formatted, format, null);
+			AppendRoundTripScientific(val, formatted);
 			ReformatExponent(formatted, fmt, outStr);
 			return;
 		}
 
 		// Fallback
 		val.ToString(outStr, "R", null);
+	}
+
+	/// Write `val` (finite) as d[.ddd]e[-]x with the shortest digits that read back to the same
+	/// double: the "R" digits, with the decimal point moved.
+	private static void AppendRoundTripScientific(double val, String outStr)
+	{
+		String r = scope String();
+		val.ToString(r, "R", null);
+		String digits = scope String();
+		int pointPos = -1; // digits before the decimal point
+		int exp = 0;
+		for (int i < r.Length)
+		{
+			char8 c = r[i];
+			if (c == '-')
+				outStr.Append('-');
+			else if (c == '.')
+				pointPos = digits.Length;
+			else if (TomlChar.IsDigit(c))
+				digits.Append(c);
+			else if (c == 'e' || c == 'E')
+			{
+				bool negative = false;
+				for (int j = i + 1; j < r.Length; j++)
+				{
+					if (r[j] == '-') negative = true;
+					else if (TomlChar.IsDigit(r[j])) exp = exp * 10 + (r[j] - '0');
+				}
+				if (negative) exp = -exp;
+				break;
+			}
+		}
+		if (pointPos < 0) pointPos = digits.Length;
+		int first = 0;
+		while (first < digits.Length - 1 && digits[first] == '0')
+			first++;
+		int last = digits.Length - 1;
+		while (last > first && digits[last] == '0')
+			last--;
+		// value = 0.digits × 10^(pointPos + exp) = d.ddd × 10^(pointPos + exp - first - 1)
+		int decimalExp = (digits[first] == '0') ? 0 : pointPos + exp - first - 1;
+		outStr.Append(digits[first]);
+		if (last > first)
+			outStr..Append('.').Append(digits.Substring(first + 1, last - first));
+		outStr.AppendF("e{}", decimalExp);
 	}
 
 	/// Reformat a scientific notation string to match captured exponent style.
