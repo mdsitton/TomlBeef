@@ -633,7 +633,10 @@ Every library parses the same generated inputs (2–9 MB) from memory into its o
 ```bash
 ./fetch.sh && ./build.sh && ./gen-inputs.py
 ./run.sh > results.md && ./plot.py   # table of MB/s, then docs/benchmark.svg
+./update-tomlbeef.sh                 # later: remeasure only TomlBeef, keep the others, redraw
 ```
+
+The other libraries do not change between TomlBeef releases, so `update-tomlbeef.sh` refreshes just TomlBeef's figures in every results file (`ONLY='TomlBeef.*'`, which `run.sh`, `lookup.sh` and `typed.sh` accept for any parser names) and redraws the charts, in minutes instead of hours.
 
 The full per-input table and notes are in [docs/architecture.md](docs/architecture.md) (TomlTester, *Comparison*).
 

@@ -12,18 +12,28 @@
 # FAIL means the parser rejected the input; DNF means a run did not finish within LIMIT seconds
 # (default 60). Setup: ./fetch.sh && ./build.sh && ./gen-inputs.py
 # Usage: run.sh [min-samples] [input names...]
-# Save the table as results.md and run plot.py to redraw docs/benchmark.svg.
+# Save the table as results.md and run plot.py to redraw docs/benchmark.svg. With ONLY (merge.sh),
+# for example ONLY='TomlBeef.*' ./run.sh, only the matching parsers are measured and results.md is
+# updated in place; inputs not named keep their saved rows.
 set -uo pipefail
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$C/bin"
 TB="$C/../../build/Release_Linux64/TomlTester/TomlTester"
+source "$C/merge.sh"
+merge_into "$C/results.md" "$@"
 N="${1:-5}"
 shift || true
 
+all_inputs=(mixed commented comments strings ints floats dates arrays headers dotted)
 if [ $# -gt 0 ]; then
 	inputs=("$@")
 else
-	inputs=(mixed commented comments strings ints floats dates arrays headers dotted)
+	inputs=("${all_inputs[@]}")
+fi
+# A partial rerun rewrites results.md, so it lists every saved input
+if [ -n "${ONLY:-}" ]; then
+	requested=" ${inputs[*]} "
+	inputs=("${all_inputs[@]}")
 fi
 
 # Some parsers take minutes per parse on some inputs (superlinear in table count or input size), so
@@ -98,11 +108,19 @@ for p in "${parsers[@]}"; do header+=" $p |"; rule+="---:|"; done
 echo "$header"
 echo "$rule"
 for name in "${inputs[@]}"; do
+	if [ -n "${ONLY:-}" ] && [[ "$requested" != *" $name "* ]]; then
+		saved_row "$name"
+		continue
+	fi
 	f="$C/inputs/$name.toml"
 	line="| $name |"
 	for p in "${parsers[@]}"; do
-		v=$(repeated "$p" "$f")
-		line+=" ${v:-FAIL} |"
+		if selected "$p"; then
+			v=$(repeated "$p" "$f")
+			line+=" ${v:-FAIL} |"
+		else
+			line+=" $(saved_cell "$name" "$p") |"
+		fi
 	done
 	echo "$line"
 done

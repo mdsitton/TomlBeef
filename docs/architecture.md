@@ -923,6 +923,11 @@ per-element position, node-ID and comment bookkeeping: small arrays 66 → 79.
     rarely converged and a full run took hours; with the median reported, ±10% is enough to show
     the samples have settled.) C/C++ at `-O3` and Zig at `ReleaseFast`, without `-march=native`,
     like TomlBeef's Release build. A full parse run takes ~45 min, the lookup run ~8 min.
+    Partial reruns (`merge.sh`): with `ONLY` set to a grep pattern of parser names, `run.sh`,
+    `lookup.sh` and `typed.sh` measure only those, copy every other cell from their saved results
+    file, and rewrite it (only when the run succeeded). `update-tomlbeef.sh` uses it to rebuild and
+    remeasure every TomlBeef figure (plus `modes.sh` and `beef.sh`, which only time Beef code) and
+    redraw the charts; the other libraries keep the figures of their last full run.
     Versions: tomlc17 R260821, toml-c 6a38d40, toml11 v4.4.0, toml++ v3.4.0, glaze v9.0.0; Rust
     1.98.1 with `toml` 1.1.6, `toml_edit` 0.25.15, toml-spanner 1.0.3, toml-span 0.7.1; zig-toml
     8685923 (zig-0.16 branch) with Zig 0.16.0; BurntSushi/toml v1.6.0, go-toml v2.4.3; tomlj

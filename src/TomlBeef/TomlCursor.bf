@@ -226,6 +226,9 @@ internal struct TomlByteCursor : ITomlCursor
 		mOffset = pos;
 	}
 
+	// Inlined: the compiler stopped doing so on its own once the maxAppend cap was added, and a call per
+	// comment line cost a third of the speed of skipping comments
+	[Inline]
 	public int ScanRun(uint8 stopMask, String appendTo, int maxAppend = int.MaxValue) mut
 	{
 		uint8* data = mData.Ptr;

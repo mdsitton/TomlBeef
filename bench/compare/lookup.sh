@@ -8,10 +8,14 @@
 # processes (default 3). Every run that finished must report the same sum of values found, which the
 # script checks.
 # Usage: lookup.sh [min-samples]   (after ./build.sh && ./gen-inputs.py)
+# With ONLY (merge.sh), for example ONLY='TomlBeef.*' ./lookup.sh, only the matching libraries are
+# measured (their sums checked against each other) and lookup-results.md is updated in place.
 set -uo pipefail
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$C/bin"
 TB="$C/../../build/Release_Linux64/TomlTester/TomlTester"
+source "$C/merge.sh"
+merge_into "$C/lookup-results.md" "$@"
 N="${1:-5}"
 LIMIT="${LIMIT:-60}"
 REPEATS="${REPEATS:-3}"
@@ -57,6 +61,10 @@ for name in ints mixed; do
 	line="| ${shape[$name]} |"
 	sums=()
 	for l in "${libs[@]}"; do
+		if ! selected "$l"; then
+			line+=" $(saved_cell "${shape[$name]}" "$l") |"
+			continue
+		fi
 		# REPEATS runs in fresh processes, median reported; DNF or FAIL as soon as one run is
 		values=()
 		cell=""

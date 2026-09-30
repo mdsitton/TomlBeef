@@ -7,9 +7,13 @@
 # write MB/s would reward longer output). Timings follow the rule in run.sh; each cell is the median
 # of REPEATS processes (default 3), a run past LIMIT seconds (default 60) is DNF.
 # Usage: typed.sh [min-samples]   (after ./fetch.sh && ./build.sh && ./gen-inputs.py)
+# With ONLY (merge.sh), for example ONLY='TomlBeef.*' ./typed.sh, only the matching rows are measured
+# and typed-results.md is updated in place.
 set -uo pipefail
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$C/bin"
+source "$C/merge.sh"
+merge_into "$C/typed-results.md" "$@"
 N="${1:-5}"
 REPEATS="${REPEATS:-3}"
 LIMIT="${LIMIT:-60}"
@@ -41,6 +45,10 @@ mbps() { # ms -> MB/s of the input
 BEEF="$C/beef/build/Release_Linux64/BeefTomlBench/BeefTomlBench"
 row() { # name language how read-command... -- write-command...
 	local name="$1" language="$2" how="$3"
+	if ! selected "$name"; then
+		saved_row "$name"
+		return
+	fi
 	shift 3
 	local read=() write=()
 	while [ "$1" != "--" ]; do read+=("$1"); shift; done
