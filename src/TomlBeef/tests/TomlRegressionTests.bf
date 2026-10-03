@@ -339,13 +339,14 @@ static class TomlRegressionTests
 		Check(bytes, 2, 9006, 3 + 8 + 9005);
 
 		// A sequence split across refills and broken by a byte that does not continue it: reported at
-		// that byte (as the in-memory validator does), after a BOM and across buffer boundaries
+		// its lead byte (FormatCore's validator, the same in memory and streamed), after a BOM and across
+		// buffer boundaries
 		bytes.Clear();
 		bytes.Add(0xEF); bytes.Add(0xBB); bytes.Add(0xBF);
 		Add("v = \"abcdefgh");
 		bytes.Add(0xE2); bytes.Add(0x82);
 		Add("\"\n");
-		Check(bytes, 1, 16, 18);
+		Check(bytes, 1, 14, 16);
 	}
 
 	// B9: an inline table inside an array keeps its layout
@@ -464,6 +465,23 @@ static class TomlRegressionTests
 		Test.Assert(doc.GetPath(segments) case .Ok(let deep) && deep.AsInteger == 3);
 		Test.Assert(doc.GetPath("a", "missing") case .Err);
 		Test.Assert(doc.GetPath() case .Err);
+	}
+
+	// UTF-16 input is named as such (FormatCore's input start), not reported as invalid UTF-8 at offset 0,
+	// in memory and streamed
+
+	[Test]
+	public static void Utf16InputIsNamed()
+	{
+		uint8[?] utf16 = .(0xFF, 0xFE, (uint8)'a', 0, (uint8)'=', 0, (uint8)'1', 0);
+		let doc = scope TomlDocument();
+		Test.Assert(doc.ReadBytes(Span<uint8>(&utf16, utf16.Count)) case .Err(let memoryErr));
+		Test.Assert(memoryErr.mKind == .UnsupportedEncoding && memoryErr.mMessage.Contains("UTF-16LE"), scope $"{memoryErr}");
+		let ms = scope MemoryStream();
+		ms.TryWrite(Span<uint8>(&utf16, utf16.Count));
+		ms.Position = 0;
+		Test.Assert(doc.Read(ms) case .Err(let streamErr));
+		Test.Assert(streamErr.mKind == .UnsupportedEncoding, scope $"{streamErr}");
 	}
 
 	// FormatCore B3: a table's hash index (past 8 keys) was unseeded, so keys crafted to collide could

@@ -1,4 +1,5 @@
 using System;
+using internal FormatCore;
 
 namespace TomlBeef;
 
@@ -52,7 +53,11 @@ public enum TomlErrorKind : uint8
 	/// A key holds a value of another type than required.
 	WrongType,
 	/// A value is present with the right type but rejected by the caller's validation.
-	InvalidValue
+	InvalidValue,
+
+	// Encoding (after the others so that their values stay)
+	/// The input is UTF-16 or UTF-32 (by its byte order mark or zero bytes): TOML must be UTF-8.
+	UnsupportedEncoding
 }
 
 /// @brief A parse error with location information for precise error reporting: FormatCore's
@@ -70,6 +75,21 @@ public typealias TomlDiagnostic = FormatCore.Diagnostic<TomlErrorKind>;
 /// Error construction helpers.
 internal static class TomlErrors
 {
+	/// An error of the input itself (FormatCore's cursors: size, encoding, UTF-8, I/O) as TOML's.
+	public static TomlParseError FromInput(FormatCore.InputError error)
+	{
+		TomlErrorKind kind;
+		switch (error.mKind)
+		{
+		case .InvalidUtf8, .InvalidEncoding: kind = .InvalidUtf8;
+		case .InvalidChar, .ByteOrderMark: kind = .ControlCharInDocument;
+		case .UnsupportedEncoding: kind = .UnsupportedEncoding;
+		case .ResourceLimitExceeded: kind = .ResourceLimitExceeded;
+		case .IoError: kind = .IoError;
+		}
+		return TomlParseError(kind, error.mMessage, error.mLine, error.mColumn, error.mOffset, error.mLength);
+	}
+
 	/// An error at `range` (line 0 means no position; an empty source means unnamed).
 	public static TomlParseError Located(TomlErrorKind kind, StringView message, TomlSourceRange range)
 	{

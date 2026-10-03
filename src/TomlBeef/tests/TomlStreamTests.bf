@@ -377,12 +377,13 @@ static class TomlStreamTests
 	}
 
 	[Test]
-	public static void Utf8_InvalidContinuationByteReportsContinuationPosition()
+	public static void Utf8_InvalidContinuationByteReportsLeadBytePosition()
 	{
+		// FormatCore's validator reports a sequence at its lead byte, with the length of the bad bytes
 		List<uint8> bytes = scope List<uint8>();
 		AddAscii(bytes, "a = 1\n# ");
 		AddBytes(bytes, 0xC3, 0x28);
-		AssertUtf8ErrorAtBothPaths(bytes, 2, 4, 9);
+		AssertUtf8ErrorAtBothPaths(bytes, 2, 3, 8);
 	}
 
 	[Test]
@@ -498,7 +499,9 @@ static class TomlStreamTests
 	[Test]
 	public static void Stream_MaxTokenBytesBoundsRetainedSpans()
 	{
-		// A 62-byte float: longer than the 16-byte buffer, so without a limit it spills
+		// A 62-byte float: longer than the 16-byte buffer, so without a limit the window grows for it.
+		// MaxTokenBytes bounds a token plus the lookahead the parser needs to see it end (FormatCore's
+		// window cursor: a hard limit on the construct, no longer the retained span alone)
 		let input = scope String("n = 1\nf = 1.");
 		input.Append('0', 60);
 		input.Append("\nafter = 2\n");
@@ -511,15 +514,17 @@ static class TomlStreamTests
 		var doc = scope TomlDocument();
 		Test.Assert(ReadStreamedWith(doc, input, limited) case .Err(let err));
 		Test.Assert(err.mKind == .ResourceLimitExceeded && err.mLine == 2, scope $"{err}");
-		Test.Assert(err.mMessage.Contains("Token length exceeds maximum 32"), scope $"{err}");
+		Test.Assert(err.mMessage.Contains("A token is longer than MaxTokenBytes (32)"), scope $"{err}");
 		Test.Assert(doc.RootTable.Count == 0, "A failed Replace read leaves the document empty");
 
-		// A token shorter than the buffer is caught when it is sliced
+		// A token shorter than the buffer is caught too
 		var small = scope TomlDocument();
 		Test.Assert(ReadStreamedWith(small, "f = 1.000000000\n", .() { MaxTokenBytes = 8 }) case .Err(let smallErr));
 		Test.Assert(smallErr.mKind == .ResourceLimitExceeded, scope $"{smallErr}");
-		// ...and one within the limit is fine, even across several refills
-		Test.Assert(ReadStreamedWith(small, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 62 }) case .Ok);
+		// ...and one within the limit (62 bytes and the line break after it) is fine, even across
+		// several refills; one byte less is not
+		Test.Assert(ReadStreamedWith(small, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 63 }) case .Ok);
+		Test.Assert(ReadStreamedWith(small, input, .() { StreamBufferBytes = 16, MaxTokenBytes = 62 }) case .Err);
 
 		// In-memory input keeps no copy, so the limit does not apply
 		var fromString = scope TomlDocument();

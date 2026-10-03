@@ -94,10 +94,9 @@ public class TomlDocument
 	/// config: `doc.WriteConfig.Version = .V1_0;`.
 	public TomlWriteConfig WriteConfig = .();
 
-	/// Default stream buffer size when TomlReadConfig.StreamBufferBytes is 0.
+	/// Default stream buffer size when TomlReadConfig.StreamBufferBytes is 0 (FormatCore's cursor keeps at
+	/// least 16 bytes, and grows the buffer for a span longer than it).
 	const int DefaultStreamBufferBytes = 8192;
-	/// The parser peeks a few bytes ahead, so the buffer must hold at least this many.
-	const int MinStreamBufferBytes = 16;
 
 	private TomlDocumentStore mStore ~ delete _;
 	private TomlTable mRootTable; // borrowed from mStore.RootTable
@@ -232,17 +231,38 @@ public class TomlDocument
 		return .Ok;
 	}
 
+	/// The cursor-level settings of a read (FormatCore's InputSettings).
+	static InputSettings InputSettingsOf(TomlReadConfig config)
+	{
+		InputSettings settings = default;
+		settings.mMaxInputBytes = config.MaxInputBytes;
+		settings.mMaxTokenBytes = config.MaxTokenBytes;
+		settings.mStreamBufferBytes = config.StreamBufferBytes > 0 ? config.StreamBufferBytes : DefaultStreamBufferBytes;
+		settings.mFormatName = "TOML";
+		return settings;
+	}
+
 	private Result<void, TomlParseError> ReadString(StringView input, TomlReadConfig config)
 	{
-		if (config.MaxInputBytes > 0 && input.Length > config.MaxInputBytes)
-			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {input.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
-
+		// FormatCore's memory cursor checks the size, the encoding, the BOM and UTF-8 before the parser runs
+		// (as the stream cursor checks each refill: the same errors either way); the parser then reads
+		// through TOML's memory cursor
+		var check = ByteCursor<TomlText>(input, InputSettingsOf(config));
+		char8* data = null;
+		int windowStart = 0;
+		int end = 0;
 		int start = 0;
-		if (TomlChar.ValidateUtf8(input, out start) case .Err(let utf8Err))
-			return ReadFailure(utf8Err, config);
-
-		let cursor = TomlByteCursor(Span<uint8>((uint8*)input.Ptr, input.Length), start);
-		return ReadWithCursor(cursor, config);
+		switch (check.Begin(ref data, ref windowStart, ref end))
+		{
+		case .Ok(let first):
+			start = first;
+		case .Err(let inputError):
+			return ReadFailure(TomlErrors.FromInput(inputError), config);
+		}
+		// A second BOM right after the first is not allowed
+		if (start == 3 && Utf8.StartsWithBom(input.Ptr + 3, input.Length - 3))
+			return ReadFailure(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3), config);
+		return ReadWithCursor(TomlByteCursor(Span<uint8>((uint8*)input.Ptr, input.Length), start), config);
 	}
 
 	/// @brief Parse raw UTF-8 bytes into this document.
@@ -264,16 +284,7 @@ public class TomlDocument
 
 	private Result<void, TomlParseError> ReadBytesCore(Span<uint8> data, TomlReadConfig config)
 	{
-		if (config.MaxInputBytes > 0 && data.Length > config.MaxInputBytes)
-			return ReadFailure(TomlParseError(.ResourceLimitExceeded, scope $"Input size {data.Length} exceeds maximum {config.MaxInputBytes}", 1, 1, 0), config);
-
-		StringView sv = StringView((char8*)data.Ptr, data.Length);
-		int start = 0;
-		if (TomlChar.ValidateUtf8(sv, out start) case .Err(let utf8Err))
-			return ReadFailure(utf8Err, config);
-
-		let cursor = TomlByteCursor(data, start);
-		return ReadWithCursor(cursor, config);
+		return ReadString(StringView((char8*)data.Ptr, data.Length), config);
 	}
 
 	/// @brief Parse TOML from a stream into this document.
@@ -296,77 +307,37 @@ public class TomlDocument
 
 	private Result<void, TomlParseError> ReadStream(Stream stream, TomlReadConfig config)
 	{
-		int bufferBytes = config.StreamBufferBytes > 0 ? Math.Max(config.StreamBufferBytes, MinStreamBufferBytes) : DefaultStreamBufferBytes;
-		uint8[] buffer = new uint8[bufferBytes];
-		defer delete buffer;
-		String spill = new String();
-		defer delete spill;
-
-		var state = new TomlStreamState();
-		state.mMaxInputBytes = config.MaxInputBytes;
-		state.mMaxTokenBytes = config.MaxTokenBytes;
-		defer delete state;
-		var cursor = TomlBufferedStreamCursor(stream, buffer, spill, state);
-
-		// Handle optional UTF-8 BOM at stream start
-		{
-			char8 b0 = cursor.PeekByte();
-			if ((uint8)b0 == 0xEF)
-			{
-				char8 b1 = cursor.PeekByte(1);
-				char8 b2 = cursor.PeekByte(2);
-				if ((uint8)b1 == 0xBB && (uint8)b2 == 0xBF)
-				{
-					cursor.AdvanceByte();
-					cursor.AdvanceByte();
-					cursor.AdvanceByte();
-					// Reject a second BOM immediately following the first
-					b0 = cursor.PeekByte();
-					if ((uint8)b0 == 0xEF)
-					{
-						b1 = cursor.PeekByte(1);
-						b2 = cursor.PeekByte(2);
-						if ((uint8)b1 == 0xBB && (uint8)b2 == 0xBF)
-							return ReadFailure(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3), config);
-					}
-					// Reset cursor position so parsing sees line 1, column 1 after BOM
-					cursor.ResetPosition();
-				}
-			}
-		}
+		// FormatCore's stream cursor: the buffer grows for a long marked span (MaxTokenBytes bounds it and
+		// the lookahead), each refill is UTF-8 checked, and an input error stops the window where it is
+		let state = scope InputState();
+		var cursor = TomlStreamCursor(BufferedStreamCursor<TomlText>(stream, state, InputSettingsOf(config)));
+		if (cursor.Begin() case .Err(let inputError))
+			return ReadFailure(TomlErrors.FromInput(inputError), config);
 
 		if (!ShouldParseDirectly(config))
 			return ReadMergeFromStreamCursor(cursor, config, state);
 
 		let result = ReadWithCursor(cursor, config);
-		if (TryGetStreamError(state, config, var streamError))
+		if (TryGetStreamError(state, var streamError))
 			return ReadFailure(streamError, config);
 		return result;
 	}
 
-	/// The failure that stopped a streamed read, if any. The parser then reports a secondary error
-	/// (or none, when the stream failed at the end of the input), so this cause takes precedence.
-	private static bool TryGetStreamError(TomlStreamState state, TomlReadConfig config, out TomlParseError error)
+	/// The error of the input itself that stopped a streamed read, if any (I/O, size, MaxTokenBytes,
+	/// UTF-8). The parser then reports a secondary error (or none, when the stream failed at the end of
+	/// what it read), so this cause takes precedence.
+	private static bool TryGetStreamError(InputState state, out TomlParseError error)
 	{
-		if (state.mBytesExceeded)
-			error = TomlParseError(.ResourceLimitExceeded, scope $"Input size exceeds maximum {config.MaxInputBytes}", 0, 0, 0);
-		else if (state.mTokenExceeded)
-			error = TomlParseError(.ResourceLimitExceeded, scope $"Token length exceeds maximum {config.MaxTokenBytes}",
-				state.mTokenErrorLine, state.mTokenErrorColumn, state.mTokenErrorOffset);
-		else if (state.mError)
-			error = TomlParseError(.IoError, "Stream read error", 0, 0, 0);
-		else if (state.mUtf8Error)
-			error = TomlParseError(.InvalidUtf8, "Invalid UTF-8 sequence",
-				state.mUtf8ErrorLine, state.mUtf8ErrorColumn, state.mUtf8ErrorOffset);
-		else
+		if (!state.mHasError)
 		{
 			error = default;
 			return false;
 		}
+		error = TomlErrors.FromInput(state.MakeError());
 		return true;
 	}
 
-	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, TomlStreamState state) where TCursor : ITomlCursor
+	private Result<void, TomlParseError> ReadMergeFromStreamCursor<TCursor>(TCursor cursor, TomlReadConfig config, InputState state) where TCursor : ITomlCursor
 	{
 		TomlResourceLimitState limits = scope TomlResourceLimitState(config);
 		var tempStore = new TomlDocumentStore();
@@ -385,7 +356,7 @@ public class TomlDocument
 		let parser = scope TomlParserImpl<TCursor>(config, tempStore, incomingMetadata, limits);
 		let resolver = scope TomlPathResolver(incoming, incomingMetadata, tempStore, limits);
 		let parsed = parser.Parse(cursor, resolver);
-		if (TryGetStreamError(state, config, var streamError))
+		if (TryGetStreamError(state, var streamError))
 			return .Err(streamError);
 		if (parsed case .Err(let e))
 			return .Err(e);

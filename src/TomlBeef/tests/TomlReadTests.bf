@@ -1,10 +1,43 @@
 using System;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using TomlBeef;
 using internal TomlBeef;
 using static TomlBeef.TomlTestSupport;
 
 namespace TomlBeef;
+
+/// TOML's text rules without the up-front UTF-8 check, for feeding the cursor raw bytes.
+struct UncheckedTomlText : ITextPolicy
+{
+	public static bool ValidatesUpFront
+	{
+		[Inline]
+		get => false;
+	}
+	[Inline]
+	public static bool IsPlainWord(uint64 word) => PlainUtf8Text.IsPlainWord(word);
+	[Inline]
+	public static bool AllowsAscii(uint8 b) => true;
+	public static bool BansCodePoints
+	{
+		[Inline]
+		get => false;
+	}
+	[Inline]
+	public static bool AllowsCodePoint(uint32 cp) => true;
+	public static void AppendBanned(String message, uint32 cp) => PlainUtf8Text.AppendBanned(message, cp);
+	[Inline]
+	public static int NewlineLength(char8* text, int pos, int end) => PlainUtf8Text.NewlineLength(text, pos, end);
+	[Inline]
+	public static uint64 MayHoldNewline(uint64 word) => PlainUtf8Text.MayHoldNewline(word);
+	public static bool OnlyAsciiNewlines
+	{
+		[Inline]
+		get => true;
+	}
+}
 
 static class TomlReadTests
 {
@@ -607,7 +640,7 @@ static class TomlReadTests
 	[Test]
 	public static void ScanRun_WordAtATimeMatchesByteLoop()
 	{
-		// TomlByteCursor scans comment and string text eight bytes at a time. Put every byte value at
+		// The window cursor scans comment and string text eight bytes at a time. Put every byte value at
 		// every position of two words, in runs of every length and with tabs mixed in, and check the
 		// scan stops exactly where the plain byte loop does.
 		uint8[?] masks = .(TomlChar.StopComment, TomlChar.StopBasicString, TomlChar.StopLiteralString);
@@ -631,7 +664,10 @@ static class TomlReadTests
 							while (expected < length && (TomlChar.ScanClass(buffer[expected]) & mask) == 0)
 								expected++;
 
-							var cursor = TomlByteCursor(Span<uint8>(&buffer, length));
+							InputSettings settings = default;
+							settings.mIgnoreWideEncodings = true;
+							var cursor = TomlWindowCursor<ByteCursor<UncheckedTomlText>>(.(StringView((char8*)&buffer, length), settings));
+							Test.Assert(cursor.Begin() case .Ok);
 							int scanned = cursor.ScanRun(mask, null);
 							if (scanned != expected)
 							{
