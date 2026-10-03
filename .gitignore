@@ -27,3 +27,6 @@ test-official-toml-1.1.log
 BeefSpace_User.toml
 
 BeefSpace_Lock.toml
+
+# Script logs
+*.log
