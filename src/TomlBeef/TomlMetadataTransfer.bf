@@ -102,9 +102,9 @@ static class TomlMetadataTransfer
 			let dstComments = dstMeta.GetOrCreateCommentSet(dstId);
 			// An absent entry marks a blank line inside the comment block
 			for (let line in srcComments.mLeading)
-				dstComments.mLeading.Add(TomlCommentSet.IsAbsent(line) ? TomlCommentSet.BlankLine : dstMeta.mText.Add(line));
+				dstComments.mLeading.Add(TomlCommentSet.IsAbsent(line) ? TomlCommentSet.BlankLine : dstMeta.mText.Copy(line));
 			if (srcComments.HasTrailing)
-				dstComments.mTrailing = dstMeta.mText.Add(srcComments.mTrailing);
+				dstComments.mTrailing = dstMeta.mText.Copy(srcComments.mTrailing);
 			dstComments.mSeparatedByBlankLine = srcComments.mSeparatedByBlankLine;
 		}
 	}

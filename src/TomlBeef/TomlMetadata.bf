@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -169,7 +171,7 @@ internal struct TomlNodeStyle
 	}
 }
 
-/// @brief Set of comments associated with a node. The text lives in the sidecar's TomlTextArena; the
+/// @brief Set of comments associated with a node. The text lives in the sidecar's TextArena; the
 /// views here are valid as long as the sidecar. An entry with a null pointer means absent: a blank-line
 /// marker in mLeading, or no trailing comment. Test with IsAbsent, since `view == null` compares
 /// content and is also true for an empty comment (a bare `#`).
@@ -591,8 +593,10 @@ internal class TomlDocumentMetadata
 	/// Per-node comment sets.
 	internal List<TomlCommentSet> mComments ~ DeleteContainerAndItems!(_);
 
-	/// Owns the text of comments and original tokens (views into it stay valid as long as the sidecar).
-	internal TomlTextArena mText ~ delete _;
+	/// Owns the text of comments and original tokens (views into it stay valid as long as the sidecar):
+	/// FormatCore's TextArena, whose copies of empty text still have a pointer (a null pointer means
+	/// "absent" in comment sets).
+	internal TextArena mText ~ delete _;
 	/// Raw source fragments captured during parsing, stored in mText.
 	internal List<StringView> mOriginalTokens ~ delete _;
 
@@ -611,7 +615,7 @@ internal class TomlDocumentMetadata
 		mSourceNames = new List<String>();
 		mNodeStyles = new List<TomlNodeStyle>();
 		mComments = new List<TomlCommentSet>();
-		mText = new TomlTextArena();
+		mText = new TextArena(16 * 1024);
 		mOriginalTokens = new List<StringView>();
 		mKeyFormats = new List<TomlKeyFormat>();
 		mValueFormats = new List<TomlValueFormat>();
@@ -694,7 +698,7 @@ internal class TomlDocumentMetadata
 	internal TomlOriginalTokenRef AddOriginalToken(StringView tokenText)
 	{
 		int index = mOriginalTokens.Count;
-		mOriginalTokens.Add(mText.Add(tokenText));
+		mOriginalTokens.Add(mText.Copy(tokenText));
 		return TomlOriginalTokenRef(index);
 	}
 
@@ -782,7 +786,7 @@ internal class TomlDocumentMetadata
 		if (!comment.IsEmpty)
 		{
 			for (let line in comment.Split('\n'))
-				commentSet.mLeading.Add(mText.Add(line));
+				commentSet.mLeading.Add(mText.Copy(line));
 		}
 	}
 
@@ -793,7 +797,7 @@ internal class TomlDocumentMetadata
 		if (!nodeId.IsValid || !IsValidCommentText(comment, false))
 			return false;
 		let commentSet = GetOrCreateCommentSet(nodeId);
-		commentSet.mTrailing = comment.IsEmpty ? default : mText.Add(comment);
+		commentSet.mTrailing = comment.IsEmpty ? default : mText.Copy(comment);
 		return true;
 	}
 

@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -1294,10 +1296,15 @@ public class TomlDocument
 			return Read(file, config);
 		}
 
-		// Parse the loaded bytes directly; no second copy into a String
+		// Parse the loaded bytes directly; no second copy into a String. FormatCore's read shell checks
+		// MaxInputBytes before reading (a larger file fails from its size, a growing one at the limit).
 		let data = scope List<uint8>();
-		if (File.ReadAll(path, data) case .Err)
+		if (ReadShell.ReadFileBytes(path, config.MaxInputBytes, data) case .Err(let readError))
+		{
+			if (readError.mKind == .ResourceLimitExceeded)
+				return WithSource(ReadFailure(TomlParseError(.ResourceLimitExceeded, readError.mMessage, 1, 1, 0), config), config);
 			return WithSource(ReadFailure(TomlParseError(.IoError, "Cannot read file", 0, 0, 0), config), config);
+		}
 		return ReadBytes(Span<uint8>(data.Ptr, data.Count), config);
 	}
 

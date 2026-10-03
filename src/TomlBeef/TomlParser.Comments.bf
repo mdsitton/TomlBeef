@@ -57,7 +57,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		StringView text = mCommentScratch;
 		if (text.Length > 0 && text[0] == ' ')
 			text = text.Substring(1);
-		return mStyle.mText.Add(text);
+		return mStyle.mText.Copy(text);
 	}
 
 	/// @brief Capture a comment line and add it to the pending leading comments list.

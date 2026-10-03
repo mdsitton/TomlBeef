@@ -487,8 +487,13 @@ static class TomlRegressionTests
 		uint64 seed1 = second.[Friend]mEntries.IndexSeed;
 		Test.Assert(first.[Friend]mEntries.IsIndexed && seed0 != 0 && seed1 != 0 && seed0 != seed1);
 		// Every key is still found through the index
+		// (One key string per round: two `scope $"..."` in one `&&` failed under the Windows Debug runtime)
 		for (int k < 20)
-			Test.Assert(first.GetInteger(scope $"key_{k}", -1) == k && second.GetInteger(scope $"key_{k}", -1) == k);
+		{
+			let key = scope String()..AppendF("key_{}", k);
+			Test.Assert(first.GetInteger(key, -1) == k);
+			Test.Assert(second.GetInteger(key, -1) == k);
+		}
 	}
 
 	// FormatCore B2: floats off the fast path (underscores, more digits than an exact mantissa) were
