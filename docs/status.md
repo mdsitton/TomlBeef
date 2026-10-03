@@ -26,7 +26,7 @@ one insertion guard in the resolver, allocation-free path walking, `ReleaseCache
 | `./test-official-toml.sh` | Upstream toml-test v2.2.0 (requires Go). 1.0: 205 valid, 205 encoder, 474 invalid. 1.1: 214 valid, 214 encoder, 467 invalid. All pass |
 | `bash ./test-codegen.sh` | 10/10 `[TomlObject]` build fixtures as expected (tests/codegen, with a second project depending on TomlBeef) |
 | `bash ./win-test.sh` (Windows, Proton) | 327/327 in Test and TestRelease |
-| `bash ../FormatCore/tools/sync.sh . --check` | PASS (vendored scripts and AGENTS.md's shared block match FormatCore) |
+| FormatCore's `bash tools/sync.sh <TomlBeef> --check` (run in a FormatCore checkout) | PASS (vendored scripts and AGENTS.md's shared block match FormatCore) |
 | `bash bench/instructions.sh` | The table below (instructions per byte; Release `TomlTester -bench-loop`) |
 
 Instructions per byte, `bash bench/instructions.sh`, after the move onto FormatCore (before: `cd799f0`):
