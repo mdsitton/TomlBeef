@@ -9,4 +9,4 @@ StartupProject = "BeefTomlBench"
 [Projects]
 BeefTomlBench = {Path = "."}
 TomlBeef = {Path = "../../.."}
-FormatCore = {Path = "../../../../FormatCore-toml"}
+FormatCore = {Path = "../../../../FormatCore"}

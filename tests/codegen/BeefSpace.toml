@@ -12,4 +12,4 @@ StartupProject = "Fixtures"
 Fixtures = {Path = "."}
 Other = {Path = "Other"}
 TomlBeef = {Path = "../.."}
-FormatCore = {Path = "../../../FormatCore-toml"}
+FormatCore = {Path = "../../../FormatCore"}

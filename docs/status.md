@@ -17,13 +17,32 @@ one insertion guard in the resolver, allocation-free path walking, `ReleaseCache
 
 | Check | Expected result |
 |-------|-----------------|
-| `beefbuild -test` (Debug checks) | 324/324 pass |
-| `beefbuild -test -config=TestRelease` (Release settings) | 324/324 pass |
-| `./test-leaks.sh` | 324/324 under LeakSanitizer, no leaks, exit 0 |
+| `beefbuild -test` (Debug checks) | 327/327 pass |
+| `beefbuild -test -config=TestRelease` (Release settings) | 327/327 pass |
+| `bash ./test-leaks.sh` | PASS: no leaks detected |
 | `./test-toml.sh` | 266 valid (semantic JSON match), 503 invalid rejected, exit 0 |
 | `./test-roundtrip.sh` | 266 pass, 0 mismatch, 0 crash, exit 0 |
 | `./test-encoder.sh` | 266 pass (fixture JSON → TOML → JSON), exit 0 |
 | `./test-official-toml.sh` | Upstream toml-test v2.2.0 (requires Go). 1.0: 205 valid, 205 encoder, 474 invalid. 1.1: 214 valid, 214 encoder, 467 invalid. All pass |
+| `bash ./test-codegen.sh` | 10/10 `[TomlObject]` build fixtures as expected (tests/codegen, with a second project depending on TomlBeef) |
+| `bash ./win-test.sh` (Windows, Proton) | 327/327 in Test and TestRelease |
+| `bash ../FormatCore/tools/sync.sh . --check` | PASS (vendored scripts and AGENTS.md's shared block match FormatCore) |
+| `bash bench/instructions.sh` | The table below (instructions per byte; Release `TomlTester -bench-loop`) |
+
+Instructions per byte, `bash bench/instructions.sh`, after the move onto FormatCore (before: `cd799f0`):
+
+| Input | document | preserve | stream | stream1k | write |
+|---|---|---|---|---|---|
+| mixed | 84.01 → 78.17 | 138.03 → 130.98 | 118.68 → 90.06 | 118.85 → 90.56 | 41.06 → 41.05 |
+| strings | 16.10 → 16.00 | 26.64 → 25.98 | 40.43 → 20.50 | 40.62 → 21.13 | 58.19 = |
+| ints | 66.45 → 58.83 | 98.49 → 90.93 | 100.99 → 68.98 | 101.18 → 69.48 | 32.66 = |
+| floats | 74.20 → 64.54 | 125.26 → 115.66 | 109.44 → 75.36 | 109.63 → 75.79 | 37.53 → 37.31 |
+| dates | 62.42 → 56.55 | 96.21 → 90.39 | 92.55 → 64.06 | 92.80 → 64.52 | 46.86 = |
+| arrays | 179.22 → 133.77 | 369.33 → 324.78 | 247.25 → 149.12 | 247.38 → 149.59 | 57.72 = |
+| headers | 123.74 → 117.12 | 168.26 → 161.85 | 166.87 → 132.64 | 167.08 → 133.09 | 48.84 → 48.83 |
+| dotted | 132.48 → 123.84 | 184.66 → 176.01 | 174.97 → 135.48 | 175.16 → 135.95 | 58.05 = |
+| comments | 6.16 → 5.61 | 9.92 → 8.80 | 30.69 → 9.88 | 30.84 → 10.43 | 0 |
+| commented | 17.47 → 15.01 | 35.50 → 32.48 | 43.57 → 19.76 | 43.72 → 20.30 | 4.89 = |
 
 Any change to `.bf` files must keep these green **in both Debug and Release**: run `beefbuild -test`
 and `beefbuild -test -config=TestRelease`, and run the shell scripts against both binaries
@@ -55,7 +74,11 @@ Sizes are rough: S ≈ hours, M ≈ a day or two, L ≈ multi-day.
 ### Correctness bugs
 
 None known. Add rows here (ID `B<n>`, problem, where, size) as bugs are found. (B1–B13 from the
-[review](review.md) are fixed.)
+[review](review.md) are fixed. Fixed in the move onto FormatCore (2026-10-03), with regression tests:
+the slow-path float parse followed the current culture's decimal separator (FormatCore B2,
+`FloatsIgnoreTheCurrentCulture`); the table index was unseeded (B3, `TableIndexesAreSeededPerTable`);
+converters registered in the user's project vanished once a second project depended on TomlBeef (B1,
+tests/codegen `OkRegisteredConverter`).)
 
 ### Streaming and I/O
 

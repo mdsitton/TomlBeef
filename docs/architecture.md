@@ -8,7 +8,9 @@ User-facing API examples live in the top-level `README.md`.
 
 - A TOML parser and writer for the Beef language, covering **TOML v1.0.0 and v1.1.0**. Version is
   selected per read/write; the default is v1.1.
-- **Linux64 is the primary target.** Windows/macOS are deferred.
+- **Linux64 is the primary target**; Windows is verified with the Proton-hosted Beef (`win-test.sh`).
+- **Built on FormatCore** (`~/development/FormatCore`), the shared core of TomlBeef, KdlBeef, XmlBeef
+  and JsonBeef: §1a lists what TomlBeef takes from it.
 - **No garbage collector.** Every design choice around ownership exists to make lifetimes
   predictable under manual and scope-based memory management.
 - **DOM model.** Every input path builds a full `TomlDocument` tree. There is no SAX/event API.
@@ -19,6 +21,22 @@ User-facing API examples live in the top-level `README.md`.
   mode keeps comments and presentation hints. It aims to preserve style, not to reproduce the
   source byte for byte.
 - Code conventions, Beef gotchas and doc-comment style are in `AGENTS.md`.
+
+## 1a. FormatCore
+
+FormatCore's `docs/architecture.md` describes each component; its `docs/migration.md` lists what each
+sibling replaced. TomlBeef uses:
+
+| FormatCore | In TomlBeef |
+|---|---|
+| `ByteCursor<TomlText>`, `BufferedStreamCursor<TomlText>`, `InputStart`, `Utf8.FindInvalid` | Input checks (size, UTF-16/32, BOM, UTF-8) for every read path; the stream window behind `TomlWindowCursor` (§5) |
+| `Utf8`, `Hex` | Decoding, encoding, hex digits |
+| `ParseError<TomlErrorKind>`, `Diagnostic<TomlErrorKind>` | `TomlParseError` and `TomlDiagnostic` are typealiases |
+| `DecimalParse`, `IntegerText`, `ShortestDouble` | Plain-number fast paths and the culture-free float parse; PreserveStyle integer formats and the scientific float format (the canonical float stays on corlib's round-trip text: ShortestDouble measured 20% slower on float-heavy writes) |
+| `OrderedMap`, `ByteHash` | Table entries (`TomlEntryMap`), the index seeded per table |
+| `TextArena`, `ReadShell` | The metadata sidecar's text; `ReadFile` |
+| `MappingDriver`, `Registry`, `Naming`/`NamingPolicy`, `Literal`, `IntegerBounds`, `TypeShapes` | The `[TomlObject]` generator (§8a): bodies in the mixin stage; `TomlKeyNaming` is `NamingPolicy` |
+| Vendored scripts and bench-kit | `test-leaks.sh`, `win-test.sh`, `test-codegen.sh`, `tools/test-lib.sh`, `bench/instructions.sh`, `bench/compare/merge.sh`; AGENTS.md's shared rules |
 
 ## 2. Source layout
 
@@ -242,11 +260,30 @@ empty key (`"" = 1`), which a path string cannot express. Segments borrow from t
 ## 5. Parsing pipeline
 
 ```
-Read(StringView) / ReadBytes / ReadFile ─► TomlChar.ValidateUtf8 (whole buffer, BOM skip) ─► TomlByteCursor ─┐
-Read(Stream) ─► TomlBufferedStreamCursor (BOM skip, incremental UTF-8 in Refill) ─────────────────────────────┤
-                                                                                                             ▼
+Read(StringView) / ReadBytes / ReadFile ─► FormatCore ByteCursor<TomlText>.Begin (size, encoding, BOM, UTF-8) ─► TomlMemoryCursor ─┐
+Read(Stream) ─► TomlWindowCursor<BufferedStreamCursor<TomlText>> (same checks; each refill UTF-8 checked) ─────────────────────────┤
+                                                                                                                                ▼
                             TomlParserImpl<TCursor>.Parse(cursor, TomlPathResolver) ─► TomlTable tree in a TomlDocumentStore
 ```
+
+- **Input checks are FormatCore's on every path**, so memory and stream input report the same first
+  error: MaxInputBytes, UTF-16/32 input (`UnsupportedEncoding`, named), one BOM skipped (a second one
+  is `ControlCharInDocument`), UTF-8 per Unicode table 3-7 at the sequence's lead byte. A stream's
+  input error (I/O, size, MaxTokenBytes, UTF-8) stops its window and takes precedence over whatever
+  the parser then reports.
+- **`TomlWindowCursor<TInput>`** is the stream cursor: the `ITomlCursor` API over a window of
+  FormatCore's input cursor (`data[offset]` for the window, absolute offsets). Marks keep their span
+  in the window, which grows for a long one (no spill copy); `MaxTokenBytes` is a hard limit on a
+  marked span plus the lookahead the parser asks for. Lines are counted as the parser crosses line
+  breaks, columns on request (SWAR past 32 bytes) from the line start or the last answer, a base the
+  cursor moves forward before a refill drops the line's start. It made stream reads 20-68% cheaper.
+- **`TomlMemoryCursor`** reads memory input after FormatCore's checks: the window cursor over a
+  ByteCursor measured 2-8% more on document reads, spread across the parser rather than one cause.
+- **The parser fails with an empty token** (`TomlFailure`, KdlBeef's/XmlBeef's/JsonBeef's pattern): the
+  parser, path resolver and limit checks return `Result<T, TomlFailure>` and the error is kept once per
+  thread when it is made (`TomlFailure.Raise`); `Parse` hands it out. `TomlFailure` has a byte field on
+  purpose: Beef converts any struct to an empty struct implicitly, which compiled
+  `.Err(TomlParseError(...))` into a silently dropped error.
 
 ### Cursor abstraction
 
