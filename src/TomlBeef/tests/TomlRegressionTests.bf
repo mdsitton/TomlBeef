@@ -466,6 +466,31 @@ static class TomlRegressionTests
 		Test.Assert(doc.GetPath() case .Err);
 	}
 
+	// FormatCore B3: a table's hash index (past 8 keys) was unseeded, so keys crafted to collide could
+	// be prepared in advance (hash flooding). It is FormatCore's OrderedMap now, seeded per table.
+
+	[Test]
+	public static void TableIndexesAreSeededPerTable()
+	{
+		let input = scope String();
+		for (int t < 2)
+		{
+			input.AppendF("[t{}]\n", t);
+			for (int k < 20)
+				input.AppendF("key_{} = {}\n", k, k);
+		}
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read(input) case .Ok);
+		Test.Assert(doc.RootTable.TryGetTable("t0", let first));
+		Test.Assert(doc.RootTable.TryGetTable("t1", let second));
+		uint64 seed0 = first.[Friend]mEntries.IndexSeed;
+		uint64 seed1 = second.[Friend]mEntries.IndexSeed;
+		Test.Assert(first.[Friend]mEntries.IsIndexed && seed0 != 0 && seed1 != 0 && seed0 != seed1);
+		// Every key is still found through the index
+		for (int k < 20)
+			Test.Assert(first.GetInteger(scope $"key_{k}", -1) == k && second.GetInteger(scope $"key_{k}", -1) == k);
+	}
+
 	// FormatCore B2: floats off the fast path (underscores, more digits than an exact mantissa) were
 	// parsed by corlib's Double.Parse, which follows the current culture's decimal separator
 
