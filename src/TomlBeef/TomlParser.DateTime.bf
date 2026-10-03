@@ -90,7 +90,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return true;
 	}
 
-	private Result<TomlValue, TomlParseError> TryParseDateTime(StringView token)
+	private Result<TomlValue, TomlFailure> TryParseDateTime(StringView token)
 	{
 		bool hasT = false;
 		bool hasColon = false;
@@ -135,7 +135,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Err(Error(.UnexpectedToken, "Cannot parse date/time"));
 	}
 
-	private Result<TomlValue, TomlParseError> TryParseOffsetDateTime(StringView token)
+	private Result<TomlValue, TomlFailure> TryParseOffsetDateTime(StringView token)
 	{
 		int pos = 0;
 		int32 year = ?; int32 month = ?; int32 day = ?;
@@ -187,7 +187,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.OffsetDateTime(TomlOffsetDateTime.Validated(year, month, day, hour, minute, second, ns, offsetMinutes));
 	}
 
-	private Result<TomlValue, TomlParseError> TryParseLocalDateTime(StringView token)
+	private Result<TomlValue, TomlFailure> TryParseLocalDateTime(StringView token)
 	{
 		int pos = 0;
 		int32 year = ?; int32 month = ?; int32 day = ?;
@@ -211,7 +211,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.LocalDateTime(TomlLocalDateTime.Validated(year, month, day, hour, minute, second, ns));
 	}
 
-	private Result<TomlValue, TomlParseError> TryParseLocalDate(StringView token)
+	private Result<TomlValue, TomlFailure> TryParseLocalDate(StringView token)
 	{
 		int pos = 0;
 		int32 year = ?; int32 month = ?; int32 day = ?;
@@ -221,7 +221,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.LocalDate(TomlLocalDate.Validated(year, month, day));
 	}
 
-	private Result<TomlValue, TomlParseError> TryParseLocalTime(StringView token)
+	private Result<TomlValue, TomlFailure> TryParseLocalTime(StringView token)
 	{
 		int pos = 0;
 		int32 hour = ?; int32 minute = ?; int32 second = 0; int32 ns = 0;

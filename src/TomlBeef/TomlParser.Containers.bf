@@ -11,7 +11,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Array parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseArray()
+	private Result<TomlValue, TomlFailure> ParseArray()
 	{
 		Try!(CheckDepth());
 		// Elements that are containers sit one level below the array
@@ -260,7 +260,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// ParseArray without metadata: no positions, comments or style to record, so each element is
 	/// just whitespace, value, whitespace, then ',' or ']'. The opening '[' is already consumed.
 	/// @param elementDepth The depth an element gets if it is a container (see mValueDepth).
-	private Result<TomlValue, TomlParseError> ParsePlainArray(TomlArray arr, int elementDepth)
+	private Result<TomlValue, TomlFailure> ParsePlainArray(TomlArray arr, int elementDepth)
 	{
 		// The loop top is reached only after '[' or ',', the two places where ']' may follow
 		while (true)
@@ -305,7 +305,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Inline table parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseInlineTable()
+	private Result<TomlValue, TomlFailure> ParseInlineTable()
 	{
 		Try!(CheckDepth());
 		// Keys inside are resolved against this table, at its depth; restored for the enclosing keys
@@ -504,7 +504,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Skips whitespace, newlines (1.1) and comments inside an inline table. With `pendingComments`
 	/// (PreserveStyle on 1.1) comment text is collected instead of discarded.
-	private Result<void, TomlParseError> SkipInlineTableWs(List<StringView> pendingComments)
+	private Result<void, TomlFailure> SkipInlineTableWs(List<StringView> pendingComments)
 	{
 		if (pendingComments == null)
 			return SkipWsAndComments(mVersion != .V1_0);
@@ -512,7 +512,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// If a comment follows on the current line, records it as `nodeId`'s trailing comment.
-	private Result<void, TomlParseError> CaptureInlineTrailingComment(List<StringView> pendingComments, TomlNodeId nodeId)
+	private Result<void, TomlFailure> CaptureInlineTrailingComment(List<StringView> pendingComments, TomlNodeId nodeId)
 	{
 		if (pendingComments == null)
 			return .Ok;
@@ -538,7 +538,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Inserts `value` at a dotted key path inside an inline table, creating intermediate inline tables.
 	/// Returns the table that received the final key.
-	private Result<TomlTable, TomlParseError> InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
+	private Result<TomlTable, TomlFailure> InsertDottedKeyIntoTable(TomlTable tbl, List<String> keyPath, TomlValue value)
 	{
 		TomlTable current = tbl;
 		for (int i = 0; i < keyPath.Count - 1; i++)

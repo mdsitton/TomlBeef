@@ -425,7 +425,7 @@ public class TomlArray
 	public TomlParseError MakeError(int index, StringView message)
 	{
 		TryGetSourceRange(index, var range);
-		return TomlParseError.Located(.InvalidValue, scope $"[{index}]: {message}", range);
+		return TomlErrors.Located(.InvalidValue, scope $"[{index}]: {message}", range);
 	}
 
 	/// @brief Read a String value at the given index.

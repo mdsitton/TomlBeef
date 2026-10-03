@@ -1046,7 +1046,7 @@ public class TomlDocument
 	public TomlParseError MakeError(StringView dottedPath, StringView message)
 	{
 		WalkToParent(dottedPath, let parent, let key);
-		return TomlParseError.Located(.InvalidValue, scope $"{dottedPath}: {message}", parent.ProblemLocation(key));
+		return TomlErrors.Located(.InvalidValue, scope $"{dottedPath}: {message}", parent.ProblemLocation(key));
 	}
 
 	/// @brief Get a required String at a dotted path. A missing value or a value of another type is a
@@ -1233,8 +1233,8 @@ public class TomlDocument
 			return .Err(TomlParseError(.InvalidKey, scope $"Invalid path '{dottedPath}'", 0, 0, 0));
 		// A segment on the way is not a table, or is missing
 		if (parent.TryGetValue(key, let blocking))
-			return .Err(TomlParseError.Located(.WrongType, scope $"{dottedPath}: expected '{key}' to be a table, found {blocking.TypeName}", parent.ProblemLocation(key)));
-		return .Err(TomlParseError.Located(.MissingKey, scope $"{dottedPath}: missing required {typeName}", parent.ProblemLocation()));
+			return .Err(TomlErrors.Located(.WrongType, scope $"{dottedPath}: expected '{key}' to be a table, found {blocking.TypeName}", parent.ProblemLocation(key)));
+		return .Err(TomlErrors.Located(.MissingKey, scope $"{dottedPath}: missing required {typeName}", parent.ProblemLocation()));
 	}
 
 	/// Walks `dottedPath` to the table that holds its last segment. On success `key` is that segment. If

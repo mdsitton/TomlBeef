@@ -13,7 +13,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Value parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseValue()
+	private Result<TomlValue, TomlFailure> ParseValue()
 	{
 		Try!(CheckNodeCount());
 
@@ -51,7 +51,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// String parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseString()
+	private Result<TomlValue, TomlFailure> ParseString()
 	{
 		if (mCursor.PeekByte() == '"' && mCursor.PeekByteAt(1) == '"' && mCursor.PeekByteAt(2) == '"')
 		{
@@ -62,7 +62,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseBasicString();
 	}
 
-	private Result<TomlValue, TomlParseError> ParseLiteralString()
+	private Result<TomlValue, TomlFailure> ParseLiteralString()
 	{
 		if (mCursor.PeekByte() == '\'' && mCursor.PeekByteAt(1) == '\'' && mCursor.PeekByteAt(2) == '\'')
 		{
@@ -73,7 +73,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseSingleLineLiteralString();
 	}
 
-	private Result<TomlValue, TomlParseError> ParseBasicString()
+	private Result<TomlValue, TomlFailure> ParseBasicString()
 	{
 		mCursor.AdvanceByte();
 		String result = mStringScratch..Clear();
@@ -90,7 +90,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// toward MaxStringBytes (checked as the string grows).
 	/// @param isKey Whether this is a key (no size limit; errors name a string key).
 	[Inline]
-	private Result<void, TomlParseError> DecodeBasicString(String result, bool isKey)
+	private Result<void, TomlFailure> DecodeBasicString(String result, bool isKey)
 	{
 		let limit = isKey ? int.MaxValue : StringByteLimit;
 		while (true)
@@ -122,7 +122,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Err(Error(.UnterminatedString, isKey ? "Unterminated string key" : "Unterminated basic string"));
 	}
 
-	private Result<TomlValue, TomlParseError> ParseMultiLineBasicString()
+	private Result<TomlValue, TomlFailure> ParseMultiLineBasicString()
 	{
 		mCursor.AdvanceByte();
 		mCursor.AdvanceByte();
@@ -201,7 +201,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					if (afterWs != '\r' && afterWs != '\n')
 					{
 						result.Clear();
-						return .Err(TomlParseError(.ReservedEscape, scope $"Reserved escape '\\{next}'", escLine, escColumn, escOffset));
+						return .Err(TomlFailure.Raise(TomlParseError(.ReservedEscape, scope $"Reserved escape '\\{next}'", escLine, escColumn, escOffset)));
 					}
 					// Everything up to the next content goes: newlines and indentation, including
 					// indented blank lines
@@ -270,7 +270,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Err(Error(.UnterminatedString, "Unterminated multi-line basic string"));
 	}
 
-	private Result<void, TomlParseError> ParseEscapeSequence(String result)
+	private Result<void, TomlFailure> ParseEscapeSequence(String result)
 	{
 		if (mCursor.IsEOF)
 			return .Err(Error(.InvalidEscape, "Unexpected end after '\\'"));
@@ -302,7 +302,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
-	private Result<void, TomlParseError> ParseHexEscape(String result, int digits)
+	private Result<void, TomlFailure> ParseHexEscape(String result, int digits)
 	{
 		uint32 cp = 0;
 
@@ -327,7 +327,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Ok;
 	}
 
-	private Result<TomlValue, TomlParseError> ParseSingleLineLiteralString()
+	private Result<TomlValue, TomlFailure> ParseSingleLineLiteralString()
 	{
 		mCursor.AdvanceByte();
 		String result = mStringScratch..Clear();
@@ -363,7 +363,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Err(Error(.UnterminatedString, "Unterminated literal string"));
 	}
 
-	private Result<TomlValue, TomlParseError> ParseMultiLineLiteralString()
+	private Result<TomlValue, TomlFailure> ParseMultiLineLiteralString()
 	{
 		mCursor.AdvanceByte();
 		mCursor.AdvanceByte();
@@ -458,7 +458,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Boolean parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseBool()
+	private Result<TomlValue, TomlFailure> ParseBool()
 	{
 		let mark = mCursor.Mark();
 		while (!mCursor.IsEOF && TomlChar.IsBareValueChar(mCursor.PeekByte()))
@@ -476,7 +476,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Bare value parsing
 	// ================================================================
 
-	private Result<TomlValue, TomlParseError> ParseBareValue()
+	private Result<TomlValue, TomlFailure> ParseBareValue()
 	{
 		let mark = mCursor.Mark();
 		// Up to a delimiter: '\r', '\n', '=', '[', ']', '{', '}', ',' or '#'
@@ -499,7 +499,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseBareToken(token);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseBareToken(StringView token)
+	private Result<TomlValue, TomlFailure> ParseBareToken(StringView token)
 	{
 		if (token.IsEmpty)
 			return .Err(Error(.UnexpectedToken, "Empty value"));
@@ -515,7 +515,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseOtherBareToken(token);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseOtherBareToken(StringView token)
+	private Result<TomlValue, TomlFailure> ParseOtherBareToken(StringView token)
 	{
 		// And for date/times
 		if (TryParsePlainDateTime(token, var plainDateTime))
@@ -642,7 +642,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return true;
 	}
 
-	private Result<TomlValue, TomlParseError> ParseNumber(StringView token)
+	private Result<TomlValue, TomlFailure> ParseNumber(StringView token)
 	{
 		if (token.IsEmpty)
 			return .Err(Error(.InvalidInteger, "Empty number"));
@@ -755,7 +755,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseDecimalInt(token);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseDecimalInt(StringView token)
+	private Result<TomlValue, TomlFailure> ParseDecimalInt(StringView token)
 	{
 		bool negative = false;
 		int pos = 0;
@@ -789,7 +789,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		}
 	}
 
-	private Result<TomlValue, TomlParseError> ParseHexInt(StringView token, int pos)
+	private Result<TomlValue, TomlFailure> ParseHexInt(StringView token, int pos)
 	{
 		uint64 val = 0;
 		bool hasDigit = false;
@@ -822,7 +822,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.Integer((int64)val);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseOctInt(StringView token, int pos)
+	private Result<TomlValue, TomlFailure> ParseOctInt(StringView token, int pos)
 	{
 		uint64 val = 0;
 		bool hasDigit = false;
@@ -852,7 +852,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.Integer((int64)val);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseBinInt(StringView token, int pos)
+	private Result<TomlValue, TomlFailure> ParseBinInt(StringView token, int pos)
 	{
 		uint64 val = 0;
 		bool hasDigit = false;
@@ -882,7 +882,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return TomlValue.Integer((int64)val);
 	}
 
-	private Result<TomlValue, TomlParseError> ParseFloatToken(StringView token)
+	private Result<TomlValue, TomlFailure> ParseFloatToken(StringView token)
 	{
 		// ParseNumber has validated the token; FormatCore skips its underscores and parses with `.` as the
 		// decimal point whatever the current culture (corlib's Double.Parse follows the user's locale)

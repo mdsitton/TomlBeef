@@ -197,7 +197,7 @@ public static class TomlBind
 		if (table.TryGetValue(key, out value))
 			return true;
 		if (required)
-			return .Err(TomlParseError.Located(.MissingKey, scope $"{key}: missing required value", table.ProblemLocation()));
+			return .Err(TomlErrors.Located(.MissingKey, scope $"{key}: missing required value", table.ProblemLocation()));
 		return false;
 	}
 
@@ -208,7 +208,7 @@ public static class TomlBind
 		if (value.TypeName != typeName)
 		{
 			array.TryGetSourceRange(index, var range);
-			return .Err(TomlParseError.Located(.WrongType, scope $"[{index}]: expected {typeName}, found {value.TypeName}", range));
+			return .Err(TomlErrors.Located(.WrongType, scope $"[{index}]: expected {typeName}, found {value.TypeName}", range));
 		}
 		return value;
 	}

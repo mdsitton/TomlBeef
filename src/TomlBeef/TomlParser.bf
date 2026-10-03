@@ -132,8 +132,9 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mTableDepth = 0;
 		mValueDepth = 0;
 
-		if (ParseDocument() case .Err(let e))
-			return .Err(e);
+		// The parser fails with an empty token; the error is kept per thread (TomlFailure)
+		if (ParseDocument() case .Err)
+			return .Err(TomlFailure.Error);
 
 		return .Ok;
 	}
@@ -142,7 +143,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Document level
 	// ================================================================
 
-	private Result<void, TomlParseError> ParseDocument()
+	private Result<void, TomlFailure> ParseDocument()
 	{
 		while (!mCursor.IsEOF)
 		{
@@ -284,7 +285,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> ParseHeader()
+	private Result<void, TomlFailure> ParseHeader()
 	{
 		SyncPathResolver();
 
@@ -370,7 +371,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// Key/value pair
 	// ================================================================
 
-	private Result<void, TomlParseError> ParseKeyVal()
+	private Result<void, TomlFailure> ParseKeyVal()
 	{
 		SyncPathResolver();
 
@@ -485,7 +486,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		mKeyPathDepth--;
 	}
 
-	private Result<void, TomlParseError> ParseKeyPath(TomlKeyPathBuffer parts)
+	private Result<void, TomlFailure> ParseKeyPath(TomlKeyPathBuffer parts)
 	{
 		while (true)
 		{
@@ -509,7 +510,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// Parses one key segment (bare, "basic" or 'literal') into `key`, which arrives empty.
-	private Result<void, TomlParseError> ParseSimpleKey(String key)
+	private Result<void, TomlFailure> ParseSimpleKey(String key)
 	{
 		char8 b = mCursor.PeekByte();
 
@@ -520,20 +521,20 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		return ParseBareKey(key);
 	}
 
-	private Result<void, TomlParseError> ParseBareKey(String key)
+	private Result<void, TomlFailure> ParseBareKey(String key)
 	{
 		if (mCursor.ScanRun(TomlChar.StopBareKey, key) == 0)
 			return .Err(Error(.InvalidKey, "Invalid bare key"));
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> ParseBasicStringKey(String result)
+	private Result<void, TomlFailure> ParseBasicStringKey(String result)
 	{
 		mCursor.AdvanceByte();
 		return DecodeBasicString(result, true);
 	}
 
-	private Result<void, TomlParseError> ParseLiteralStringKey(String key)
+	private Result<void, TomlFailure> ParseLiteralStringKey(String key)
 	{
 		mCursor.AdvanceByte(); // skip opening '
 		mCursor.ScanRun(TomlChar.StopLiteralString, key);
@@ -555,7 +556,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// ================================================================
 
 	/// Skips whitespace and comments. In arrays, newlines are allowed; in inline tables, they are not.
-	private Result<void, TomlParseError> SkipWsAndComments(bool allowNewlines = true)
+	private Result<void, TomlFailure> SkipWsAndComments(bool allowNewlines = true)
 	{
 		while (true)
 		{
@@ -582,7 +583,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// When outComments is null or style is not captured, behaves like SkipWsAndComments(true).
 	/// @param outComments Optional list to collect captured comment text. Ownership remains with caller.
 	/// @param outBlankLine Set to true if a blank line was encountered (consecutive newlines).
-	private Result<void, TomlParseError> SkipWsAndCaptureComments(List<StringView> outComments, out bool outBlankLine)
+	private Result<void, TomlFailure> SkipWsAndCaptureComments(List<StringView> outComments, out bool outBlankLine)
 	{
 		outBlankLine = false;
 		while (true)
@@ -643,15 +644,16 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// @brief Copy a scratch string into the document store.
 	/// Always frees the scratch string, including when the string length limit is exceeded.
 	/// Copies a decoded string (the scratch buffer) into the store as a value.
-	private Result<TomlValue, TomlParseError> FinishStringValue(String result)
+	private Result<TomlValue, TomlFailure> FinishStringValue(String result)
 	{
 		Try!(CheckStringLength(result.Length));
 		return .Ok(TomlValue.String(mStore.NewString(result)));
 	}
 
-	private TomlParseError Error(TomlErrorKind kind, StringView message)
+	/// An error at the cursor, kept as this thread's failure.
+	private TomlFailure Error(TomlErrorKind kind, StringView message)
 	{
-		return TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset);
+		return TomlFailure.Raise(TomlParseError(kind, message, mCursor.Line, mCursor.Column, mCursor.Offset));
 	}
 
 	// Limit checks run for every value, key and container, so each compares inline and only calls into
@@ -659,7 +661,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// MaxDepth for the array or inline table about to be parsed, at mValueDepth.
 	[Inline]
-	private Result<void, TomlParseError> CheckDepth()
+	private Result<void, TomlFailure> CheckDepth()
 	{
 		if (mLimits != null && mValueDepth > mLimits.mMaxDepth)
 			return mLimits.CheckDepth(mValueDepth, mCursor.Line, mCursor.Column, mCursor.Offset);
@@ -667,7 +669,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	[Inline]
-	private Result<void, TomlParseError> CheckStringLength(int byteLength)
+	private Result<void, TomlFailure> CheckStringLength(int byteLength)
 	{
 		if (mLimits != null && mLimits.mMaxStringBytes > 0 && byteLength > mLimits.mMaxStringBytes)
 			return mLimits.CheckStringBytes(byteLength, mCursor.Line, mCursor.Column, mCursor.Offset);
@@ -679,7 +681,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	private int StringByteLimit => (mLimits != null && mLimits.mMaxStringBytes > 0) ? mLimits.mMaxStringBytes : int.MaxValue;
 
 	[Inline]
-	private Result<void, TomlParseError> CheckNodeCount()
+	private Result<void, TomlFailure> CheckNodeCount()
 	{
 		// Counting nodes only matters with a node limit
 		if (mLimits != null && mLimits.mMaxNodes > 0)
@@ -688,7 +690,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	[Inline]
-	private Result<void, TomlParseError> CheckArrayItem(TomlArray arr)
+	private Result<void, TomlFailure> CheckArrayItem(TomlArray arr)
 	{
 		if (mLimits != null && mLimits.mMaxArrayItems > 0 && arr.Count >= mLimits.mMaxArrayItems)
 			return mLimits.CheckArrayItem(arr, mCursor.Line, mCursor.Column, mCursor.Offset);
@@ -696,7 +698,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	[Inline]
-	private Result<void, TomlParseError> CheckTableEntry(TomlTable tbl)
+	private Result<void, TomlFailure> CheckTableEntry(TomlTable tbl)
 	{
 		if (mLimits != null && mLimits.mMaxTableEntries > 0 && tbl.Count >= mLimits.mMaxTableEntries)
 			return mLimits.CheckTableEntry(tbl, mCursor.Line, mCursor.Column, mCursor.Offset);
@@ -704,7 +706,7 @@ internal class TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	[Inline]
-	private Result<void, TomlParseError> CheckPathSegments(int count)
+	private Result<void, TomlFailure> CheckPathSegments(int count)
 	{
 		if (mLimits != null && mLimits.mMaxPathSegments > 0 && count > mLimits.mMaxPathSegments)
 			return mLimits.CheckPathSegments(count, mCursor.Line, mCursor.Column, mCursor.Offset);

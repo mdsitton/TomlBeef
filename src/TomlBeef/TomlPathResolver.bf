@@ -24,7 +24,7 @@ internal class TomlPathResolver
 
 	private TomlResourceLimitState mLimits;
 
-	private Result<void, TomlParseError> CheckTableEntry(TomlTable table, int offset)
+	private Result<void, TomlFailure> CheckTableEntry(TomlTable table, int offset)
 	{
 		if (mLimits != null)
 			return mLimits.CheckTableEntry(table, mCurrentLine, mCurrentColumn, offset);
@@ -36,7 +36,7 @@ internal class TomlPathResolver
 	/// value. Existing entries (a merge overwrite, or a duplicate reported on insertion) need no room.
 	/// @param keyPath The key about to be set, relative to the current table.
 	/// @return MaxTableEntries' error, or Ok.
-	public Result<void, TomlParseError> CheckRoomForKeyPath(List<String> keyPath)
+	public Result<void, TomlFailure> CheckRoomForKeyPath(List<String> keyPath)
 	{
 		if (mLimits == null || mLimits.mMaxTableEntries <= 0)
 			return .Ok;
@@ -52,7 +52,7 @@ internal class TomlPathResolver
 
 	/// Moves `levels` deeper along a header path, failing with MaxDepthExceeded before anything is
 	/// created there.
-	private Result<void, TomlParseError> Descend(int levels)
+	private Result<void, TomlFailure> Descend(int levels)
 	{
 		mTableDepth += levels;
 		if (mLimits != null && mTableDepth > mLimits.mMaxDepth)
@@ -65,21 +65,21 @@ internal class TomlPathResolver
 	/// is written, and the table must have room under MaxTableEntries.
 	/// @param what What would be added, for the message.
 	/// @return InlineTableSealed or the entry-limit error, or Ok.
-	private Result<void, TomlParseError> CheckCanAddEntry(StringView what)
+	private Result<void, TomlFailure> CheckCanAddEntry(StringView what)
 	{
 		if (mCurrentTable.IsInlineSealed)
 			return .Err(MakeError(.InlineTableSealed, scope $"Cannot add {what} to a sealed inline table", mCurrentOffset));
 		return CheckTableEntry(mCurrentTable, mCurrentOffset);
 	}
 
-	private Result<void, TomlParseError> CheckNodeCount()
+	private Result<void, TomlFailure> CheckNodeCount()
 	{
 		if (mLimits != null)
 			return mLimits.CheckNodeCount(mCurrentLine, mCurrentColumn, mCurrentOffset);
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> CheckArrayItem(TomlArray array, int offset)
+	private Result<void, TomlFailure> CheckArrayItem(TomlArray array, int offset)
 	{
 		if (mLimits != null)
 			return mLimits.CheckArrayItem(array, mCurrentLine, mCurrentColumn, offset);
@@ -90,16 +90,17 @@ internal class TomlPathResolver
 	public int mCurrentColumn = 1;
 	public int mCurrentOffset = 0;
 
-	private TomlParseError MakeError(TomlErrorKind kind, StringView message, int offset, int length = 1)
+	/// An error at the current statement, kept as this thread's failure (TomlFailure).
+	private TomlFailure MakeError(TomlErrorKind kind, StringView message, int offset, int length = 1)
 	{
-		return TomlParseError(kind, message, mCurrentLine, mCurrentColumn, offset, length);
+		return TomlFailure.Raise(TomlParseError(kind, message, mCurrentLine, mCurrentColumn, offset, length));
 	}
 
 	// ========================================================================
 	// Public entry points
 	// ========================================================================
 
-	public Result<void, TomlParseError> EnterTable(List<String> path)
+	public Result<void, TomlFailure> EnterTable(List<String> path)
 	{
 		return EnterTable(path, null);
 	}
@@ -108,7 +109,7 @@ internal class TomlPathResolver
 	/// @param path The key path for the table header.
 	/// @param outNodeId Receives the allocated node ID, or null if not needed.
 	/// @return .Ok on success, or .Err on conflict.
-	public Result<void, TomlParseError> EnterTable(List<String> path, TomlNodeId* outNodeId)
+	public Result<void, TomlFailure> EnterTable(List<String> path, TomlNodeId* outNodeId)
 	{
 		mCurrentTable = mRootTable;
 		mTableDepth = 0;
@@ -128,7 +129,7 @@ internal class TomlPathResolver
 		return DefineTable(path[path.Count - 1], .ExplicitHeader, outNodeId);
 	}
 
-	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path)
+	public Result<void, TomlFailure> EnterArrayOfTables(List<String> path)
 	{
 		return EnterArrayOfTables(path, null);
 	}
@@ -137,7 +138,7 @@ internal class TomlPathResolver
 	/// @param path The key path for the array-of-tables header.
 	/// @param outNodeId Receives the allocated node ID, or null if not needed.
 	/// @return .Ok on success, or .Err on conflict.
-	public Result<void, TomlParseError> EnterArrayOfTables(List<String> path, TomlNodeId* outNodeId)
+	public Result<void, TomlFailure> EnterArrayOfTables(List<String> path, TomlNodeId* outNodeId)
 	{
 		mCurrentTable = mRootTable;
 		mTableDepth = 0;
@@ -157,14 +158,14 @@ internal class TomlPathResolver
 		return DefineArrayOfTables(path[path.Count - 1], outNodeId);
 	}
 
-	public Result<void, TomlParseError> SetKeyValue(List<String> keyPath, TomlValue value)
+	public Result<void, TomlFailure> SetKeyValue(List<String> keyPath, TomlValue value)
 	{
 		return SetKeyValue(keyPath, value, null);
 	}
 
 	/// SetKeyValue overload that allocates a node ID when metadata is present.
 	/// @param outNodeId Receives the allocated node ID, or remains default if metadata is null.
-	public Result<void, TomlParseError> SetKeyValue(List<String> keyPath, TomlValue value, TomlNodeId* outNodeId)
+	public Result<void, TomlFailure> SetKeyValue(List<String> keyPath, TomlValue value, TomlNodeId* outNodeId)
 	{
 		if (keyPath.Count == 0)
 			return .Err(MakeError(.EmptyBareKey, "Empty key", mCurrentOffset));
@@ -193,7 +194,7 @@ internal class TomlPathResolver
 	/// @param key The segment name.
 	/// @param create If true, create an implicit table of the given origin when the key doesn't exist.
 	/// @param implicitOrigin The origin to use when creating an implicit table.
-	private Result<void, TomlParseError> NavigateSegment(StringView key, bool create, TomlTableOrigin implicitOrigin)
+	private Result<void, TomlFailure> NavigateSegment(StringView key, bool create, TomlTableOrigin implicitOrigin)
 	{
 		if (mCurrentTable.TryGetValue(key, let existing))
 		{
@@ -257,7 +258,7 @@ internal class TomlPathResolver
 
 	/// Defines a table at the given key in the current table, or navigates into
 	/// an existing table after conflict checks.
-	private Result<void, TomlParseError> DefineTable(StringView key, TomlTableOrigin origin, TomlNodeId* outNodeId = null)
+	private Result<void, TomlFailure> DefineTable(StringView key, TomlTableOrigin origin, TomlNodeId* outNodeId = null)
 	{
 		Try!(Descend(1));
 		if (mCurrentTable.TryGetValue(key, let existing))
@@ -335,7 +336,7 @@ internal class TomlPathResolver
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> DefineArrayOfTables(StringView key, TomlNodeId* outNodeId = null)
+	private Result<void, TomlFailure> DefineArrayOfTables(StringView key, TomlNodeId* outNodeId = null)
 	{
 		// The array and the element table this header adds
 		Try!(Descend(2));
@@ -404,7 +405,7 @@ internal class TomlPathResolver
 		return .Ok;
 	}
 
-	private Result<void, TomlParseError> InsertKeyValue(StringView key, TomlValue value, TomlNodeId* outNodeId)
+	private Result<void, TomlFailure> InsertKeyValue(StringView key, TomlValue value, TomlNodeId* outNodeId)
 	{
 		// A duplicate key is reported ahead of the sealed-table and entry-limit errors. Those checks are
 		// cheap and rarely fail, so they run first; only then is the key looked up separately, keeping

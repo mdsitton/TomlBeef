@@ -647,7 +647,7 @@ public class TomlTable
 			{
 				// With positions on the incoming side (a merge read with metadata), point at its key
 				source.TryGetNodeRange(source.mEntries[i].mNodeId, var range);
-				return .Err(TomlParseError.Located(.DuplicateKey, scope $"Duplicate key '{path}' during merge", range));
+				return .Err(TomlErrors.Located(.DuplicateKey, scope $"Duplicate key '{path}' during merge", range));
 			}
 			path.Length = pathLen;
 		}
@@ -1091,7 +1091,7 @@ public class TomlTable
 	/// @return An error of kind InvalidValue.
 	public TomlParseError MakeError(StringView key, StringView message)
 	{
-		return TomlParseError.Located(.InvalidValue, scope $"{key}: {message}", ProblemLocation(key));
+		return TomlErrors.Located(.InvalidValue, scope $"{key}: {message}", ProblemLocation(key));
 	}
 
 	/// @brief Get a required String: a missing key or a value of another type is a located error
@@ -1148,7 +1148,7 @@ public class TomlTable
 	internal Result<TomlValue, TomlParseError> RequireValue(StringView key, StringView path, StringView typeName)
 	{
 		if (!TryGetValue(key, let value))
-			return .Err(TomlParseError.Located(.MissingKey, scope $"{path}: missing required {typeName}", ProblemLocation()));
+			return .Err(TomlErrors.Located(.MissingKey, scope $"{path}: missing required {typeName}", ProblemLocation()));
 		return CheckValueType(key, path, value, typeName);
 	}
 
@@ -1179,7 +1179,7 @@ public class TomlTable
 	internal Result<TomlValue, TomlParseError> CheckValueType(StringView key, StringView path, TomlValue value, StringView typeName)
 	{
 		if (value.TypeName != typeName)
-			return .Err(TomlParseError.Located(.WrongType, scope $"{path}: expected {typeName}, found {value.TypeName}", ProblemLocation(key)));
+			return .Err(TomlErrors.Located(.WrongType, scope $"{path}: expected {typeName}, found {value.TypeName}", ProblemLocation(key)));
 		return value;
 	}
 

@@ -13,7 +13,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// @brief Skip a TOML comment using parser-level TOML semantics.
 	/// Requires/consumes #, validates comment control chars, and consumes newline if present.
-	private Result<void, TomlParseError> SkipCommentText()
+	private Result<void, TomlFailure> SkipCommentText()
 	{
 		if (mCursor.PeekByte() != '#') return .Ok;
 		mCursor.AdvanceByte(); // skip #
@@ -24,7 +24,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Consumes a comment's text up to the end of its line (or EOF), appending it to `outText` unless null.
 	/// Control characters other than tab, and a CR not followed by LF, are errors at that character.
-	private Result<void, TomlParseError> ScanCommentBody(String outText)
+	private Result<void, TomlFailure> ScanCommentBody(String outText)
 	{
 		mCursor.ScanRun(TomlChar.StopComment, outText);
 		if (mCursor.IsEOF)
@@ -48,7 +48,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Requires the cursor at '#'. Consumes the comment and its newline, validating control characters,
 	/// and drops only the single conventional space after '#'.
 	/// @return A view of the stored text, valid as long as the sidecar.
-	private Result<StringView, TomlParseError> CaptureComment()
+	private Result<StringView, TomlFailure> CaptureComment()
 	{
 		mCursor.AdvanceByte(); // skip #
 		mCommentScratch.Clear();
@@ -61,7 +61,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	}
 
 	/// @brief Capture a comment line and add it to the pending leading comments list.
-	private Result<void, TomlParseError> CapturePendingComment()
+	private Result<void, TomlFailure> CapturePendingComment()
 	{
 		if (mStyle == null)
 		{
@@ -74,7 +74,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// @brief Capture a trailing comment on the same line as a key/val or header.
 	/// Stores it in mTrailingCommentText for later attachment.
-	private Result<void, TomlParseError> CaptureTrailingComment()
+	private Result<void, TomlFailure> CaptureTrailingComment()
 	{
 		if (mStyle == null)
 			return SkipCommentText();
@@ -163,7 +163,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	/// Skips one line break (LF or CRLF) inside a multi-line string, where it is not counted for style.
 	/// @return An error for a CR not followed by LF.
-	private Result<void, TomlParseError> SkipStringNewline()
+	private Result<void, TomlFailure> SkipStringNewline()
 	{
 		if (mCursor.PeekByte() == '\r' && mCursor.PeekByteAt(1) != '\n')
 			return .Err(Error(.ControlCharInString, "Bare CR not allowed in multi-line string"));
@@ -174,7 +174,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	/// Skips one line break (LF or CRLF), counting it for document-level style inference.
 	/// Use for document-structure newlines; string parsing uses SkipStringNewline().
 	/// @return An error for a CR not followed by LF: TOML has no bare-CR line break.
-	private Result<void, TomlParseError> CountAndSkipNewline()
+	private Result<void, TomlFailure> CountAndSkipNewline()
 	{
 		char8 b = mCursor.PeekByte();
 		if (b == '\r' && mCursor.PeekByteAt(1) != '\n')
