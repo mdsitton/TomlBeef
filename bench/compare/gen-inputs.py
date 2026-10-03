@@ -106,14 +106,15 @@ def main():
 
 def beef_projects():
     """Copies real BeefProj.toml / BeefSpace.toml files into inputs/beef-projects/ for beef.sh: from a
-    Beef source checkout (BEEF_SRC, default ~/development/Beef) if there is one, else from the
-    installed Beef next to beefbuild. These are the files Beef's own StructuredData reader is for."""
+    Beef source checkout when BEEF_SRC names one (https://github.com/beefytech/Beef; the published
+    figures used one), else from the installed Beef next to beefbuild. These are the files Beef's own
+    StructuredData reader is for."""
     import shutil
     dest = os.path.join(OUT, "beef-projects")
     shutil.rmtree(dest, ignore_errors=True)
     os.makedirs(dest)
-    source = os.environ.get("BEEF_SRC", os.path.expanduser("~/development/Beef"))
-    if not os.path.isdir(source):
+    source = os.environ.get("BEEF_SRC", "")
+    if not source or not os.path.isdir(source):
         beefbuild = shutil.which("beefbuild")
         source = os.path.join(os.path.dirname(os.path.realpath(beefbuild)), "..") if beefbuild else ""
     files = []

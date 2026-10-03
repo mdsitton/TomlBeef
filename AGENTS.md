@@ -4,8 +4,7 @@
 
 - This repository is a Beef language project, not a C# project: a TOML 1.0/1.1 parser and writer, the
   first of four format libraries by the same author (KdlBeef, XmlBeef and JsonBeef followed it).
-- **TomlBeef is built on FormatCore** (`~/development/FormatCore`,
-  `https://github.com/mdsitton/FormatCore.git`): the shared core of the four format libraries (UTF-8
+- **TomlBeef is built on FormatCore** (https://github.com/mdsitton/FormatCore): the shared core of the four format libraries (UTF-8
   and SWAR scanning, errors, numbers, storage, the typed-mapping framework, test and benchmark
   tooling). The library depends on it by Git (`BeefProj.toml`, `Version = "0.1"`): BeefBuild fetches
   the highest matching tag and pins it in the workspace's `BeefSpace_Lock.toml`. A change a FormatCore
@@ -14,8 +13,8 @@
   `docs/migration.md` lists what moved.
 - Beef `String` stores UTF-8 data and is mutable. Prefer `StringView` for borrowed string inputs.
 - Beef uses manual and scope-based memory management. There is no tracing garbage collector.
-- This project targets Linux64 first; Windows is verified with the Proton-hosted Beef
-  (`~/development/beef-proton/bin/beefbuild-win`, `bash ./win-test.sh`).
+- This project targets Linux64 first; Windows is verified with the Windows BeefBuild under Proton
+  (a `beefbuild-win` wrapper on the PATH, `bash ./win-test.sh`).
 - Preferred CLI tool: `beefbuild` on Linux, `BeefBuild` on Windows. Use from `PATH`.
 - External dependencies are not vendored: BJSON (JSON for `TomlTester`) is a Beef package dependency, `BJSON = {Git = "https://github.com/M0n7y5/BJSON.git?path=/BJSON"}` in `TomlTester/BeefProj.toml` (pinned in `BeefSpace_Lock.toml`), and the upstream toml-test suite runs through `go run` in `test-official-toml.sh`. Do not edit fetched copies of either.
 - Treat `recovery/` as forensic/generated reference material; consult it only for historical context and do not edit it unless explicitly requested.
@@ -43,7 +42,7 @@ This block is FormatCore's `docs/agents-common.md`, written into each repository
 - **Use US English spellings** in code, comments and documentation (neighbor, color, behavior).
 - **Commit as Matthew Sitton <matthewsitton@gmail.com>**: `git -c user.name="Matthew Sitton" -c user.email="matthewsitton@gmail.com" commit ...` (the global git identity can differ).
 - **Windows is verified**, not deferred: the `[Test]`s run under the Proton-hosted Windows Beef
-  (`~/development/beef-proton/bin/beefbuild-win`) in Test and TestRelease (`bash ./win-test.sh`)
+  (a `beefbuild-win` wrapper on the PATH, or `BEEFBUILD_WIN`) in Test and TestRelease (`bash ./win-test.sh`)
   before committing.
 - **Benchmarks do not wait for a quiet machine** (this machine never is): a benchmark's `run.sh` samples until each run converges and repeats processes until enough agree within ±10% (`bench/compare/measure.sh`, from FormatCore's bench-kit), marking a cell that never settles `~`. Run it as it is, whatever the load; report the load average and the `~` cells with the figures, and rerun (`ONLY=...`) cells that did not settle before drawing conclusions from them. A cell past its time limit is DNF, not waited out. Small changes are compared with `bench/instructions.sh` (user-space instructions per input byte), which the load does not disturb.
 - **Run shell scripts with bash** (`bash ./script.sh`): the interactive shell is not bash, and unquoted variables do not word-split.
@@ -192,6 +191,9 @@ builds strip debug info: debug against `build/Debug_Linux64/...`.
 
 ## References
 
-- Official Beef documentation: `https://www.beeflang.org/docs/`; docs source `~/development/Beef_website`
-- Beef language and tool source: `~/development/Beef`
-- FormatCore: `~/development/FormatCore` (`docs/architecture.md`, `docs/migration.md`)
+- Official Beef documentation: https://www.beeflang.org/docs/; docs source
+  https://github.com/beefytech/Beef_website
+- Beef language and tool source: https://github.com/beefytech/Beef
+- FormatCore: https://github.com/mdsitton/FormatCore (`docs/architecture.md`, `docs/migration.md`)
+- The other format libraries: https://github.com/mdsitton/KdlBeef, https://github.com/mdsitton/XmlBeef,
+  https://github.com/mdsitton/JsonBeef

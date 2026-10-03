@@ -9,7 +9,7 @@ User-facing API examples live in the top-level `README.md`.
 - A TOML parser and writer for the Beef language, covering **TOML v1.0.0 and v1.1.0**. Version is
   selected per read/write; the default is v1.1.
 - **Linux64 is the primary target**; Windows is verified with the Proton-hosted Beef (`win-test.sh`).
-- **Built on FormatCore** (`~/development/FormatCore`), the shared core of TomlBeef, KdlBeef, XmlBeef
+- **Built on FormatCore** (https://github.com/mdsitton/FormatCore), the shared core of TomlBeef, KdlBeef, XmlBeef
   and JsonBeef: §1a lists what TomlBeef takes from it.
 - **No garbage collector.** Every design choice around ownership exists to make lifetimes
   predictable under manual and scope-based memory management.
