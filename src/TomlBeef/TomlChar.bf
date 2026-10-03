@@ -1,8 +1,11 @@
 using System;
+using FormatCore;
+using internal FormatCore;
 
 namespace TomlBeef;
 
-/// Character classification and UTF-8 encoding/decoding helpers for the TOML parser.
+/// Character classification for the TOML parser. UTF-8 decoding, encoding and validation and hex
+/// digits come from FormatCore (`Utf8`, `Hex`).
 internal static class TomlChar
 {
 	// Byte classes for ITomlCursor.ScanRun: a scan of kind X advances over bytes whose class has no X bit.
@@ -95,96 +98,6 @@ internal static class TomlChar
 		return c >= '0' && c <= '7';
 	}
 
-	/// @brief Return the byte length of a UTF-8 sequence starting with the given lead byte.
-	/// @param lead The lead byte of the sequence.
-	/// @return 1-4 for valid lead bytes, 0 for continuation/invalid bytes.
-	public static int Utf8SequenceLength(char8 lead)
-	{
-		if ((uint8)lead < 0x80) return 1;
-		if (((uint8)lead & 0xE0) == 0xC0) return 2;
-		if (((uint8)lead & 0xF0) == 0xE0) return 3;
-		if (((uint8)lead & 0xF8) == 0xF0) return 4;
-		return 0;
-	}
-
-	/// @brief Decode a single UTF-8 code point from a known-length sequence.
-	/// @param input The UTF-8 string.
-	/// @param offset Byte offset of the lead byte.
-	/// @param cpLen Sequence length in bytes (1-4).
-	/// @return The decoded code point, or U+FFFD if cpLen is invalid.
-	public static char32 DecodeAt(StringView input, int offset, int cpLen)
-	{
-		char8 b0 = input[offset];
-		char32 cp;
-		switch (cpLen)
-		{
-		case 1: return (char32)b0;
-		case 2:
-			cp = (char32)((uint8)b0 & 0x1F) << 6;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F);
-			return cp;
-		case 3:
-			cp = (char32)((uint8)b0 & 0x0F) << 12;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 6;
-			cp |= (char32)((uint8)input[offset + 2] & 0x3F);
-			return cp;
-		case 4:
-			cp = (char32)((uint8)b0 & 0x07) << 18;
-			cp |= (char32)((uint8)input[offset + 1] & 0x3F) << 12;
-			cp |= (char32)((uint8)input[offset + 2] & 0x3F) << 6;
-			cp |= (char32)((uint8)input[offset + 3] & 0x3F);
-			return cp;
-		default: return (char32)0xFFFD;
-		}
-	}
-
-	/// @brief Encode a Unicode code point as UTF-8 and append to a String.
-	/// @param result The destination string.
-	/// @param cp The code point to encode (must be 0–0x10FFFF, excluding surrogates).
-	public static void EncodeUtf8(String result, uint32 cp)
-	{
-		if (cp < 0x80)
-		{
-			result.Append((char8)cp);
-		}
-		else if (cp < 0x800)
-		{
-			result.Append((char8)(0xC0 | (cp >> 6)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
-		else if (cp < 0x10000)
-		{
-			result.Append((char8)(0xE0 | (cp >> 12)));
-			result.Append((char8)(0x80 | ((cp >> 6) & 0x3F)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
-		else
-		{
-			result.Append((char8)(0xF0 | (cp >> 18)));
-			result.Append((char8)(0x80 | ((cp >> 12) & 0x3F)));
-			result.Append((char8)(0x80 | ((cp >> 6) & 0x3F)));
-			result.Append((char8)(0x80 | (cp & 0x3F)));
-		}
-	}
-
-	/// @brief Convert a hex digit character to its numeric value.
-	/// Uses branch-minimized bitmask logic: lowercase via c|0x20, then range check.
-	/// @param c The hex digit character.
-	/// @return 0–15 on success, or 255 if not a hex digit.
-	[Inline]
-	public static uint8 HexDigitValue(char8 c)
-	{
-		uint32 ci = (uint8)c;
-		uint32 result = ci - (uint32)'0';
-		if (result <= 9)
-			return (uint8)result;
-		// Convert uppercase to lowercase: 'A'|0x20 == 'a'
-		result = (ci | 0x20) - (uint32)'a';
-		if (result <= 5)
-			return (uint8)(result + 10);
-		return 255;
-	}
-
 	/// @brief Convert a value 0–15 to an uppercase hex character.
 	/// @param v The value (must be 0–15).
 	/// @return '0'–'9' or 'A'–'F'.
@@ -200,63 +113,20 @@ internal static class TomlChar
 	/// @return .Ok on success, or .Err with line/column info on invalid UTF-8 or double BOM.
 	public static Result<void, TomlParseError> ValidateUtf8(StringView input, out int start)
 	{
-		// Fast pass without the line and column tracking that only an error needs. On any problem,
-		// including a second BOM, LocateUtf8Error re-scans to report it, so errors are unchanged.
-		bool hasBom = input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF;
+		// Fast pass without the line and column tracking that only an error needs (FormatCore's
+		// validator: the same rules, ASCII skipped 32 and 8 bytes at a time). On any problem, including
+		// a second BOM, LocateUtf8Error re-scans to report it, so errors are unchanged.
+		bool hasBom = Utf8.StartsWithBom(input.Ptr, input.Length);
 		start = hasBom ? 3 : 0;
-		if (hasBom && input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+		if (hasBom && Utf8.StartsWithBom(input.Ptr + 3, input.Length - 3))
 			return LocateUtf8Error(input, out start);
-		if (IsValidUtf8(input, start))
+		if (Utf8.FindInvalid<PlainUtf8Text>(input.Ptr, start, input.Length, scope String(), ?, ?) < 0)
 			return .Ok;
 		return LocateUtf8Error(input, out start);
 	}
 
-	/// Whether `input` from `from` on is valid UTF-8: the same rules as LocateUtf8Error (lead and
-	/// continuation bytes, truncation, overlongs, surrogates, the U+10FFFF limit). Runs of ASCII are
-	/// skipped 8 bytes at a time, which makes comment- and key-heavy input nearly free to check.
-	static bool IsValidUtf8(StringView input, int from)
-	{
-		char8* ptr = input.Ptr;
-		int length = input.Length;
-		int i = from;
-		while (i < length)
-		{
-			while (i + 8 <= length)
-			{
-				uint64 word = ?;
-				Internal.MemCpy(&word, ptr + i, 8);
-				if ((word & 0x8080808080808080UL) != 0)
-					break;
-				i += 8;
-			}
-			if (i >= length)
-				break;
-			uint8 b = (uint8)ptr[i];
-			if (b < 0x80)
-			{
-				i++;
-				continue;
-			}
-			int seqLen = Utf8SequenceLength((char8)b);
-			if (seqLen == 0 || i + seqLen > length)
-				return false;
-			for (int j = 1; j < seqLen; j++)
-			{
-				if (((uint8)ptr[i + j] & 0xC0) != 0x80)
-					return false;
-			}
-			uint32 ucp = (uint32)DecodeAt(input, i, seqLen);
-			if (seqLen == 2 ? ucp < 0x80 : seqLen == 3 ? ucp < 0x800 : ucp < 0x10000)
-				return false;
-			if ((ucp >= 0xD800 && ucp <= 0xDFFF) || ucp > 0x10FFFF)
-				return false;
-			i += seqLen;
-		}
-		return true;
-	}
-
 	/// The position-tracking validation: finds the first UTF-8 (or double BOM) error with its line,
-	/// column and offset. Only run when IsValidUtf8 has found a problem.
+	/// column and offset. Only run when FindInvalid has found a problem.
 	static Result<void, TomlParseError> LocateUtf8Error(StringView input, out int start)
 	{
 		start = 0;
@@ -266,11 +136,11 @@ internal static class TomlChar
 		int column = 1;
 
 		// Skip a UTF-8 BOM so it does not count as a column
-		if (input.Length >= 3 && (uint8)input[0] == 0xEF && (uint8)input[1] == 0xBB && (uint8)input[2] == 0xBF)
+		if (Utf8.StartsWithBom(input.Ptr, input.Length))
 		{
 			start = 3;
 			// Reject a second BOM immediately following the first
-			if (input.Length >= 6 && (uint8)input[3] == 0xEF && (uint8)input[4] == 0xBB && (uint8)input[5] == 0xBF)
+			if (Utf8.StartsWithBom(input.Ptr + 3, input.Length - 3))
 				return .Err(TomlParseError(.ControlCharInDocument, "BOM must only appear at start of file", 1, 1, 3));
 			i = 3;
 		}
@@ -300,7 +170,7 @@ internal static class TomlChar
 				i++;
 				continue;
 			}
-			int seqLen = Utf8SequenceLength((char8)b);
+			int seqLen = Utf8.SequenceLength((char8)b);
 			if (seqLen == 0)
 				return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 lead byte", line, column, i));
 
@@ -314,8 +184,7 @@ internal static class TomlChar
 					return .Err(TomlParseError(.InvalidUtf8, "Invalid UTF-8 continuation byte", line, column + j, i + j));
 			}
 
-			char32 cp = DecodeAt(input, i, seqLen);
-			uint32 ucp = (uint32)cp;
+			uint32 ucp = (uint32)Utf8.Decode(input.Ptr, i, ?);
 
 			// Validate overlong sequences and surrogate range
 			if (seqLen == 2 ? ucp < 0x80 : seqLen == 3 ? ucp < 0x800 : ucp < 0x10000)

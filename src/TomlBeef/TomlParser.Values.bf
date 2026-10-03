@@ -312,7 +312,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 				return .Err(Error(.InvalidEscape, "Incomplete escape sequence"));
 
 			char8 c = mCursor.PeekByte();
-			uint8 v = TomlChar.HexDigitValue(c);
+			uint8 v = Hex.DigitValue(c);
 			if (v == 255)
 				return .Err(Error(.InvalidEscape, "Invalid hex digit"));
 
@@ -323,7 +323,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
 			return .Err(Error(.InvalidUnicodeScalar, "Invalid Unicode scalar value"));
 
-		TomlChar.EncodeUtf8(result, cp);
+		Utf8.Encode(result, cp);
 		return .Ok;
 	}
 
@@ -806,7 +806,7 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 					return .Err(Error(.InvalidUnderscore, "Underscore must be between hex digits"));
 				continue;
 			}
-			uint8 hv = TomlChar.HexDigitValue(c);
+			uint8 hv = Hex.DigitValue(c);
 			if (hv == 255)
 				return .Err(Error(.InvalidInteger, scope $"Invalid hex digit '{c}'"));
 			uint64 digit = (uint64)hv;

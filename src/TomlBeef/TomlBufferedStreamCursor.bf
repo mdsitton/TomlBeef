@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -203,7 +205,7 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 		}
 
 		int remaining = mEnd - mPos;
-		int cpLen = TomlChar.Utf8SequenceLength(b0);
+		int cpLen = Utf8.SequenceLength(b0);
 		if (cpLen == 0 || cpLen > remaining)
 		{
 			mPos++;
@@ -211,8 +213,7 @@ internal struct TomlBufferedStreamCursor : ITomlCursor
 			return (char32)0xFFFD;
 		}
 
-		StringView sv = StringView((char8*)&mBuffer[mPos], remaining);
-		char32 cp = TomlChar.DecodeAt(sv, 0, cpLen);
+		char32 cp = Utf8.Decode((char8*)&mBuffer[mPos], 0, ?);
 		mPos += cpLen;
 		mColumn++;
 		return cp;
