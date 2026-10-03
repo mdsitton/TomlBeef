@@ -23,6 +23,8 @@ class Program
 {
 	public static int Main(String[] args)
 	{
+		if (args.Count > 0 && args[0] == "-bench-loop")
+			return BenchLoop(args);
 		bool encode = false;
 		bool fromJson = false;
 		int benchIterations = 0;
@@ -127,6 +129,80 @@ class Program
 			output.Append('\n');
 		}
 		Console.Write(output);
+		return 0;
+	}
+
+	/// `-bench-loop <document|preserve|stream|write> <file> <iterations> [buffer=N]`: a fixed number of
+	/// passes and nothing timed, for instruction counts (bench/instructions.sh) and `perf record`.
+	/// document: Read(StringView) into one reused document; preserve: the same with PreserveStyle;
+	/// stream: Read(Stream) through the stream cursor (StreamBufferBytes, default 8 KiB); write: the
+	/// canonical write of the document.
+	static int BenchLoop(String[] args)
+	{
+		int iterations = 0;
+		if (args.Count >= 4 && int.Parse(args[3]) case .Ok(let parsed))
+			iterations = parsed;
+		if (iterations < 1)
+		{
+			Console.Error.WriteLine("usage: TomlTester -bench-loop <document|preserve|stream|write> <file> <iterations> [buffer=N]");
+			return 2;
+		}
+		var config = TomlReadConfig();
+		for (int i = 4; i < args.Count; i++)
+		{
+			StringView option = args[i];
+			if (option.StartsWith("buffer=") && int.Parse(option.Substring(7)) case .Ok(let size))
+				config.StreamBufferBytes = size;
+		}
+		let bytes = scope System.Collections.List<uint8>();
+		if (File.ReadAll(args[2], bytes) case .Err)
+		{
+			Console.Error.WriteLine(scope $"cannot open {args[2]}");
+			return 2;
+		}
+		StringView input = .((char8*)bytes.Ptr, bytes.Count);
+		let doc = scope TomlDocument();
+		if (doc.Read(input, config) case .Err(let error))
+		{
+			Console.Error.WriteLine(scope $"parse error: {error.mMessage}");
+			return 1;
+		}
+		int total = 0;
+		switch (args[1])
+		{
+		case "document":
+			for (int pass < iterations)
+			{
+				doc.Read(input, config).IgnoreError();
+				total++;
+			}
+		case "preserve":
+			config.MetadataMode = .PreserveStyle;
+			for (int pass < iterations)
+			{
+				doc.Read(input, config).IgnoreError();
+				total++;
+			}
+		case "stream":
+			for (int pass < iterations)
+			{
+				let stream = scope:: FixedMemoryStream(Span<uint8>(bytes.Ptr, bytes.Count));
+				doc.Read(stream, config).IgnoreError();
+				total++;
+			}
+		case "write":
+			let output = scope String();
+			for (int pass < iterations)
+			{
+				output.Clear();
+				doc.Write(output);
+				total += output.Length;
+			}
+		default:
+			Console.Error.WriteLine(scope $"unknown loop mode {args[1]}");
+			return 2;
+		}
+		Console.WriteLine(total);
 		return 0;
 	}
 
