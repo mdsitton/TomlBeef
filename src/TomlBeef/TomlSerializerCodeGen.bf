@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Reflection;
+using FormatCore.Mapping;
+using internal FormatCore;
 
 namespace TomlBeef;
 
@@ -34,19 +36,30 @@ public static class TomlSerializerCodeGen
 		Converter
 	}
 
-	/// @brief Emit ITomlSerializable, TomlRead and TomlWrite into `type`.
+	/// The user-side comptime entry FormatCore's MappingDriver emits into every [TomlObject] type.
+	const String cEntry = "TomlGen_";
+
+	/// @brief Emit ITomlSerializable, TomlKey, TomlKeyAliases and the signatures of TomlRead and TomlWrite
+	/// into `type` (ApplyToType). The two bodies are planned and written later, when the methods are
+	/// compiled, through the [Comptime] entry emitted into the type (FormatCore's MappingDriver):
+	/// converter lookups then see the user's project and its dependencies, however many projects use
+	/// TomlBeef, and a type can hold itself (`List<Node> children`).
 	/// @param type A class or struct carrying [TomlObject].
 	/// @param naming How field names (and the type name, for the key) become keys.
 	/// @param homeKey The type's table in a document (TomlObjectAttribute.Key), or empty for its name.
 	[Comptime]
 	public static void Emit(Type type, TomlKeyNaming naming, StringView homeKey)
 	{
-		let read = scope String();
-		let write = scope String();
+		let code = scope String();
 
-		// A [TomlObject] base already has both methods: hide them, and read and write its fields first
-		bool baseIsObject = type.BaseType != null && type.BaseType != typeof(Object) && type.BaseType.HasCustomAttribute<TomlObjectAttribute>();
+		// A [TomlObject] base already has both methods: hide them (each level reads and writes its own
+		// fields after calling its base's)
+		bool baseIsObject = BaseIsObject(type);
 		StringView hide = baseIsObject ? "new " : "";
+		// The unspecialized pass of a generic type: stub bodies (each specialization gets its own pass)
+		bool open = MappingDriver.IsOpenType(type);
+		if (!open)
+			MappingDriver.EmitEntry(type, cEntry, "TomlBeef.TomlSerializerCodeGen.Body", baseIsObject);
 
 		// Where path-less TomlDocument.Deserialize/Serialize find the type: its Key, or its own name
 		let home = scope String();
@@ -55,7 +68,7 @@ public static class TomlSerializerCodeGen
 		else
 			ApplyNaming(type.GetName(.. scope .()), naming, home);
 		let homeLiteral = AppendLiteral(.. scope .(), home);
-		read.AppendF("public {}static StringView TomlKey => {};\n", hide, homeLiteral);
+		code.AppendF("public {}static StringView TomlKey => {};\n", hide, homeLiteral);
 		// Older paths of the type's table, from [TomlAlias] on the type
 		let typeAliases = scope String();
 		int aliasCount = 0;
@@ -66,15 +79,54 @@ public static class TomlSerializerCodeGen
 			AppendLiteral(typeAliases, alias.mName);
 		}
 		if (aliasCount == 0)
-			read.AppendF("public {}static Span<StringView> TomlKeyAliases => default;\n", hide);
+			code.AppendF("public {}static Span<StringView> TomlKeyAliases => default;\n", hide);
 		else
 		{
-			read.AppendF("static StringView[{}] sTomlKeyAliases = .({});\n", aliasCount, typeAliases);
-			read.AppendF("public {}static Span<StringView> TomlKeyAliases => sTomlKeyAliases;\n", hide);
+			code.AppendF("static StringView[{}] sTomlKeyAliases = .({});\n", aliasCount, typeAliases);
+			code.AppendF("public {}static Span<StringView> TomlKeyAliases => sTomlKeyAliases;\n", hide);
 		}
-		read.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table, System.ITypedAllocator _alloc = null){}\n{{\n", hide, type.IsValueType ? " mut" : "");
-		write.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlWrite(TomlBeef.TomlTable _table)\n{{\n", hide);
-		if (baseIsObject)
+		code.AppendF("public {}Result<void, TomlBeef.TomlParseError> TomlRead(TomlBeef.TomlTable _table, System.ITypedAllocator _alloc = null){}\n{{\n", hide, type.IsValueType ? " mut" : "");
+		AppendPart(code, open, 0);
+		code.AppendF("}}\npublic {}Result<void, TomlBeef.TomlParseError> TomlWrite(TomlBeef.TomlTable _table)\n{{\n", hide);
+		AppendPart(code, open, 1);
+		code.Append("}\n");
+
+		Compiler.EmitAddInterface(type, typeof(ITomlSerializable));
+		Compiler.EmitTypeBody(type, code);
+	}
+
+	/// A generated method's body: the mixin of `part` (or, for an open generic type, a stub).
+	[Comptime]
+	static void AppendPart(String code, bool open, int part)
+	{
+		if (open)
+			code.Append("\treturn .Ok;\n");
+		else
+			MappingDriver.AppendBody(code, "\t", cEntry, part);
+	}
+
+	[Comptime]
+	static bool BaseIsObject(Type type)
+	{
+		return type.BaseType != null && type.BaseType != typeof(Object) && type.BaseType.HasCustomAttribute<TomlObjectAttribute>();
+	}
+
+	/// @brief The body of TomlRead (`part` 0) or TomlWrite (1) of `type`, mixed in when the method is
+	/// compiled (through the [Comptime] entry Emit put into the type, so converter lookups see the user's
+	/// project).
+	/// @param type The [TomlObject] type.
+	/// @param part 0: TomlRead, 1: TomlWrite.
+	/// @param args Unused.
+	/// @return The code.
+	[Comptime]
+	public static String Body(Type type, int part, String args)
+	{
+		var naming = TomlKeyNaming.AsDeclared;
+		if (type.GetCustomAttribute<TomlObjectAttribute>() case .Ok(let attribute))
+			naming = attribute.Naming;
+		let read = new String();
+		let write = scope String();
+		if (BaseIsObject(type))
 		{
 			read.Append("\tTry!(base.TomlRead(_table, _alloc));\n");
 			write.Append("\tTry!(base.TomlWrite(_table));\n");
@@ -119,12 +171,11 @@ public static class TomlSerializerCodeGen
 			EmitWrite(write, target, key, fieldType, kind, converter);
 		}
 
-		read.Append("\treturn .Ok;\n}\n");
-		write.Append("\treturn .Ok;\n}\n");
-
-		Compiler.EmitAddInterface(type, typeof(ITomlSerializable));
-		Compiler.EmitTypeBody(type, read);
-		Compiler.EmitTypeBody(type, write);
+		read.Append("\treturn .Ok;\n");
+		write.Append("\treturn .Ok;\n");
+		if (part == 1)
+			read.Set(write);
+		return read;
 	}
 
 	/// How a field or list item of `type` is handled. The TOML scalar types are fixed; any other type
@@ -188,23 +239,23 @@ public static class TomlSerializerCodeGen
 	[Comptime]
 	static Type DictionaryValue(Type type)
 	{
-		if (let specialized = type as SpecializedGenericType)
-		{
-			if (specialized.UnspecializedType == typeof(Dictionary<,>) && specialized.GetGenericArg(0) == typeof(String))
-				return specialized.GetGenericArg(1);
-		}
+		if (TypeShapes.DictionaryKey(type) == typeof(String))
+			return TypeShapes.DictionaryValue(type);
 		return null;
 	}
 
 	/// The converter registered with [TomlConverter(typeof(target))] that the type being compiled can see
-	/// (declared in its project or a dependency), or null. Two such registrations stop the build.
+	/// (declared in its project or a dependency), or null. Two such registrations stop the build. Only in
+	/// the mixin stage (Body): there "current" is the user's project, and FormatCore's Registry.IsVisible
+	/// is the user's project and its dependencies (inside ApplyToType the user's declarations were seen
+	/// only while the user's project was TomlBeef's only dependent: FormatCore bug B1).
 	[Comptime]
 	static Type FindRegisteredConverter(Type target)
 	{
 		Type found = null;
 		for (let declaration in Type.TypeDeclarations)
 		{
-			if (!(declaration.DeclaredInCurrent || declaration.DeclaredInDependency || declaration.AlwaysVisible))
+			if (!Registry.IsVisible(declaration))
 				continue;
 			if (!(declaration.GetCustomAttribute<TomlConverterAttribute>() case .Ok(let registration)) || registration.mTarget != target)
 				continue;
@@ -221,92 +272,35 @@ public static class TomlSerializerCodeGen
 
 	/// The T of a List<T>, or null.
 	[Comptime]
-	static Type ListElement(Type type)
-	{
-		if (let specialized = type as SpecializedGenericType)
-		{
-			if (specialized.UnspecializedType == typeof(List<>))
-				return specialized.GetGenericArg(0);
-		}
-		return null;
-	}
+	static Type ListElement(Type type) => TypeShapes.ListElement(type);
 
-	/// Appends the key for field `name`. Words start at an upper-case letter that follows a lower-case
-	/// letter or digit, or that ends an acronym (the last capital before a lower-case letter), so
-	/// `HTTPPort` splits as HTTP, Port and `Utf8Name` as Utf8, Name; underscores also split.
+	/// Appends the key for field `name` (FormatCore's Naming: words split at case changes, keeping
+	/// acronyms together, `HTTPPort` as HTTP, Port and `Utf8Name` as Utf8, Name; underscores also split).
 	[Comptime]
 	static void ApplyNaming(StringView name, TomlKeyNaming naming, String key)
 	{
-		if (naming == .AsDeclared)
-		{
-			key.Append(name);
-			return;
-		}
-		int words = 0;
-		int i = 0;
-		while (i < name.Length)
-		{
-			if (name[i] == '_')
-			{
-				i++;
-				continue;
-			}
-			// One word: up to the next underscore or word-starting capital
-			int start = i++;
-			while (i < name.Length && name[i] != '_' && !(name[i].IsUpper && (name[i - 1].IsLower || name[i - 1].IsDigit ||
-				(name[i - 1].IsUpper && i + 1 < name.Length && name[i + 1].IsLower))))
-				i++;
-
-			if (words > 0 && naming != .CamelCase)
-				key.Append(naming == .KebabCase ? '-' : '_');
-			for (int j = start; j < i; j++)
-				key.Append((naming == .CamelCase && words > 0 && j == start) ? name[j].ToUpper : name[j].ToLower);
-			words++;
-		}
+		Naming.Apply(name, naming, key);
 	}
 
-	/// Appends `text` as a Beef string literal. Keys are ordinary text; control characters, which a
-	/// field name cannot hold and a TomlName has no reason to, stop the build.
+	/// Appends `text` as a Beef string literal (FormatCore's Literal). Keys are ordinary text; control
+	/// characters, which a field name cannot hold and a TomlName has no reason to, stop the build.
 	[Comptime]
 	static void AppendLiteral(String code, StringView text)
 	{
-		code.Append('"');
 		for (let c in text.RawChars)
 		{
-			switch (c)
-			{
-			case '"': code.Append("\\\"");
-			case '\\': code.Append("\\\\");
-			default:
-				if ((uint8)c < 0x20)
-					Runtime.FatalError(scope $"[TomlName] \"{text}\" contains a control character");
-				code.Append(c);
-			}
+			if ((uint8)c < 0x20)
+				Runtime.FatalError(scope $"[TomlName] \"{text}\" contains a control character");
 		}
-		code.Append('"');
+		Literal.Append(code, text);
 	}
 
-	/// The smallest and largest value of an integer type, as int64 source expressions. TOML integers are
-	/// int64, so 64-bit unsigned types read up to int64.MaxValue.
+	/// The smallest and largest value of an integer type, as int64 source expressions (FormatCore's
+	/// IntegerBounds). TOML integers are int64, so 64-bit unsigned types read up to int64.MaxValue, from 0.
 	[Comptime]
 	static void IntegerRange(Type type, String min, String max)
 	{
-		int bits = type.Size * 8;
-		if (bits == 64)
-		{
-			min.Append(type.IsSigned ? "int64.MinValue" : "0");
-			max.Append("int64.MaxValue");
-		}
-		else if (type.IsSigned)
-		{
-			min.AppendF("{}", -(1L << (bits - 1)));
-			max.AppendF("{}", (1L << (bits - 1)) - 1);
-		}
-		else
-		{
-			min.Append("0");
-			max.AppendF("{}", (1L << bits) - 1);
-		}
+		IntegerBounds.Range(type, min, max);
 	}
 
 	/// "A, B, C": the enum's case names, for error messages.

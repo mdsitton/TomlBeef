@@ -53,19 +53,11 @@ public struct TomlObjectAttribute : Attribute, IComptimeTypeApply
 	}
 }
 
-/// @brief How [TomlObject] turns field names into keys. Words split at case changes, keeping
-/// acronyms together: `HTTPPort` is `http_port` in snake case.
-public enum TomlKeyNaming
-{
-	/// @brief The field name as written: `PoolSize`.
-	AsDeclared,
-	/// @brief `pool_size`.
-	SnakeCase,
-	/// @brief `pool-size`.
-	KebabCase,
-	/// @brief `poolSize`.
-	CamelCase
-}
+/// @brief How [TomlObject] turns field names into keys: FormatCore's NamingPolicy, shared by the four
+/// format libraries (AsDeclared `PoolSize`, SnakeCase `pool_size`, KebabCase `pool-size`, CamelCase
+/// `poolSize`, and PascalCase and Lower). Words split at case changes, keeping acronyms together:
+/// `HTTPPort` is `http_port` in snake case.
+public typealias TomlKeyNaming = FormatCore.Mapping.NamingPolicy;
 
 /// @brief Serializes a field under `name` instead of the field's own name.
 [AttributeUsage(.Field)]
