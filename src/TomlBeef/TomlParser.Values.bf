@@ -504,13 +504,13 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 		if (token.IsEmpty)
 			return .Err(Error(.UnexpectedToken, "Empty value"));
 
-		// The most common bare value, a plain decimal integer, skips the keyword, date and number
-		// checks below
-		if (TryParsePlainInteger(token, var plain))
-			return TomlValue.Integer(plain);
-		// The same idea for the common forms of floats
-		if (TryParsePlainFloat(token, var plainFloat))
-			return TomlValue.Float(plainFloat);
+		// The most common bare values, plain decimal integers and floats (FormatCore's fast paths, the float
+		// one with Clinger's; TOML allows `+`, not leading zeros), skip the keyword, date and number checks
+		// below; anything else, valid or not, takes the full path, so errors are unchanged
+		if (DecimalParse.TryParsePlainInteger(token, .PlusSign, let plainInteger))
+			return TomlValue.Integer(plainInteger);
+		if (DecimalParse.TryParsePlain(token, .PlusSign, let plain) && plain.mIsFloat)
+			return TomlValue.Float(plain.mFloat);
 		// Kept out of line so the paths above stay small
 		return ParseOtherBareToken(token);
 	}
@@ -550,97 +550,6 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 	// ================================================================
 	// Number parsing
 	// ================================================================
-
-	/// One-pass parse of an optional sign and 1–18 decimal digits with no leading zero (other than a
-	/// lone "0"): valid as written and unable to overflow int64. Anything else, including every
-	/// invalid token, returns false and takes the full path, so errors are unchanged.
-	[Inline]
-	private static bool TryParsePlainInteger(StringView token, out int64 value)
-	{
-		value = 0;
-		char8* ptr = token.Ptr;
-		int length = token.Length;
-		int pos = (ptr[0] == '-' || ptr[0] == '+') ? 1 : 0;
-		int digits = length - pos;
-		if (digits < 1 || digits > 18 || (ptr[pos] == '0' && digits > 1))
-			return false;
-		int64 result = 0;
-		for (int i = pos; i < length; i++)
-		{
-			uint8 digit = (uint8)ptr[i] - (uint8)'0';
-			if (digit > 9)
-				return false;
-			result = result * 10 + digit;
-		}
-		value = (ptr[0] == '-') ? -result : result;
-		return true;
-	}
-
-	/// Powers of ten that a double holds exactly (5^22 < 2^53).
-	const double[23] cExactPowersOf10 = .(1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12,
-		1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22);
-
-	/// One-pass parse of a float without underscores, `[sign]digits[.digits][(e|E)[sign]digits]`, whose
-	/// digits fit an exact double mantissa (at most 2^53, 19 digits) and whose decimal exponent is within
-	/// ±22. Then mantissa and power of ten are both exact, and one IEEE multiply or divide rounds
-	/// correctly (Clinger's fast path). Anything else returns false and takes the full path, so errors
-	/// are unchanged.
-	private static bool TryParsePlainFloat(StringView token, out double value)
-	{
-		value = 0;
-		char8* ptr = token.Ptr;
-		int length = token.Length;
-		int pos = (ptr[0] == '-' || ptr[0] == '+') ? 1 : 0;
-
-		uint64 mantissa = 0;
-		int intStart = pos;
-		while (pos < length && (uint8)ptr[pos] - (uint8)'0' <= 9)
-			mantissa = mantissa * 10 + ((uint8)ptr[pos++] - (uint8)'0');
-		int intDigits = pos - intStart;
-		if (intDigits == 0 || intDigits > 19 || (ptr[intStart] == '0' && intDigits > 1))
-			return false;
-
-		int exponent = 0;
-		bool isFloat = false;
-		if (pos < length && ptr[pos] == '.')
-		{
-			pos++;
-			int fracStart = pos;
-			while (pos < length && (uint8)ptr[pos] - (uint8)'0' <= 9 && pos - fracStart + intDigits < 19)
-				mantissa = mantissa * 10 + ((uint8)ptr[pos++] - (uint8)'0');
-			if (pos == fracStart)
-				return false;
-			exponent = -(pos - fracStart);
-			isFloat = true;
-		}
-		if (pos < length && (ptr[pos] == 'e' || ptr[pos] == 'E'))
-		{
-			pos++;
-			bool negativeExponent = false;
-			if (pos < length && (ptr[pos] == '-' || ptr[pos] == '+'))
-				negativeExponent = ptr[pos++] == '-';
-			int expStart = pos;
-			int expValue = 0;
-			while (pos < length && (uint8)ptr[pos] - (uint8)'0' <= 9 && pos - expStart < 4)
-				expValue = expValue * 10 + ((uint8)ptr[pos++] - (uint8)'0');
-			if (pos == expStart)
-				return false;
-			exponent += negativeExponent ? -expValue : expValue;
-			isFloat = true;
-		}
-		// A leftover character (an underscore, a 20th digit, a 5-digit exponent, anything invalid) or a
-		// plain integer goes to the full path
-		if (pos != length || !isFloat || mantissa > (1UL << 53) || exponent < -22 || exponent > 22)
-			return false;
-
-		double result = (double)mantissa;
-		if (exponent < 0)
-			result /= cExactPowersOf10[-exponent];
-		else
-			result *= cExactPowersOf10[exponent];
-		value = (ptr[0] == '-') ? -result : result;
-		return true;
-	}
 
 	private Result<TomlValue, TomlFailure> ParseNumber(StringView token)
 	{

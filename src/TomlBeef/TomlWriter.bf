@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -214,24 +216,27 @@ static class TomlWriterImpl
 			}
 			else
 			{
-				// IEEE 754: preserve negative zero sign
+				// The shortest round-trip text (corlib's, which ignores the culture), `.0` when it has neither
+				// point nor exponent so that it stays a float. This is FormatCore's TomlCanonical layout
+				// written in place: ShortestDouble.Append measured 20% more instructions on float-heavy
+				// writes (bench/compare floats), so the canonical writer keeps corlib's text as it is.
 				if (v == 0.0 && (1.0 / v) < 0.0)
-				{
 					outStr.Append("-0.0");
-				}
 				else
 				{
 					int before = outStr.Length;
-					v.ToString(outStr, "R", null);
-					// Ensure the output is unambiguously a float (must contain '.', 'e', or 'E')
-					bool hasDot = false;
-					for (int fi = before; fi < outStr.Length; fi++)
+					v.ToString(outStr);
+					bool isFloat = false;
+					for (int i = before; i < outStr.Length; i++)
 					{
-						char8 fc = outStr[fi];
-						if (fc == '.' || fc == 'e' || fc == 'E')
-							{ hasDot = true; break; }
+						char8 c = outStr[i];
+						if (c == '.' || c == 'e' || c == 'E')
+						{
+							isFloat = true;
+							break;
+						}
 					}
-					if (!hasDot)
+					if (!isFloat)
 						outStr.Append(".0");
 				}
 			}

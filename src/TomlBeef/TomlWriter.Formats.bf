@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -24,74 +26,30 @@ extension TomlWriterImpl
 			return;
 		}
 
-		uint64 uval = negative ? (uint64)(-(val + 1)) + 1 : (uint64)val;
-		if (fmt.mBase == .Decimal)
-		{
-			if (negative)
-				outStr.Append('-');
-			String digits = scope String();
-			uval.ToString(digits);
-			int groupSize = fmt.mGroupSize > 0 ? fmt.mGroupSize : 3;
-			EmitGroupedDigits(digits, outStr, groupSize, false);
-			return;
-		}
-
-		String rawDigits = scope String();
-		char8 prefix = '\0';
-
+		// FormatCore's IntegerText: the base, digit case, minimum digits and underscore grouping
+		IntegerLayout layout = .();
 		switch (fmt.mBase)
 		{
-		case .Hex:
-			prefix = 'x';
-			// Convert to hex manually
-			if (uval == 0)
-				rawDigits.Append('0');
-			else
-			{
-				while (uval > 0)
-				{
-					uint8 d = (uint8)(uval & 0xF);
-					rawDigits.Insert(0, (char8)(d < 10 ? '0' + d : (fmt.mUppercaseDigits ? 'A' : 'a') + d - 10));
-					uval >>= 4;
-				}
-			}
-		case .Octal:
-			prefix = 'o';
-			if (uval == 0)
-				rawDigits.Append('0');
-			else
-			{
-				while (uval > 0)
-				{
-					rawDigits.Insert(0, (char8)('0' + (uval & 7)));
-					uval >>= 3;
-				}
-			}
-		case .Binary:
-			prefix = 'b';
-			if (uval == 0)
-				rawDigits.Append('0');
-			else
-			{
-				while (uval > 0)
-				{
-					rawDigits.Insert(0, (char8)('0' + (uval & 1)));
-					uval >>= 1;
-				}
-			}
-		default:
+		case .Hex: layout.mBase = .Hex;
+		case .Octal: layout.mBase = .Octal;
+		case .Binary: layout.mBase = .Binary;
+		default: layout.mBase = .Decimal;
 		}
-
-		while (fmt.mMinDigits > rawDigits.Length)
-			rawDigits.Insert(0, '0');
-
-		outStr.Append('0');
-		outStr.Append(prefix);
-
-		if (fmt.mUseUnderscores && fmt.mGroupSize > 0)
-			EmitGroupedDigits(rawDigits, outStr, fmt.mGroupSize, false);
+		if (layout.mBase == .Decimal)
+		{
+			// Decimal is written with underscores only (a plain one took the path above), in groups of 3
+			// unless another size was captured
+			layout.mGroupSize = fmt.mGroupSize > 0 ? fmt.mGroupSize : 3;
+		}
 		else
-			outStr.Append(rawDigits);
+		{
+			layout.mPrefix = true;
+			layout.mUppercase = fmt.mUppercaseDigits;
+			layout.mMinDigits = fmt.mMinDigits;
+			if (fmt.mUseUnderscores)
+				layout.mGroupSize = fmt.mGroupSize;
+		}
+		IntegerText.Append(outStr, val, layout);
 	}
 
 	/// Write a float value using format metadata for style preservation.
@@ -178,10 +136,9 @@ extension TomlWriterImpl
 			return;
 		}
 
-		// Scientific notation.
-		// Do NOT use fmt.mPrecision, nor the formatter's "e" (six fractional digits): both round
-		// the value. Start from the round-trip digits and let ReformatExponent handle only the
-		// exponent style (case, sign, digit width).
+		// Scientific notation: the shortest round-trip digits as d[.ddd]e±x, never fmt.mPrecision (that
+		// would round the value), with the captured exponent style (case, sign, digit width; without a
+		// width, the fewest digits: 1.5e3)
 		if (fmt.mStyle == .Scientific)
 		{
 			if (val == 0.0 && (1.0 / val) < 0.0)
@@ -189,130 +146,12 @@ extension TomlWriterImpl
 				outStr.Append("-0.0");
 				return;
 			}
-			String formatted = scope String();
-			AppendRoundTripScientific(val, formatted);
-			ReformatExponent(formatted, fmt, outStr);
+			ShortestDouble.Append(outStr, val, FloatLayout.Scientific(fmt.mUppercaseExponent, fmt.mExplicitPlusExponent, fmt.mExponentDigits));
 			return;
 		}
 
 		// Fallback
 		val.ToString(outStr, "R", null);
-	}
-
-	/// Write `val` (finite) as d[.ddd]e[-]x with the shortest digits that read back to the same
-	/// double: the "R" digits, with the decimal point moved.
-	private static void AppendRoundTripScientific(double val, String outStr)
-	{
-		String r = scope String();
-		val.ToString(r, "R", null);
-		String digits = scope String();
-		int pointPos = -1; // digits before the decimal point
-		int exp = 0;
-		for (int i < r.Length)
-		{
-			char8 c = r[i];
-			if (c == '-')
-				outStr.Append('-');
-			else if (c == '.')
-				pointPos = digits.Length;
-			else if (TomlChar.IsDigit(c))
-				digits.Append(c);
-			else if (c == 'e' || c == 'E')
-			{
-				bool negative = false;
-				for (int j = i + 1; j < r.Length; j++)
-				{
-					if (r[j] == '-') negative = true;
-					else if (TomlChar.IsDigit(r[j])) exp = exp * 10 + (r[j] - '0');
-				}
-				if (negative) exp = -exp;
-				break;
-			}
-		}
-		if (pointPos < 0) pointPos = digits.Length;
-		int first = 0;
-		while (first < digits.Length - 1 && digits[first] == '0')
-			first++;
-		int last = digits.Length - 1;
-		while (last > first && digits[last] == '0')
-			last--;
-		// value = 0.digits × 10^(pointPos + exp) = d.ddd × 10^(pointPos + exp - first - 1)
-		int decimalExp = (digits[first] == '0') ? 0 : pointPos + exp - first - 1;
-		outStr.Append(digits[first]);
-		if (last > first)
-			outStr..Append('.').Append(digits.Substring(first + 1, last - first));
-		outStr.AppendF("e{}", decimalExp);
-	}
-
-	/// Reformat a scientific notation string to match captured exponent style.
-	/// Handles uppercase/lowercase E, explicit plus sign, exponent digit width,
-	/// and strips unnecessary trailing zeros from the mantissa.
-	private static void ReformatExponent(StringView formatted, TomlFloatFormat fmt, String outStr)
-	{
-		// Find the exponent marker
-		int expPos = -1;
-		for (int i = 0; i < formatted.Length; i++)
-		{
-			if (formatted[i] == 'e' || formatted[i] == 'E')
-			{
-				expPos = i;
-				break;
-			}
-		}
-		if (expPos < 0)
-		{
-			outStr.Append(formatted);
-			return;
-		}
-
-		// Strip trailing zeros from mantissa (e.g. 2.000000 → 2, 2.500000 → 2.5)
-		int mantissaEnd = expPos - 1;
-		while (mantissaEnd > 0 && formatted[mantissaEnd] == '0')
-			mantissaEnd--;
-		if (mantissaEnd > 0 && formatted[mantissaEnd] == '.')
-			mantissaEnd--; // remove trailing dot too
-		outStr.Append(StringView(&formatted[0], mantissaEnd + 1));
-
-		// Emit exponent marker with captured case
-		outStr.Append(fmt.mUppercaseExponent ? 'E' : 'e');
-
-		// Parse exponent sign and digits
-		int expStart = expPos + 1;
-		char8 signChar = '\0';
-		if (expStart < formatted.Length && (formatted[expStart] == '+' || formatted[expStart] == '-'))
-		{
-			signChar = formatted[expStart];
-			expStart++;
-		}
-
-		// Collect exponent digits
-		String expDigits = scope String();
-		while (expStart < formatted.Length && TomlChar.IsDigit(formatted[expStart]))
-		{
-			expDigits.Append(formatted[expStart]);
-			expStart++;
-		}
-
-		// Emit sign
-		if (signChar == '-')
-		{
-			outStr.Append('-');
-		}
-		else if (fmt.mExplicitPlusExponent)
-		{
-			outStr.Append('+');
-		}
-
-		// Pad or trim exponent digits to match captured width. Without one (a format set in code), use
-		// the minimal width: 1.5e3, not the formatter's 1.5e003.
-		int width = (fmt.mExponentDigits > 0) ? fmt.mExponentDigits : 1;
-		while (expDigits.Length < width)
-			expDigits.Insert(0, '0');
-		// Trim excess leading zeros (safe: they don't change the value)
-		while (expDigits.Length > width && expDigits[0] == '0')
-			expDigits.Remove(0, 1);
-
-		outStr.Append(expDigits);
 	}
 
 	/// Reinsert underscores into a decimal float string according to captured grouping.
@@ -346,7 +185,7 @@ extension TomlWriterImpl
 		StringView intPart = StringView(&number[start], intEnd - start);
 
 		if (fmt.mIntGroupSize > 0 && fmt.mIntGroupSize < intPart.Length)
-			EmitGroupedDigitsFromRight(intPart, outStr, fmt.mIntGroupSize);
+			IntegerText.AppendGrouped(outStr, intPart, fmt.mIntGroupSize);
 		else
 			outStr.Append(intPart);
 
@@ -359,7 +198,7 @@ extension TomlWriterImpl
 				int fracEnd = (ePos >= 0) ? ePos : number.Length;
 				StringView fracPart = StringView(&number[dotPos + 1], fracEnd - (dotPos + 1));
 				if (fmt.mFracGroupSize > 0 && fmt.mFracGroupSize < fracPart.Length)
-					EmitGroupedDigitsFromLeft(fracPart, outStr, fmt.mFracGroupSize);
+					IntegerText.AppendGrouped(outStr, fracPart, fmt.mFracGroupSize, true);
 				else
 					outStr.Append(fracPart);
 			}
@@ -368,45 +207,6 @@ extension TomlWriterImpl
 				// Append exponent as-is (already handled by scientific path)
 				outStr.Append(StringView(&number[ePos], number.Length - ePos));
 			}
-		}
-	}
-
-	/// Emit digits grouped with underscores from the right (for integer parts, e.g., 224_617).
-	private static void EmitGroupedDigitsFromRight(StringView digits, String outStr, int groupSize)
-	{
-		if (groupSize <= 0 || digits.Length <= groupSize)
-		{
-			outStr.Append(digits);
-			return;
-		}
-		int firstChunk = digits.Length % groupSize;
-		if (firstChunk == 0) firstChunk = groupSize;
-		outStr.Append(StringView(&digits[0], firstChunk));
-		int pos = firstChunk;
-		while (pos < digits.Length)
-		{
-			outStr.Append('_');
-			outStr.Append(StringView(&digits[pos], groupSize));
-			pos += groupSize;
-		}
-	}
-
-	/// Emit digits grouped with underscores from the left (for fractional parts, e.g., 445_991).
-	private static void EmitGroupedDigitsFromLeft(StringView digits, String outStr, int groupSize)
-	{
-		if (groupSize <= 0 || digits.Length <= groupSize)
-		{
-			outStr.Append(digits);
-			return;
-		}
-		int pos = 0;
-		while (pos < digits.Length)
-		{
-			if (pos > 0) outStr.Append('_');
-			int remaining = digits.Length - pos;
-			int chunk = (remaining > groupSize) ? groupSize : remaining;
-			outStr.Append(StringView(&digits[pos], chunk));
-			pos += chunk;
 		}
 	}
 
@@ -494,26 +294,6 @@ extension TomlWriterImpl
 				outStr.Append('.');
 				outStr.Append(StringView(&nsStr[0], digitsToEmit));
 			}
-		}
-	}
-
-	/// Write digits with optional underscore grouping from the right (e.g., 1_000_000 or DEAD_BEEF).
-	private static void EmitGroupedDigits(StringView digits, String outStr, int groupSize, bool leftToRight)
-	{
-		if (groupSize <= 0 || digits.Length <= groupSize)
-		{
-			outStr.Append(digits);
-			return;
-		}
-		int firstChunk = digits.Length % groupSize;
-		if (firstChunk == 0) firstChunk = groupSize;
-		outStr.Append(StringView(&digits[0], firstChunk));
-		int pos = firstChunk;
-		while (pos < digits.Length)
-		{
-			outStr.Append('_');
-			outStr.Append(StringView(&digits[pos], groupSize));
-			pos += groupSize;
 		}
 	}
 }
