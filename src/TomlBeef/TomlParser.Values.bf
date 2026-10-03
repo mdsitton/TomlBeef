@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using FormatCore;
+using internal FormatCore;
 using internal TomlBeef;
 
 namespace TomlBeef;
@@ -882,23 +884,10 @@ extension TomlParserImpl<TCursor> where TCursor : ITomlCursor
 
 	private Result<TomlValue, TomlParseError> ParseFloatToken(StringView token)
 	{
-		// ParseNumber has validated the token, so dropping its underscores leaves a plain float
-		StringView digits = token;
-		if (token.Contains('_'))
-		{
-			String cleanStr = scope:: String(token.Length);
-			for (let c in token)
-			{
-				if (c != '_')
-					cleanStr.Append(c);
-			}
-			digits = cleanStr;
-		}
-
-		switch (Double.Parse(digits))
-		{
-		case .Err: return .Err(Error(.InvalidFloat, "Invalid float value"));
-		case .Ok(let val): return TomlValue.Float(val);
-		}
+		// ParseNumber has validated the token; FormatCore skips its underscores and parses with `.` as the
+		// decimal point whatever the current culture (corlib's Double.Parse follows the user's locale)
+		if (!DecimalParse.ParseDouble(token, let val))
+			return .Err(Error(.InvalidFloat, "Invalid float value"));
+		return TomlValue.Float(val);
 	}
 }

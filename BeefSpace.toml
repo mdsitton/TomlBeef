@@ -6,6 +6,8 @@ StartupProject = "TomlTester"
 [Projects]
 TomlBeef = {Path = "."}
 TomlTester = {Path = "TomlTester"}
+# The local FormatCore checkout, overriding the library's Git dependency (same project name)
+FormatCore = {Path = "../FormatCore-toml"}
 
 # Runs the [Test] methods with Release settings (O2, CRT allocator, no runtime checks):
 #   beefbuild -test -config=TestRelease

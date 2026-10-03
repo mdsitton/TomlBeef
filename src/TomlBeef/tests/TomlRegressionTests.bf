@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Globalization;
 using System.IO;
 using TomlBeef;
 
@@ -463,5 +464,28 @@ static class TomlRegressionTests
 		Test.Assert(doc.GetPath(segments) case .Ok(let deep) && deep.AsInteger == 3);
 		Test.Assert(doc.GetPath("a", "missing") case .Err);
 		Test.Assert(doc.GetPath() case .Err);
+	}
+
+	// FormatCore B2: floats off the fast path (underscores, more digits than an exact mantissa) were
+	// parsed by corlib's Double.Parse, which follows the current culture's decimal separator
+
+	[Test]
+	public static void FloatsIgnoreTheCurrentCulture()
+	{
+		let culture = scope CultureInfo("de-DE");
+		let format = new NumberFormatInfo();
+		format.NumberDecimalSeparator = ",";
+		culture.[Friend]mNumInfo = format;
+		let saved = CultureInfo.CurrentCulture;
+		CultureInfo.CurrentCulture = culture;
+		defer { CultureInfo.CurrentCulture = saved; }
+		Test.Assert(!(double.Parse("1.5") case .Ok(1.5)));
+
+		let doc = scope TomlDocument();
+		Test.Assert(doc.Read("a = 1_000.5\nb = 1.50000000000000000000001\nc = 6.02e+2_3\nd = +1.5\n") case .Ok);
+		Test.Assert(doc.RootTable.GetFloat("a", 0) == 1000.5);
+		Test.Assert(doc.RootTable.GetFloat("b", 0) == 1.5);
+		Test.Assert(doc.RootTable.GetFloat("c", 0) == 6.02e23);
+		Test.Assert(doc.RootTable.GetFloat("d", 0) == 1.5);
 	}
 }
