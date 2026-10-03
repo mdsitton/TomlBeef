@@ -7,9 +7,11 @@
 - **TomlBeef is built on FormatCore** (`~/development/FormatCore`,
   `https://github.com/mdsitton/FormatCore.git`): the shared core of the four format libraries (UTF-8
   and SWAR scanning, errors, numbers, storage, the typed-mapping framework, test and benchmark
-  tooling). The library depends on it by Git; the workspaces list the local checkout
-  (`../FormatCore`), so edits there are seen at once. A change a FormatCore component needs is made in
-  FormatCore (its own verification), not copied here; FormatCore's `docs/migration.md` lists what moved.
+  tooling). The library depends on it by Git (`BeefProj.toml`, `Version = "0.1"`): BeefBuild fetches
+  the highest matching tag and pins it in the workspace's `BeefSpace_Lock.toml`. A change a FormatCore
+  component needs is made in FormatCore (its own verification), released as a new `v0.1.x` tag, and
+  picked up here by deleting `BeefSpace_Lock.toml`; never copied here. FormatCore's
+  `docs/migration.md` lists what moved.
 - Beef `String` stores UTF-8 data and is mutable. Prefer `StringView` for borrowed string inputs.
 - Beef uses manual and scope-based memory management. There is no tracing garbage collector.
 - This project targets Linux64 first; Windows is verified with the Proton-hosted Beef
